@@ -34,6 +34,7 @@ pixi run bridge --help
 pixi run export-1a3n
 pixi run build-1a3n
 pixi run install-bpy-kernel
+pixi run install-blender-live-kernel
 ```
 
 ## CLI Usage
@@ -62,6 +63,7 @@ Notebook style (same pattern as `interactive_example.ipynb`, requires Blender-ba
 
 - `/Users/mb/Documents/blender_bridge/interactive_blender_control.ipynb`
 - `/Users/mb/Documents/blender_bridge/open_blender_scene.ipynb` (Python kernel; opens Blender UI in parallel and renders saved scene snapshots in notebook)
+- `/Users/mb/Documents/blender_bridge/blender_live_connection.ipynb` (`blender_live` kernel, live Blender session controlled directly from notebook)
 
 If you see `ModuleNotFoundError: No module named 'bpy'`, install/select the provided kernel:
 
@@ -77,7 +79,6 @@ This notebook does direct `import bpy` control:
 
 - opens `/Users/mb/Documents/blender_bridge/1A3N_scene.blend`
 - hides default non-target meshes (including `Cube`) and focuses `1A3N`
-- applies camera-distance correction if needed
 - for `bpy>=5` kernels, applies a fallback opaque material so the model is visible (avoids gray/transparent Molecular Nodes shading incompatibility)
 - saves the scene
 - renders and displays a preview image
@@ -95,6 +96,20 @@ Live notebook -> Blender control:
 - After launching Blender from the notebook, run:
   - `move_target(dx=0.02, dy=0.0, dz=0.0, save=True)` to move `1A3N` in the open Blender window.
   - `set_target_location(x, y, z, save=True)` for absolute positioning.
+
+NotebookConnector / blender_notebook style live connection:
+
+- Inspired by [NotebookConnector](https://github.com/BradyAJohnston/NotebookConnector) and [blender_notebook](https://github.com/Octoframes/blender_notebook).
+- Install the Blender-launching kernel:
+
+```bash
+pixi run install-blender-live-kernel
+jupyter kernelspec list
+```
+
+- Open `/Users/mb/Documents/blender_bridge/blender_live_connection.ipynb`.
+- Select kernel `blender_live`.
+- Running cells controls the same open Blender UI session directly (no subprocess bridge file needed).
 
 Useful export flags:
 
