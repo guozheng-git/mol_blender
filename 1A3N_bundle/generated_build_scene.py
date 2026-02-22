@@ -135,6 +135,39 @@ def ensure_visible_style(load_result, obj):
             f"Details: {detail}"
         )
 
+def add_default_ligand_style(load_result):
+    # Cartoon style focuses on polymer backbone and can hide ligands like HEM.
+    # Add an explicit ligand style branch when the MN entity API is available.
+    if load_result is None or not hasattr(load_result, "add_style"):
+        return
+
+    style_errors = []
+    style_variants = [
+        "sticks",
+        "ball_and_stick",
+        "spheres",
+    ]
+    for style_name in style_variants:
+        try:
+            selection = None
+            if hasattr(load_result, "select"):
+                selector = load_result.select
+                if hasattr(selector, "reset"):
+                    selector = selector.reset()
+                if hasattr(selector, "is_ligand"):
+                    selection = selector.is_ligand()
+            if selection is not None:
+                load_result.add_style(style_name, color="common", selection=selection)
+            else:
+                # Fallback for APIs where selector object is unavailable.
+                load_result.add_style(style_name, color="common", selection="is_hetero")
+            return
+        except Exception as exc:
+            style_errors.append(f"{style_name}: {exc}")
+
+    detail = " | ".join(style_errors) if style_errors else "no style error detail"
+    print(f"Warning: could not add default ligand style: {detail}")
+
 def create_fallback_material():
     material = bpy.data.materials.get("BridgeVisible")
     if material is None:
@@ -297,6 +330,7 @@ def main():
             loaded = load_molecule_with_fallback(mn, file_path, object_name)
             loaded_obj = resolve_loaded_object(loaded, object_name)
             ensure_visible_style(loaded, loaded_obj)
+            add_default_ligand_style(loaded)
             enforce_notebook_safe_material(loaded_obj)
             imported_objects.append(loaded_obj)
         except Exception as exc:
