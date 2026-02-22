@@ -142,8 +142,8 @@ The `export` command writes:
 PyMOL camera axes use:
 
 - forward `-Z`
-- `+X` left
-- `+Y` down
+- `+X` right
+- `+Y` up
 
 Blender camera axes use:
 
@@ -151,7 +151,7 @@ Blender camera axes use:
 - `+X` right
 - `+Y` up
 
-Conversion uses `M = diag([-1, -1, 1])`.
+Conversion uses `M = I` (no axis flip).
 
 - `cam_pos_world = o_model - R.T @ o_cam_p`
 - `R_world_from_cam_blender = R.T @ M`

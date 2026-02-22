@@ -17,9 +17,12 @@ Matrix4 = list[list[float]]
 Vector3 = list[float]
 
 
+# Empirically validated with a PyMOL identity view + axis marker render:
+# PyMOL camera-space +X points right and +Y points up in image space.
+# Blender camera-space uses the same handed axes, so no axis flip is required.
 PYMOL_TO_BLENDER_CAMERA_SPACE: Matrix3 = [
-    [-1.0, 0.0, 0.0],
-    [0.0, -1.0, 0.0],
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
     [0.0, 0.0, 1.0],
 ]
 

@@ -34,9 +34,9 @@ SAMPLE_VIEW = [
 
 
 EXPECTED_MATRIX = [
-    [-0.8660254, -0.5, 0.0, 9.7009619],
-    [0.46984631, -0.81379768, 0.34202014, 30.882868325],
-    [-0.17101007, 0.29619813, 0.93969262, 52.643404135],
+    [0.8660254, 0.5, 0.0, 9.7009619],
+    [-0.46984631, 0.81379768, 0.34202014, 30.882868325],
+    [0.17101007, -0.29619813, 0.93969262, 52.643404135],
     [0.0, 0.0, 0.0, 1.0],
 ]
 
@@ -119,3 +119,22 @@ def test_regression_matrix_values():
     assert spec.clip_end == pytest.approx(120.0, abs=1e-8)
     assert spec.fov_deg == pytest.approx(45.0, abs=1e-8)
     _assert_matrix_close(spec.matrix_world, EXPECTED_MATRIX)
+
+
+def test_identity_view_has_no_camera_roll_flip():
+    view = [
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0,
+        0.0, 0.0, -50.0,
+        0.0, 0.0, 0.0,
+        30.0, 70.0, 50.0,
+    ]
+    spec = compute_blender_camera_from_pymol_view(view, fov_deg=50.0, orthoscopic=False)
+    rotation = [row[:3] for row in spec.matrix_world[:3]]
+    expected_rotation = [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+    _assert_matrix_close(rotation, expected_rotation)
