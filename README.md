@@ -61,6 +61,7 @@ open -a /Applications/Blender.app --args \
 Notebook style (same pattern as `interactive_example.ipynb`, requires Blender-backed kernel):
 
 - `/Users/mb/Documents/blender_bridge/interactive_blender_control.ipynb`
+- `/Users/mb/Documents/blender_bridge/open_blender_scene.ipynb` (Python kernel; opens Blender UI in parallel and renders saved scene snapshots in notebook)
 
 If you see `ModuleNotFoundError: No module named 'bpy'`, install/select the provided kernel:
 
@@ -80,6 +81,13 @@ This notebook does direct `import bpy` control:
 - for `bpy>=5` kernels, applies a fallback opaque material so the model is visible (avoids gray/transparent Molecular Nodes shading incompatibility)
 - saves the scene
 - renders and displays a preview image
+
+Parallel edit + notebook render flow:
+
+1. Run `open_blender_scene.ipynb`.
+2. Blender opens with the generated scene.
+3. Edit camera/object in Blender UI and save (`Cmd+S`).
+4. Re-run the notebook render cell to render the updated saved scene in notebook.
 
 Useful export flags:
 
@@ -125,6 +133,8 @@ Conversion uses `M = diag([-1, -1, 1])`.
 
 - `cam_pos_world = o_model - R.T @ o_cam_p`
 - `R_world_from_cam_blender = R.T @ M`
+
+Molecular Nodes uses `world_scale=0.01` (Angstrom -> Blender units), so the bridge scales PyMOL camera translation/clip distances by `0.01` to keep pose/framing aligned.
 
 For orthographic mode, this bridge approximates:
 

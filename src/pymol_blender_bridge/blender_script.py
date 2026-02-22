@@ -26,7 +26,7 @@ def render_import_script(camera_spec: CameraSpec) -> str:
         from pathlib import Path
 
         import bpy
-        from mathutils import Matrix, Vector
+        from mathutils import Matrix
 
         MATRIX_WORLD = {matrix_json}
         CAMERA_TYPE = {camera_type!r}
@@ -34,6 +34,7 @@ def render_import_script(camera_spec: CameraSpec) -> str:
         ORTHO_SCALE = {ortho_scale!r}
         CLIP_START = {clip_start!r}
         CLIP_END = {clip_end!r}
+        MN_WORLD_SCALE = 0.01
 
         def parse_args():
             if "--" not in sys.argv:
@@ -156,6 +157,51 @@ def render_import_script(camera_spec: CameraSpec) -> str:
                     f"Details: {{detail}}"
                 )
 
+        def create_fallback_material():
+            material = bpy.data.materials.get("BridgeVisible")
+            if material is None:
+                material = bpy.data.materials.new(name="BridgeVisible")
+            material.use_nodes = True
+            tree = material.node_tree
+            for node in list(tree.nodes):
+                tree.nodes.remove(node)
+            node_output = tree.nodes.new("ShaderNodeOutputMaterial")
+            node_bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
+            node_bsdf.inputs["Base Color"].default_value = (0.12, 0.72, 0.95, 1.0)
+            node_bsdf.inputs["Roughness"].default_value = 0.35
+            if "Alpha" in node_bsdf.inputs:
+                node_bsdf.inputs["Alpha"].default_value = 1.0
+            tree.links.new(node_bsdf.outputs["BSDF"], node_output.inputs["Surface"])
+            if hasattr(material, "blend_method"):
+                material.blend_method = "OPAQUE"
+            return material
+
+        def enforce_notebook_safe_material(obj):
+            # Blender 5 + Molecular Nodes extension currently renders some MN shaders as flat gray.
+            # Keep MN geometry, but force an opaque visible material for reliability.
+            if obj is None or obj.type != "MESH":
+                return
+            if bpy.app.version < (5, 0, 0):
+                return
+            material = create_fallback_material()
+            for idx in range(len(obj.data.materials)):
+                obj.data.materials[idx] = material
+            if len(obj.data.materials) == 0:
+                obj.data.materials.append(material)
+            for modifier in obj.modifiers:
+                if modifier.type != "NODES" or modifier.node_group is None:
+                    continue
+                for node in modifier.node_group.nodes:
+                    if not node.name.startswith("Style"):
+                        continue
+                    socket = node.inputs.get("Material")
+                    if socket is None:
+                        continue
+                    try:
+                        socket.default_value = material
+                    except Exception:
+                        pass
+
         def ensure_camera(scene):
             cam_obj = bpy.data.objects.get("PyMOL_Camera")
             if cam_obj is not None and cam_obj.type != "CAMERA":
@@ -177,6 +223,38 @@ def render_import_script(camera_spec: CameraSpec) -> str:
             scene.camera = cam_obj
             return cam_obj
 
+        def apply_mn_world_scale_to_camera(camera_obj):
+            if camera_obj is None or camera_obj.type != "CAMERA":
+                return
+            if not (MN_WORLD_SCALE > 0.0 and MN_WORLD_SCALE != 1.0):
+                return
+
+            matrix = camera_obj.matrix_world.copy()
+            matrix.translation = matrix.translation * MN_WORLD_SCALE
+            camera_obj.matrix_world = matrix
+
+            camera_data = camera_obj.data
+            camera_data.clip_start = max(1e-6, camera_data.clip_start * MN_WORLD_SCALE)
+            camera_data.clip_end = max(
+                camera_data.clip_start + 1e-3,
+                camera_data.clip_end * MN_WORLD_SCALE,
+            )
+            if camera_data.type == "ORTHO":
+                camera_data.ortho_scale = max(1e-6, camera_data.ortho_scale * MN_WORLD_SCALE)
+
+        def apply_viewport_resolution_from_view(scene, view_payload):
+            viewport = view_payload.get("viewport_px")
+            if not isinstance(viewport, list) or len(viewport) != 2:
+                return
+            try:
+                width = int(viewport[0])
+                height = int(viewport[1])
+            except Exception:
+                return
+            if width > 0 and height > 0:
+                scene.render.resolution_x = width
+                scene.render.resolution_y = height
+
         def ensure_light(scene):
             if any(obj.type == "LIGHT" for obj in bpy.data.objects):
                 return
@@ -192,56 +270,6 @@ def render_import_script(camera_spec: CameraSpec) -> str:
             for obj in list(bpy.data.objects):
                 if obj.type in removable_types:
                     bpy.data.objects.remove(obj, do_unlink=True)
-
-        def auto_fix_camera_distance(scene, imported_objects):
-            # Some Molecular Nodes setups use a smaller coordinate scale than raw PyMOL values.
-            # If camera distance is implausibly large relative to imported bounds, pull it closer.
-            if not imported_objects:
-                return
-            cam = scene.camera
-            if cam is None:
-                return
-
-            bounds = []
-            for obj in imported_objects:
-                if obj is None or obj.type != "MESH":
-                    continue
-                bounds.extend([obj.matrix_world @ v.co for v in obj.data.vertices])
-            if not bounds:
-                return
-
-            min_x = min(v.x for v in bounds)
-            min_y = min(v.y for v in bounds)
-            min_z = min(v.z for v in bounds)
-            max_x = max(v.x for v in bounds)
-            max_y = max(v.y for v in bounds)
-            max_z = max(v.z for v in bounds)
-            center = ((min_x + max_x) * 0.5, (min_y + max_y) * 0.5, (min_z + max_z) * 0.5)
-            radius = max(
-                1e-6,
-                max(max_x - min_x, max_y - min_y, max_z - min_z) * 0.5,
-            )
-
-            cam_pos = cam.matrix_world.translation
-            cx, cy, cz = center
-            dx = cam_pos.x - cx
-            dy = cam_pos.y - cy
-            dz = cam_pos.z - cz
-            distance = math.sqrt(dx * dx + dy * dy + dz * dz)
-
-            if distance <= radius * 100.0:
-                return
-
-            forward = cam.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
-            target_distance = max(radius * 8.0, 0.25)
-            cam.location = (
-                cx - forward.x * target_distance,
-                cy - forward.y * target_distance,
-                cz - forward.z * target_distance,
-            )
-            if cam.type == "CAMERA":
-                cam.data.clip_start = max(1e-4, min(cam.data.clip_start, radius * 0.02))
-                cam.data.clip_end = max(cam.data.clip_start + 1e-3, max(cam.data.clip_end, target_distance + radius * 20.0))
 
         def main():
             bundle_dir, out_blend = parse_args()
@@ -291,6 +319,7 @@ def render_import_script(camera_spec: CameraSpec) -> str:
                     loaded = load_molecule_with_fallback(mn, file_path, object_name)
                     loaded_obj = resolve_loaded_object(loaded, object_name)
                     ensure_visible_style(loaded, loaded_obj)
+                    enforce_notebook_safe_material(loaded_obj)
                     imported_objects.append(loaded_obj)
                 except Exception as exc:
                     raise RuntimeError(
@@ -298,8 +327,9 @@ def render_import_script(camera_spec: CameraSpec) -> str:
                     ) from exc
 
             scene = bpy.context.scene
-            ensure_camera(scene)
-            auto_fix_camera_distance(scene, imported_objects)
+            apply_viewport_resolution_from_view(scene, _view)
+            camera_obj = ensure_camera(scene)
+            apply_mn_world_scale_to_camera(camera_obj)
             ensure_light(scene)
             out_blend.parent.mkdir(parents=True, exist_ok=True)
             bpy.ops.wm.save_as_mainfile(filepath=str(out_blend))
