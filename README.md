@@ -89,6 +89,13 @@ Parallel edit + notebook render flow:
 3. Edit camera/object in Blender UI and save (`Cmd+S`).
 4. Re-run the notebook render cell to render the updated saved scene in notebook.
 
+Live notebook -> Blender control:
+
+- `open_blender_scene.ipynb` now includes a live command bridge section.
+- After launching Blender from the notebook, run:
+  - `move_target(dx=0.02, dy=0.0, dz=0.0, save=True)` to move `1A3N` in the open Blender window.
+  - `set_target_location(x, y, z, save=True)` for absolute positioning.
+
 Useful export flags:
 
 ```bash
