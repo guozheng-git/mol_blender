@@ -35,14 +35,14 @@ class RenderPreset:
 PRESETS: list[RenderPreset] = [
     RenderPreset(
         name="01_dual_surface_reveal",
-        bg=(0.66, 0.73, 0.79, 1.0),
+        bg=(0.78, 0.85, 0.90, 1.0),
         camera_yaw_deg=-10.0,
         camera_pitch_deg=3.0,
         camera_distance_scale=1.0,
-        key_energy=680.0,
-        fill_energy=260.0,
-        rim_energy=220.0,
-        exposure=-0.56,
+        key_energy=620.0,
+        fill_energy=220.0,
+        rim_energy=210.0,
+        exposure=-0.45,
         look="High Contrast",
     ),
     RenderPreset(
@@ -51,10 +51,10 @@ PRESETS: list[RenderPreset] = [
         camera_yaw_deg=12.0,
         camera_pitch_deg=7.0,
         camera_distance_scale=0.92,
-        key_energy=640.0,
-        fill_energy=300.0,
-        rim_energy=280.0,
-        exposure=-0.52,
+        key_energy=700.0,
+        fill_energy=320.0,
+        rim_energy=260.0,
+        exposure=-0.62,
         look="High Contrast",
     ),
     RenderPreset(
@@ -71,26 +71,26 @@ PRESETS: list[RenderPreset] = [
     ),
     RenderPreset(
         name="04_mint_cream_surface",
-        bg=(0.82, 0.88, 0.76, 1.0),
+        bg=(0.90, 0.95, 0.86, 1.0),
         camera_yaw_deg=-16.0,
         camera_pitch_deg=-6.0,
-        camera_distance_scale=0.88,
+        camera_distance_scale=0.90,
         key_energy=620.0,
-        fill_energy=240.0,
-        rim_energy=200.0,
-        exposure=-0.75,
+        fill_energy=220.0,
+        rim_energy=220.0,
+        exposure=-0.38,
         look="High Contrast",
     ),
     RenderPreset(
         name="05_editorial_peach_cyan",
-        bg=(0.84, 0.79, 0.79, 1.0),
+        bg=(0.88, 0.90, 0.92, 1.0),
         camera_yaw_deg=24.0,
         camera_pitch_deg=-2.0,
         camera_distance_scale=0.92,
-        key_energy=680.0,
-        fill_energy=260.0,
-        rim_energy=220.0,
-        exposure=-0.72,
+        key_energy=620.0,
+        fill_energy=240.0,
+        rim_energy=240.0,
+        exposure=-0.40,
         look="High Contrast",
     ),
 ]
@@ -227,7 +227,7 @@ def create_soft_material(
     _set_input(bsdf, ("Coat Weight", "Coat"), coat)
     _set_input(bsdf, ("Alpha",), alpha)
     _set_input(bsdf, ("Emission Strength",), emission_strength)
-    _set_input(bsdf, ("Specular IOR Level", "Specular"), 0.22)
+    _set_input(bsdf, ("Specular IOR Level", "Specular"), 0.08)
 
     if hasattr(material, "blend_method"):
         material.blend_method = "HASHED" if alpha < 0.999 else "OPAQUE"
@@ -256,8 +256,8 @@ def create_wire_overlay_material(
     node_base.location = (-200, 80)
     _set_input(node_base, ("Base Color",), fill_color)
     _set_input(node_base, ("Roughness",), roughness)
-    _set_input(node_base, ("Transmission Weight", "Transmission"), 0.25)
-    _set_input(node_base, ("Coat Weight", "Coat"), 0.45)
+    _set_input(node_base, ("Transmission Weight", "Transmission"), 0.06)
+    _set_input(node_base, ("Coat Weight", "Coat"), 0.40)
     _set_input(node_base, ("Alpha",), alpha)
 
     node_wire = tree.nodes.new("ShaderNodeWireframe")
@@ -293,6 +293,38 @@ def get_residue_bounds(molecule) -> tuple[int, int, int]:
     hi = max(res_ids)
     mid = res_ids[len(res_ids) // 2]
     return lo, mid, hi
+
+
+def get_chain_ids(molecule) -> list[str]:
+    chain_ids: list[str] = []
+    seen: set[str] = set()
+    for raw in molecule.array.chain_id:
+        if isinstance(raw, (bytes, bytearray)):
+            chain = raw.decode("utf-8", errors="ignore").strip()
+        else:
+            chain = str(raw).strip()
+        if not chain or chain in seen:
+            continue
+        seen.add(chain)
+        chain_ids.append(chain)
+    return chain_ids
+
+
+def get_polymer_selections(molecule):
+    polymer_all = molecule.select.reset().is_polymer()
+    chain_ids = get_chain_ids(molecule)
+    if len(chain_ids) >= 2:
+        split = max(1, len(chain_ids) // 2)
+        group_a = tuple(chain_ids[:split])
+        group_b = tuple(chain_ids[split:]) if chain_ids[split:] else group_a
+        polymer_a = molecule.select.reset().is_polymer().chain_id(group_a)
+        polymer_b = molecule.select.reset().is_polymer().chain_id(group_b)
+        return polymer_a, polymer_b, polymer_all, chain_ids
+
+    lo, mid, hi = get_residue_bounds(molecule)
+    polymer_a = molecule.select.reset().res_id(range(lo, mid + 1)).is_polymer()
+    polymer_b = molecule.select.reset().res_id(range(mid + 1, hi + 1)).is_polymer()
+    return polymer_a, polymer_b, polymer_all, chain_ids
 
 
 def get_object_center(obj: bpy.types.Object) -> Vector:
@@ -331,16 +363,14 @@ def add_ligand_style(molecule, material: bpy.types.Material, style_name: str = "
 
 
 def apply_preset_styles(preset: RenderPreset, molecule) -> None:
+    polymer_a, polymer_b, polymer_all, chain_ids = get_polymer_selections(molecule)
     lo, mid, hi = get_residue_bounds(molecule)
-    polymer_a = molecule.select.reset().res_id(range(lo, mid + 1)).not_solvent()
-    polymer_b = molecule.select.reset().res_id(range(mid + 1, hi + 1)).not_solvent()
-    polymer_all = molecule.select.reset().is_polymer()
 
     if preset.name.startswith("01_"):
-        surf_a = create_soft_material("PR01_SurfaceA", (0.12, 0.44, 0.72, 1.0), 0.36, 0.01, 0.36, 0.50)
-        surf_b = create_soft_material("PR01_SurfaceB", (0.18, 0.67, 0.54, 1.0), 0.38, 0.01, 0.34, 0.48)
-        core = create_soft_material("PR01_Core", (0.90, 0.93, 0.96, 1.0), 0.36, 0.0, 0.10, 1.0)
-        ligand = create_soft_material("PR01_Ligand", (0.98, 0.42, 0.67, 1.0), 0.22, 0.0, 0.14, 1.0)
+        surf_a = create_soft_material("PR01_SurfaceA", (0.10, 0.49, 0.86, 1.0), 0.30, 0.00, 0.24, 1.0)
+        surf_b = create_soft_material("PR01_SurfaceB", (0.19, 0.77, 0.62, 1.0), 0.31, 0.00, 0.22, 1.0)
+        core = create_soft_material("PR01_Core", (0.83, 0.93, 0.98, 1.0), 0.30, 0.0, 0.08, 1.0)
+        ligand = create_soft_material("PR01_Ligand", (0.98, 0.43, 0.68, 1.0), 0.20, 0.0, 0.14, 1.0)
         molecule.add_style("surface", selection=polymer_a, material=surf_a)
         molecule.add_style("surface", selection=polymer_b, material=surf_b)
         molecule.add_style("cartoon", selection=polymer_all, material=core)
@@ -350,61 +380,76 @@ def apply_preset_styles(preset: RenderPreset, molecule) -> None:
     if preset.name.startswith("02_"):
         wire_surf = create_wire_overlay_material(
             "PR02_WireSurface",
-            fill_color=(0.12, 0.61, 0.93, 1.0),
-            line_color=(0.86, 0.90, 0.98, 1.0),
-            roughness=0.34,
-            alpha=0.62,
+            fill_color=(0.03, 0.56, 0.95, 1.0),
+            line_color=(0.95, 0.97, 1.00, 1.0),
+            roughness=0.28,
+            alpha=0.68,
         )
-        core = create_soft_material("PR02_Core", (0.96, 0.63, 0.34, 1.0), 0.34, 0.0, 0.12, 1.0)
-        ligand = create_soft_material("PR02_Ligand", (0.72, 0.82, 0.23, 1.0), 0.18, 0.0, 0.20, 1.0)
+        core_a = create_soft_material("PR02_CoreA", (0.98, 0.64, 0.34, 1.0), 0.32, 0.0, 0.10, 1.0)
+        core_b = create_soft_material("PR02_CoreB", (0.96, 0.56, 0.78, 1.0), 0.32, 0.0, 0.10, 1.0)
+        ligand = create_soft_material("PR02_Ligand", (0.82, 0.88, 0.29, 1.0), 0.16, 0.0, 0.18, 1.0)
         molecule.add_style("surface", selection=polymer_all, material=wire_surf)
-        molecule.add_style("cartoon", selection=polymer_all, material=core)
+        molecule.add_style("cartoon", selection=polymer_a, material=core_a)
+        molecule.add_style("cartoon", selection=polymer_b, material=core_b)
         add_ligand_style(molecule, ligand, "sticks")
         return
 
     if preset.name.startswith("03_"):
         palette = [
-            (0.95, 0.86, 0.63, 1.0),
-            (0.69, 0.86, 0.98, 1.0),
-            (0.95, 0.66, 0.84, 1.0),
-            (0.69, 0.94, 0.76, 1.0),
-            (0.98, 0.75, 0.67, 1.0),
+            (0.96, 0.89, 0.66, 1.0),
+            (0.74, 0.89, 0.99, 1.0),
+            (0.97, 0.70, 0.87, 1.0),
+            (0.74, 0.95, 0.79, 1.0),
+            (0.99, 0.78, 0.70, 1.0),
         ]
-        chunks = [
-            (lo, lo + (mid - lo) // 2),
-            (lo + (mid - lo) // 2 + 1, mid),
-            (mid + 1, mid + (hi - mid) // 2),
-            (mid + (hi - mid) // 2 + 1, hi),
-        ]
-        for idx, (start, end) in enumerate(chunks):
-            if end < start:
-                continue
-            mat = create_soft_material(
-                f"PR03_Cartoon_{idx}",
-                palette[idx],
-                roughness=0.42,
-                transmission=0.0,
-                coat=0.08,
-                alpha=1.0,
-            )
-            selection = molecule.select.reset().res_id(range(start, end + 1)).is_polymer()
-            molecule.add_style("cartoon", selection=selection, material=mat)
-        ligand = create_soft_material("PR03_Ligand", (0.96, 0.53, 0.72, 1.0), 0.20, 0.0, 0.18, 1.0)
+        if chain_ids:
+            for idx, chain_id in enumerate(chain_ids):
+                mat = create_soft_material(
+                    f"PR03_Cartoon_{idx}",
+                    palette[idx % len(palette)],
+                    roughness=0.40,
+                    transmission=0.0,
+                    coat=0.08,
+                    alpha=1.0,
+                )
+                selection = molecule.select.reset().is_polymer().chain_id(chain_id)
+                molecule.add_style("cartoon", selection=selection, material=mat)
+        else:
+            chunks = [
+                (lo, lo + (mid - lo) // 2),
+                (lo + (mid - lo) // 2 + 1, mid),
+                (mid + 1, mid + (hi - mid) // 2),
+                (mid + (hi - mid) // 2 + 1, hi),
+            ]
+            for idx, (start, end) in enumerate(chunks):
+                if end < start:
+                    continue
+                mat = create_soft_material(
+                    f"PR03_Cartoon_{idx}",
+                    palette[idx],
+                    roughness=0.40,
+                    transmission=0.0,
+                    coat=0.08,
+                    alpha=1.0,
+                )
+                selection = molecule.select.reset().res_id(range(start, end + 1)).is_polymer()
+                molecule.add_style("cartoon", selection=selection, material=mat)
+        ligand = create_soft_material("PR03_Ligand", (0.97, 0.58, 0.76, 1.0), 0.18, 0.0, 0.14, 1.0)
         add_ligand_style(molecule, ligand, "sticks")
         return
 
     if preset.name.startswith("04_"):
         shell_a = create_wire_overlay_material(
             "PR04_ShellA",
-            fill_color=(0.84, 0.92, 0.80, 1.0),
-            line_color=(0.67, 0.77, 0.61, 1.0),
-            roughness=0.38,
-            alpha=0.46,
+            fill_color=(0.84, 0.92, 0.78, 1.0),
+            line_color=(0.74, 0.82, 0.66, 1.0),
+            roughness=0.34,
+            alpha=0.74,
         )
-        shell_b = create_soft_material("PR04_ShellB", (0.93, 0.96, 0.89, 1.0), 0.42, 0.01, 0.16, 0.32)
-        core_a = create_soft_material("PR04_CoreA", (0.60, 0.75, 0.28, 1.0), 0.36, 0.0, 0.06, 1.0, emission_strength=0.08)
-        core_b = create_soft_material("PR04_CoreB", (0.16, 0.67, 0.77, 1.0), 0.32, 0.0, 0.08, 1.0, emission_strength=0.10)
-        ligand = create_soft_material("PR04_Ligand", (0.86, 0.48, 0.19, 1.0), 0.20, 0.0, 0.12, 1.0)
+        shell_b = create_soft_material("PR04_ShellB", (0.92, 0.96, 0.87, 1.0), 0.34, 0.00, 0.08, 0.68)
+        core_a = create_soft_material("PR04_CoreA", (0.62, 0.82, 0.30, 1.0), 0.30, 0.0, 0.06, 1.0, emission_strength=0.09)
+        core_b = create_soft_material("PR04_CoreB", (0.13, 0.83, 0.90, 1.0), 0.28, 0.0, 0.08, 1.0, emission_strength=0.12)
+        ligand = create_soft_material("PR04_Ligand", (0.90, 0.60, 0.26, 1.0), 0.18, 0.0, 0.12, 1.0)
         molecule.add_style("surface", selection=polymer_a, material=shell_a)
         molecule.add_style("surface", selection=polymer_b, material=shell_b)
         molecule.add_style("cartoon", selection=polymer_a, material=core_a)
@@ -413,11 +458,11 @@ def apply_preset_styles(preset: RenderPreset, molecule) -> None:
         return
 
     # 05 default
-    surf_a = create_soft_material("PR05_SurfaceA", (0.22, 0.54, 0.82, 1.0), 0.34, 0.01, 0.22, 0.52)
-    surf_b = create_soft_material("PR05_SurfaceB", (0.76, 0.43, 0.66, 1.0), 0.34, 0.01, 0.22, 0.48)
-    core_a = create_soft_material("PR05_CoreA", (0.84, 0.40, 0.22, 1.0), 0.34, 0.0, 0.10, 1.0, emission_strength=0.06)
-    core_b = create_soft_material("PR05_CoreB", (0.18, 0.68, 0.80, 1.0), 0.32, 0.0, 0.10, 1.0, emission_strength=0.08)
-    ligand = create_soft_material("PR05_Ligand", (0.93, 0.30, 0.53, 1.0), 0.20, 0.0, 0.20, 1.0)
+    surf_a = create_soft_material("PR05_SurfaceA", (0.34, 0.70, 0.95, 1.0), 0.28, 0.00, 0.20, 0.90)
+    surf_b = create_soft_material("PR05_SurfaceB", (0.87, 0.62, 0.82, 1.0), 0.28, 0.00, 0.20, 0.86)
+    core_a = create_soft_material("PR05_CoreA", (0.98, 0.66, 0.44, 1.0), 0.28, 0.0, 0.10, 1.0, emission_strength=0.07)
+    core_b = create_soft_material("PR05_CoreB", (0.20, 0.78, 0.90, 1.0), 0.28, 0.0, 0.10, 1.0, emission_strength=0.10)
+    ligand = create_soft_material("PR05_Ligand", (0.97, 0.39, 0.60, 1.0), 0.18, 0.0, 0.20, 1.0)
     molecule.add_style("surface", selection=polymer_a, material=surf_a)
     molecule.add_style("surface", selection=polymer_b, material=surf_b)
     molecule.add_style("cartoon", selection=polymer_a, material=core_a)
@@ -437,6 +482,9 @@ def configure_render(scene: bpy.types.Scene, preset: RenderPreset) -> None:
         if hasattr(scene.eevee, "use_bloom"):
             scene.eevee.use_bloom = False
     if hasattr(scene, "view_settings"):
+        transforms = {item.name for item in scene.view_settings.bl_rna.properties["view_transform"].enum_items}
+        if "Standard" in transforms:
+            scene.view_settings.view_transform = "Standard"
         scene.view_settings.exposure = preset.exposure
         if hasattr(scene.view_settings, "gamma"):
             scene.view_settings.gamma = 1.0
@@ -445,6 +493,8 @@ def configure_render(scene: bpy.types.Scene, preset: RenderPreset) -> None:
     scene.render.resolution_x = 1536
     scene.render.resolution_y = 1024
     scene.render.image_settings.file_format = "PNG"
+    if scene.camera is not None and hasattr(scene.camera.data, "dof"):
+        scene.camera.data.dof.use_dof = False
 
 
 def render_preset(

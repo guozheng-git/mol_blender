@@ -108,6 +108,11 @@ Press-release style renders:
 pixi run render-press-examples
 ```
 
+Notebook cells are included in:
+
+- `/Users/mb/Documents/blender_bridge/open_blender_scene.ipynb` (`### Press-Release Style Renders`)
+- `/Users/mb/Documents/blender_bridge/blender_live_connection.ipynb` (`### Press-Release Style Renders`)
+
 NotebookConnector / blender_notebook style live connection:
 
 - Inspired by [NotebookConnector](https://github.com/BradyAJohnston/NotebookConnector) and [blender_notebook](https://github.com/Octoframes/blender_notebook).
