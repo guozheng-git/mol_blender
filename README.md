@@ -33,6 +33,7 @@ pixi run test
 pixi run bridge --help
 pixi run export-1a3n
 pixi run build-1a3n
+pixi run render-press-examples
 pixi run install-bpy-kernel
 pixi run install-blender-live-kernel
 ```
@@ -96,6 +97,16 @@ Live notebook -> Blender control:
 - After launching Blender from the notebook, run:
   - `move_target(dx=0.02, dy=0.0, dz=0.0, save=True)` to move `1A3N` in the open Blender window.
   - `set_target_location(x, y, z, save=True)` for absolute positioning.
+
+Press-release style renders:
+
+- Script: `/Users/mb/Documents/blender_bridge/scripts/render_press_release_examples.py`
+- Output directory: `/Users/mb/Documents/blender_bridge/examples/press_release_renders`
+- Generate 5 curated stylistic variants:
+
+```bash
+pixi run render-press-examples
+```
 
 NotebookConnector / blender_notebook style live connection:
 
