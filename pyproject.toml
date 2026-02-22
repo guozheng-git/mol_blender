@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymol-blender-bridge"
+version = "0.1.0"
+description = "Bridge PyMOL session views into Blender via Molecular Nodes."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "PyMOL Blender Bridge" }]
+dependencies = []
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.24"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+pymol_blender_bridge = "pymol_blender_bridge.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

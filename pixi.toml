@@ -1,0 +1,24 @@
+[workspace]
+name = "pymol-blender-bridge"
+version = "0.1.0"
+description = "PyMOL to Blender bridge environment"
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[dependencies]
+python = "3.11.*"
+pip = "*"
+pytest = "*"
+jupyter = "*"
+
+[pypi-dependencies]
+pymol-blender-bridge = { path = ".", editable = true }
+bpy = "==5.0.1"
+molecularnodes = "==4.5.10"
+
+[tasks]
+bridge = "python -m pymol_blender_bridge.cli"
+test = "python -m pytest -q"
+export-1a3n = "python -m pymol_blender_bridge.cli export /Users/mb/Documents/blender_bridge/1A3N.pse --out /Users/mb/Documents/blender_bridge/1A3N_bundle"
+build-1a3n = "python -m pymol_blender_bridge.cli build-blend /Users/mb/Documents/blender_bridge/1A3N_bundle --blender /Applications/Blender.app/Contents/MacOS/Blender --out /Users/mb/Documents/blender_bridge/1A3N_scene.blend"
+install-bpy-kernel = "python -m ipykernel install --user --name blender --display-name \"blender\""

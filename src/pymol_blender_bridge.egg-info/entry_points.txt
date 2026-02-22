@@ -1,0 +1,2 @@
+[console_scripts]
+pymol_blender_bridge = pymol_blender_bridge.cli:main

@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/pymol_blender_bridge/__init__.py
+src/pymol_blender_bridge/blender_script.py
+src/pymol_blender_bridge/bundle_schema.py
+src/pymol_blender_bridge/cli.py
+src/pymol_blender_bridge/export_pse.py
+src/pymol_blender_bridge/view_math.py
+src/pymol_blender_bridge.egg-info/PKG-INFO
+src/pymol_blender_bridge.egg-info/SOURCES.txt
+src/pymol_blender_bridge.egg-info/dependency_links.txt
+src/pymol_blender_bridge.egg-info/entry_points.txt
+src/pymol_blender_bridge.egg-info/requires.txt
+src/pymol_blender_bridge.egg-info/top_level.txt
+tests/test_view_math.py
