@@ -23,6 +23,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+try:
+    from chain_palette import expand_polymer_styles_for_multichain_palette
+except Exception:  # pragma: no cover - package import fallback
+    from blender_render.chain_palette import expand_polymer_styles_for_multichain_palette
+
 
 def _configure_molecularnodes_import_path() -> None:
     raw = str(os.getenv("PRESS_MN_SITE_PACKAGES", "") or "").strip()
@@ -2968,18 +2973,25 @@ def _render(args: argparse.Namespace) -> None:
     base_obj = _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
     parser_mode = isinstance(load_result, _ParserMolecule)
 
+    protein_chain_ids = _protein_chain_ids(load_result)
     material_config = _apply_color_follow_to_materials(style_doc, view_doc)
+    runtime_styles, material_config, runtime_chain_colors = expand_polymer_styles_for_multichain_palette(
+        style_doc=style_doc,
+        materials_cfg=material_config,
+        protein_chain_ids=protein_chain_ids,
+    )
     materials = _build_materials(material_config)
     created_objects: list[bpy.types.Object] = []
     style_objects_by_name: dict[str, list[bpy.types.Object]] = {}
     debug_styles = _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False)
-    protein_chain_ids = _protein_chain_ids(load_result)
     runtime_polymer_backend = "none"
     runtime_ligand_backend = "none"
     runtime_ligand_atom_spheres = False
     styled_geometry_applied = False
+    if debug_styles and runtime_chain_colors:
+        print(f"Bridge Custom: runtime polymer chain colors {runtime_chain_colors}")
 
-    for style_idx, style_cfg in enumerate(style_doc["styles"]):
+    for style_idx, style_cfg in enumerate(runtime_styles):
         style_load_result = load_result
         style_base_obj = base_obj
         if parser_mode:
@@ -3263,6 +3275,8 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc["sticks_backend"] = runtime_ligand_backend
             manifest_doc["polymer_cartoon_backend"] = runtime_polymer_backend
             manifest_doc["cartoon_polymer_chain_ids"] = protein_chain_ids
+            if runtime_chain_colors:
+                manifest_doc["polymer_chain_colors"] = runtime_chain_colors
             run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
             run_manifest_path.write_text(json.dumps(manifest_doc, indent=2), encoding="utf-8")
         except Exception as exc:

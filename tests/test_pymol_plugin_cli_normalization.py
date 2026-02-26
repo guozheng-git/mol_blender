@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import blender_render.pymol_bridge_plugin as plugin
@@ -274,3 +275,181 @@ def test_bridge_render_interactive_open_forwards_attach_flags(monkeypatch, tmp_p
     assert command[command.index("--attach") + 1] == "1"
     assert "--attach-only" in command
     assert command[command.index("--attach-only") + 1] == "1"
+
+
+def test_bridge_render_sets_auto_close_interactive_session_flag(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "completed", "output_png": ""},
+        raising=False,
+    )
+
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_INTERACTIVE_SESSION", False, raising=False)
+    plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="local",
+        auto_close_interactive_session=1,
+    )
+    assert plugin._AUTO_CLOSE_INTERACTIVE_SESSION is True
+
+    plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="local",
+        auto_close_interactive_session=0,
+    )
+    assert plugin._AUTO_CLOSE_INTERACTIVE_SESSION is False
+    assert len(calls) == 2
+
+
+def test_exit_hook_closes_active_interactive_session_when_enabled(monkeypatch, tmp_path: Path):
+    captured = {"command": None}
+
+    def fake_subprocess_run(command, capture_output, text, check):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, returncode=0, stdout='{"status":"closed"}\n', stderr="")
+
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin.subprocess, "run", fake_subprocess_run, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_INTERACTIVE_SESSION", True, raising=False)
+    monkeypatch.setattr(plugin, "_ACTIVE_INTERACTIVE_SESSION_ID", "sess_exit", raising=False)
+
+    plugin._close_active_interactive_session_at_exit()
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[2] == "interactive-close"
+    assert "--session-id" in command
+    assert command[command.index("--session-id") + 1] == "sess_exit"
+    assert "--wait" in command
+    assert command[command.index("--wait") + 1] == "0"
+    assert plugin._ACTIVE_INTERACTIVE_SESSION_ID in {None, ""}
+
+
+def test_interactive_open_starts_auto_close_watchdog_when_enabled(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+    popen_calls = []
+
+    class _DummyProc:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        popen_calls.append((command, kwargs))
+        return _DummyProc()
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "ready", "session_id": "sess_watchdog"},
+        raising=False,
+    )
+    monkeypatch.setattr(plugin.subprocess, "Popen", fake_popen, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_WATCHDOGS", {}, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_INTERACTIVE_SESSION", False, raising=False)
+    monkeypatch.setattr(plugin, "_ACTIVE_INTERACTIVE_SESSION_ID", "", raising=False)
+
+    plugin.bridge_render(mode="interactive_open", attach=1, auto_close_interactive_session=1)
+
+    assert calls and calls[0][2] == "interactive-open"
+    assert popen_calls
+    matching = [item[0] for item in popen_calls if "sess_watchdog" in item[0]]
+    assert matching
+    assert matching[0][1] == "-c"
+
+
+def test_interactive_open_does_not_start_watchdog_when_auto_close_disabled(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+    popen_calls = []
+
+    class _DummyProc:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        popen_calls.append((command, kwargs))
+        return _DummyProc()
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "ready", "session_id": "sess_no_watchdog"},
+        raising=False,
+    )
+    monkeypatch.setattr(plugin.subprocess, "Popen", fake_popen, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_WATCHDOGS", {}, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_INTERACTIVE_SESSION", False, raising=False)
+    monkeypatch.setattr(plugin, "_ACTIVE_INTERACTIVE_SESSION_ID", "", raising=False)
+
+    plugin.bridge_render(mode="interactive_open", attach=1)
+
+    assert calls and calls[0][2] == "interactive-open"
+    assert popen_calls == []
+
+
+def test_interactive_submit_with_explicit_session_sets_active_for_auto_close(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+    popen_calls = []
+
+    class _DummyProc:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+    def fake_popen(command, **kwargs):
+        popen_calls.append((command, kwargs))
+        return _DummyProc()
+
+    def fake_run_runner(command):
+        calls.append(command)
+        subcommand = command[2]
+        if subcommand == "interactive-status":
+            return {"status": "running", "session_id": "sess_explicit"}
+        if subcommand == "interactive-submit":
+            return {"status": "completed", "output_png": ""}
+        raise AssertionError(f"unexpected subcommand: {subcommand}")
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+    monkeypatch.setattr(plugin, "_run_runner", fake_run_runner, raising=False)
+    monkeypatch.setattr(plugin.subprocess, "Popen", fake_popen, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_WATCHDOGS", {}, raising=False)
+    monkeypatch.setattr(plugin, "_AUTO_CLOSE_INTERACTIVE_SESSION", False, raising=False)
+    monkeypatch.setattr(plugin, "_ACTIVE_INTERACTIVE_SESSION_ID", "", raising=False)
+
+    plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="interactive",
+        interactive_session="sess_explicit",
+        auto_close_interactive_session=1,
+    )
+
+    assert [cmd[2] for cmd in calls] == ["interactive-status", "interactive-submit"]
+    assert plugin._ACTIVE_INTERACTIVE_SESSION_ID == "sess_explicit"
+    matching = [item[0] for item in popen_calls if "sess_explicit" in item[0]]
+    assert matching

@@ -4,6 +4,9 @@ Repository focus: PyMOL -> Blender bridge using JSON-defined style presets.
 
 Primary docs:
 - `blender_render/README.md`
+- See `blender_render/README.md` sections:
+  - `Interactive SLURM guide inside PyMOL`
+  - `bridge_runner vs pse_render_cli`
 
 Core runtime files:
 - `blender_render/pymol_bridge_plugin.py`

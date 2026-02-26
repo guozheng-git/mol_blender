@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import signal
 import shlex
 import shutil
 import subprocess
@@ -47,6 +49,11 @@ PRESET_1_STYLE_JSON_FILENAMES = {
 }
 SUPPORTED_INTERACTIVE_BACKENDS = {"qlogin", "jobid"}
 _ACTIVE_INTERACTIVE_SESSION_ID: str | None = None
+_AUTO_CLOSE_INTERACTIVE_SESSION = True
+_EXIT_CLEANUP_REGISTERED = False
+_SIGNAL_CLEANUP_REGISTERED = False
+_PREVIOUS_SIGNAL_HANDLERS: dict[int, Any] = {}
+_AUTO_CLOSE_WATCHDOGS: dict[str, subprocess.Popen[str]] = {}
 NUCLEIC_RES_NAMES = {"DA", "DT", "DG", "DC", "A", "U", "G", "C"}
 
 try:
@@ -570,8 +577,188 @@ def _get_active_interactive_session_id() -> str:
 
 def _set_active_interactive_session_id(session_id: str) -> None:
     global _ACTIVE_INTERACTIVE_SESSION_ID
+    previous = str(_ACTIVE_INTERACTIVE_SESSION_ID or "").strip()
     session = str(session_id).strip()
     _ACTIVE_INTERACTIVE_SESSION_ID = session if session else None
+    if previous and previous != session:
+        _stop_auto_close_watchdog(previous)
+    if session and bool(_AUTO_CLOSE_INTERACTIVE_SESSION):
+        _start_auto_close_watchdog(session)
+    if not session and previous:
+        _stop_auto_close_watchdog(previous)
+
+
+def _set_auto_close_interactive_session(enabled: bool) -> None:
+    global _AUTO_CLOSE_INTERACTIVE_SESSION
+    _AUTO_CLOSE_INTERACTIVE_SESSION = bool(enabled)
+    if not _AUTO_CLOSE_INTERACTIVE_SESSION:
+        for session_id in list(_AUTO_CLOSE_WATCHDOGS.keys()):
+            _stop_auto_close_watchdog(session_id)
+    else:
+        active = _get_active_interactive_session_id()
+        if active:
+            _start_auto_close_watchdog(active)
+
+
+def _watchdog_script_source() -> str:
+    return (
+        "import os, subprocess, sys, time\n"
+        "parent_pid = int(sys.argv[1])\n"
+        "runner_path = sys.argv[2]\n"
+        "session_id = sys.argv[3]\n"
+        "python_exe = sys.argv[4]\n"
+        "while True:\n"
+        "    if parent_pid <= 1:\n"
+        "        break\n"
+        "    try:\n"
+        "        os.kill(parent_pid, 0)\n"
+        "    except OSError:\n"
+        "        break\n"
+        "    time.sleep(2.0)\n"
+        "command = [\n"
+        "    python_exe,\n"
+        "    runner_path,\n"
+        "    'interactive-close',\n"
+        "    '--session-id',\n"
+        "    session_id,\n"
+        "    '--wait',\n"
+        "    '0',\n"
+        "    '--wait-timeout',\n"
+        "    '0',\n"
+        "    '--force',\n"
+        "    '0',\n"
+        "]\n"
+        "subprocess.run(command, capture_output=True, text=True, check=False)\n"
+    )
+
+
+def _start_auto_close_watchdog(session_id: str) -> None:
+    normalized_session = str(session_id).strip()
+    if not normalized_session or not bool(_AUTO_CLOSE_INTERACTIVE_SESSION):
+        return
+    existing = _AUTO_CLOSE_WATCHDOGS.get(normalized_session)
+    if existing is not None and existing.poll() is None:
+        return
+    try:
+        runner_path = str(_runner_path())
+    except Exception:
+        return
+    command = [
+        sys.executable,
+        "-c",
+        _watchdog_script_source(),
+        str(os.getpid()),
+        runner_path,
+        normalized_session,
+        sys.executable,
+    ]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+            text=True,
+        )
+    except Exception:
+        return
+    _AUTO_CLOSE_WATCHDOGS[normalized_session] = process
+
+
+def _stop_auto_close_watchdog(session_id: str) -> None:
+    normalized_session = str(session_id).strip()
+    if not normalized_session:
+        return
+    process = _AUTO_CLOSE_WATCHDOGS.pop(normalized_session, None)
+    if process is None:
+        return
+    try:
+        if process.poll() is None:
+            process.terminate()
+    except Exception:
+        return
+
+
+def _close_active_interactive_session_at_exit() -> None:
+    if not bool(_AUTO_CLOSE_INTERACTIVE_SESSION):
+        return
+    active = _get_active_interactive_session_id()
+    if not active:
+        return
+    try:
+        command = [
+            sys.executable,
+            str(_runner_path()),
+            "interactive-close",
+            "--session-id",
+            active,
+            "--wait",
+            "0",
+            "--wait-timeout",
+            "0",
+            "--force",
+            "0",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            _set_active_interactive_session_id("")
+            return
+        stderr_text = (result.stderr or "").strip()
+        if stderr_text:
+            print(
+                "blender_render: auto-close interactive session failed at exit:\n"
+                f"{stderr_text}",
+                file=sys.stderr,
+            )
+    except Exception as exc:
+        print(
+            "blender_render: auto-close interactive session failed at exit "
+            f"(exception: {exc})",
+            file=sys.stderr,
+        )
+
+
+def _register_exit_cleanup() -> None:
+    global _EXIT_CLEANUP_REGISTERED
+    if _EXIT_CLEANUP_REGISTERED:
+        return
+    atexit.register(_close_active_interactive_session_at_exit)
+    _EXIT_CLEANUP_REGISTERED = True
+
+
+def _signal_cleanup_handler(signum: int, frame: Any) -> None:  # pragma: no cover - signal path
+    _close_active_interactive_session_at_exit()
+    previous = _PREVIOUS_SIGNAL_HANDLERS.get(int(signum))
+    if callable(previous):
+        previous(signum, frame)
+        return
+    if previous == signal.SIG_IGN:
+        return
+    raise SystemExit(128 + int(signum))
+
+
+def _register_signal_cleanup() -> None:
+    global _SIGNAL_CLEANUP_REGISTERED
+    if _SIGNAL_CLEANUP_REGISTERED:
+        return
+    for signum in (
+        signal.SIGINT,
+        signal.SIGTERM,
+        signal.SIGHUP,
+        signal.SIGQUIT,
+    ):
+        try:
+            previous = signal.getsignal(signum)
+        except Exception:
+            continue
+        _PREVIOUS_SIGNAL_HANDLERS[int(signum)] = previous
+        try:
+            signal.signal(signum, _signal_cleanup_handler)
+        except Exception:
+            continue
+    _SIGNAL_CLEANUP_REGISTERED = True
 
 
 def _run_runner(command: list[str]) -> dict[str, Any]:
@@ -610,6 +797,7 @@ def bridge_render(
     preset: str = "preset_1_interface",
     style_json: str = "",
     mode: str = "local",
+    auto_close_interactive_session: int | str = "",
     interactive_session: str = "",
     interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
     attach: int | str = 0,
@@ -638,12 +826,15 @@ def bridge_render(
     preset = _normalize_cli_string(preset)
     style_json = _normalize_cli_string(style_json)
     render_mode = _normalize_cli_string(mode).lower()
+    auto_close_interactive_session_raw = _normalize_cli_string(auto_close_interactive_session)
     interactive_session = _normalize_cli_string(interactive_session)
     interactive_launcher = _normalize_cli_string(interactive_launcher)
     attach_flag = _parse_bool(attach)
     attach_only_flag = _parse_bool(attach_only)
     if attach_only_flag:
         attach_flag = True
+    if auto_close_interactive_session_raw:
+        _set_auto_close_interactive_session(_parse_bool(auto_close_interactive_session_raw))
     rough_flag = _parse_bool(rough)
     color_follow_flag = _parse_bool(color_follow)
     output_dir = _normalize_cli_string(output_dir)
@@ -815,6 +1006,7 @@ def bridge_render(
                     "Interactive mode could not open a session automatically. "
                     "Use mode='interactive_open' or pass interactive_session='...'."
                 )
+        _set_active_interactive_session_id(active_session)
         command.extend(["--session-id", active_session])
         command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
         command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
@@ -866,12 +1058,15 @@ def register_plugin(cmd_obj: Any | None = None) -> None:
 
     # Primary command name.
     target_cmd.extend("blender_render", bridge_render)
+    _register_exit_cleanup()
+    _register_signal_cleanup()
 
 
 def bridge_render_interactive(
     selection: str = "(all)",
     preset: str = "preset_1_interface",
     style_json: str = "",
+    auto_close_interactive_session: int | str = "",
     interactive_session: str = "",
     attach: int | str = 0,
     attach_only: int | str = 0,
@@ -893,6 +1088,7 @@ def bridge_render_interactive(
         preset=preset,
         style_json=style_json,
         mode="interactive",
+        auto_close_interactive_session=auto_close_interactive_session,
         interactive_session=interactive_session,
         attach=attach,
         attach_only=attach_only,
@@ -972,6 +1168,8 @@ def bridge_render_interactive_open(
     new_session_id = str(result.get("session_id", "")).strip()
     if new_session_id:
         _set_active_interactive_session_id(new_session_id)
+        if bool(_AUTO_CLOSE_INTERACTIVE_SESSION):
+            _start_auto_close_watchdog(new_session_id)
         print(f"blender_render_interactive_open: active session set to {new_session_id}")
     return result
 
