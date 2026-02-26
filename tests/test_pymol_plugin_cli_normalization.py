@@ -7,10 +7,21 @@ import pymol_plugin_bridge.pymol_bridge_plugin as plugin
 
 class FakeCmd:
     def get_str(self, fmt, selection, state=-1):
-        assert fmt == "cif"
         assert selection == "(all)"
         assert state == -1
-        return "data_test\n#\nloop_\n"
+        if fmt == "cif":
+            return "\n".join(
+                [
+                    "data_test",
+                    "loop_",
+                    "_atom_site.group_PDB",
+                    "_atom_site.id",
+                    "ATOM 1",
+                ]
+            )
+        if fmt == "pdb":
+            return "ATOM      1  N   GLY A   1      11.104  13.207  10.207  1.00 20.00           N"
+        raise KeyError(fmt)
 
     def get_view(self, quiet=1):
         assert quiet == 1
@@ -67,6 +78,30 @@ def test_bridge_render_accepts_quoted_mode_and_preset(monkeypatch, tmp_path: Pat
         mode="'local'",
     )
     assert result["status"] == "completed"
+
+
+def test_bridge_render_no_args_uses_local_preset_1(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "completed", "output_png": ""},
+        raising=False,
+    )
+
+    result = plugin.bridge_render()
+
+    assert result["status"] == "completed"
+    assert calls
+    command = calls[0]
+    assert command[2] == "local"
+    assert "--preset" in command
+    assert command[command.index("--preset") + 1] == "preset_1_interface"
 
 
 def test_bridge_render_forwards_rough_flag(monkeypatch, tmp_path: Path):

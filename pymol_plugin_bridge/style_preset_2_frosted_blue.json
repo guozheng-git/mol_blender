@@ -106,6 +106,26 @@
       "alpha": 1.0,
       "ao_strength": 0.12,
       "rim_strength": 0.12
+    },
+    "ion_accent": {
+      "base_color": "#B2BDF5",
+      "shadow_color": "#808DD0",
+      "highlight_color": "#D6DCFF",
+      "roughness": 0.36,
+      "specular": 0.38,
+      "alpha": 1.0,
+      "ao_strength": 0.06,
+      "rim_strength": 0.08
+    },
+    "water_soft": {
+      "base_color": "#D8ECFF",
+      "shadow_color": "#A5BED8",
+      "highlight_color": "#EEF6FF",
+      "roughness": 0.60,
+      "specular": 0.16,
+      "alpha": 0.80,
+      "ao_strength": 0.04,
+      "rim_strength": 0.04
     }
   },
   "styles": [
@@ -154,16 +174,41 @@
     },
     {
       "name": "ligand_sticks",
-      "style": "ball_and_stick",
+      "style": "sticks",
       "material": "ligand_main",
       "selection": {
-        "ligand": true
+        "query": "ligand and not resn HOH,WAT,DOD,SOL,TIP3,TIP3P and not resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
       },
       "fallback_selection": {
         "query": "ligand"
       },
-      "radius": 0.22,
-      "quality": 4,
+      "radius": 0.26,
+      "quality": 5,
+      "sticks_radius": 0.26,
+      "sticks_quality": 5,
+      "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ions_spheres",
+      "style": "spheres",
+      "material": "ion_accent",
+      "selection": {
+        "query": "ligand and resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.30,
+      "subdivisions": 3,
+      "shade_smooth": true
+    },
+    {
+      "name": "water_spheres",
+      "style": "spheres",
+      "material": "water_soft",
+      "selection": {
+        "query": "resn HOH,WAT,DOD,SOL,TIP3,TIP3P"
+      },
+      "radius": 0.20,
+      "subdivisions": 2,
       "shade_smooth": true
     }
   ]

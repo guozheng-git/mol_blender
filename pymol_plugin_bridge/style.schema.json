@@ -22,11 +22,21 @@
     "output": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format", "width", "height", "samples"],
+      "required": [
+        "format",
+        "width",
+        "height",
+        "samples"
+      ],
       "properties": {
         "format": {
           "type": "string",
-          "enum": ["PNG", "JPEG", "TIFF", "OPEN_EXR"]
+          "enum": [
+            "PNG",
+            "JPEG",
+            "TIFF",
+            "OPEN_EXR"
+          ]
         },
         "width": {
           "type": "integer",
@@ -55,16 +65,25 @@
     },
     "renderer": {
       "type": "object",
-      "additionalProperties": true,
-      "required": ["engine"],
+      "additionalProperties": false,
+      "required": [
+        "engine"
+      ],
       "properties": {
         "engine": {
           "type": "string",
-          "enum": ["CYCLES", "BLENDER_EEVEE", "EEVEE"]
+          "enum": [
+            "CYCLES",
+            "BLENDER_EEVEE",
+            "EEVEE"
+          ]
         },
         "device": {
           "type": "string",
-          "enum": ["GPU", "CPU"]
+          "enum": [
+            "GPU",
+            "CPU"
+          ]
         },
         "compute_device_type": {
           "type": "string"
@@ -90,16 +109,25 @@
         },
         "look": {
           "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "denoise": {
+          "type": "boolean"
         }
       }
     },
     "camera": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["pymol", "override"]
+          "enum": [
+            "pymol",
+            "override"
+          ]
         },
         "lens_mm": {
           "type": "number"
@@ -116,16 +144,56 @@
         },
         "anchor_model_center": {
           "type": "boolean"
+        },
+        "override_intrinsics": {
+          "type": "boolean"
+        },
+        "direction_source": {
+          "type": "string",
+          "enum": [
+            "preset",
+            "pymol"
+          ]
+        },
+        "yaw_offset_deg": {
+          "type": "number"
+        },
+        "pitch_offset_deg": {
+          "type": "number"
+        },
+        "yaw_deg": {
+          "type": "number"
+        },
+        "pitch_deg": {
+          "type": "number"
+        },
+        "distance_scale": {
+          "type": "number",
+          "minimum": 0
+        },
+        "focus_style": {
+          "type": "string"
+        },
+        "clip_start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "clip_end": {
+          "type": "number",
+          "minimum": 0
         }
       }
     },
     "world": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "background_type": {
           "type": "string",
-          "enum": ["solid", "gradient"]
+          "enum": [
+            "solid",
+            "gradient"
+          ]
         },
         "color": {
           "type": "string",
@@ -150,20 +218,36 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "additionalProperties": true,
-        "required": ["type", "energy", "location"],
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "energy"
+        ],
         "properties": {
           "name": {
             "type": "string"
           },
           "type": {
             "type": "string",
-            "enum": ["AREA", "SUN", "POINT", "SPOT"]
+            "enum": [
+              "AREA",
+              "SUN",
+              "POINT",
+              "SPOT"
+            ]
           },
           "energy": {
             "type": "number"
           },
           "size": {
+            "type": "number",
+            "minimum": 0
+          },
+          "size_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "min_size": {
             "type": "number",
             "minimum": 0
           },
@@ -187,6 +271,21 @@
               "type": "number"
             }
           },
+          "relative_vector": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "distance_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "look_at_target": {
+            "type": "boolean"
+          },
           "rotate_with_pymol_yaw": {
             "type": "boolean"
           }
@@ -198,9 +297,17 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "base_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "shadow_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "highlight_color": {
             "type": "string",
             "pattern": "^#[0-9A-Fa-f]{6}$"
           },
@@ -231,14 +338,6 @@
           "emission_strength": {
             "type": "number",
             "minimum": 0
-          },
-          "shadow_color": {
-            "type": "string",
-            "pattern": "^#[0-9A-Fa-f]{6}$"
-          },
-          "highlight_color": {
-            "type": "string",
-            "pattern": "^#[0-9A-Fa-f]{6}$"
           },
           "ao_strength": {
             "type": "number",
@@ -273,8 +372,13 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "additionalProperties": true,
-        "required": ["name", "style", "selection", "material"],
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "style",
+          "selection",
+          "material"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -287,7 +391,6 @@
               "cartoon",
               "sticks",
               "spheres",
-              "ball_and_stick",
               "ribbon",
               "wire"
             ]
@@ -310,8 +413,8 @@
             "minimum": 0
           },
           "quality": {
-            "type": "integer",
-            "minimum": 1
+            "type": "number",
+            "minimum": 0
           },
           "probe_radius": {
             "type": "number",
@@ -336,40 +439,71 @@
           "shade_smooth": {
             "type": "boolean"
           },
-          "sticks_backend": {
-            "type": "string",
-            "enum": [
-              "native",
-              "legacy_ball_and_stick",
-              "ball_and_stick",
-              "legacy"
-            ]
+          "peptide_cylinders": {
+            "type": "boolean"
           },
-          "sticks_fallback_radius_scale": {
+          "peptide_rounded": {
+            "type": "boolean"
+          },
+          "peptide_smoothing": {
             "type": "number",
             "minimum": 0
           },
-          "sticks_fallback_atom_scale": {
+          "nucleic_thickness": {
             "type": "number",
             "minimum": 0
           },
-          "sticks_fallback_bond_resolution": {
-            "type": "integer",
-            "minimum": 6
+          "nucleic_width": {
+            "type": "number",
+            "minimum": 0
+          },
+          "nucleic_radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "backbone_shape": {
+            "type": "string"
+          },
+          "base_shape": {
+            "type": "string"
+          },
+          "base_realize": {
+            "type": "boolean"
+          },
+          "color_blur": {
+            "type": "boolean"
+          },
+          "sticks_radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sticks_quality": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sticks_shade_smooth": {
+            "type": "boolean"
+          },
+          "del_solvent": {
+            "type": "boolean"
           }
         }
       }
     },
     "color_follow": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "enabled": {
           "type": "boolean"
         },
         "mode": {
           "type": "string",
-          "enum": ["auto", "chain", "class"]
+          "enum": [
+            "auto",
+            "chain",
+            "class"
+          ]
         },
         "mix": {
           "type": "number",

@@ -120,6 +120,26 @@
       "alpha": 0.98,
       "ao_strength": 0.08,
       "rim_strength": 0.06
+    },
+    "ion_soft": {
+      "base_color": "#B3C5FF",
+      "shadow_color": "#8396CF",
+      "highlight_color": "#D9E2FF",
+      "roughness": 0.36,
+      "specular": 0.42,
+      "alpha": 1.0,
+      "ao_strength": 0.06,
+      "rim_strength": 0.08
+    },
+    "water_soft": {
+      "base_color": "#D9F3FF",
+      "shadow_color": "#AAC9D7",
+      "highlight_color": "#F4FBFF",
+      "roughness": 0.60,
+      "specular": 0.16,
+      "alpha": 0.82,
+      "ao_strength": 0.04,
+      "rim_strength": 0.04
     }
   },
   "styles": [
@@ -194,15 +214,11 @@
       "selection": {
         "query": "resn PTR"
       },
-      "radius": 0.7,
+      "radius": 0.62,
       "quality": 8,
-      "sticks_radius": 0.7,
+      "sticks_radius": 0.62,
       "sticks_quality": 8,
       "sticks_shade_smooth": true,
-      "sticks_backend": "legacy_ball_and_stick",
-      "sticks_fallback_radius_scale": 0.6,
-      "sticks_fallback_atom_scale": 0.0,
-      "sticks_fallback_bond_resolution": 24,
       "shade_smooth": true
     },
     {
@@ -210,13 +226,35 @@
       "style": "sticks",
       "material": "ligand_main",
       "selection": {
-        "query": "ligand and not resn PTR"
+        "query": "ligand and not resn PTR and not resn HOH,WAT,DOD,SOL,TIP3,TIP3P and not resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
       },
       "radius": 0.52,
       "quality": 5,
       "sticks_radius": 0.52,
       "sticks_quality": 5,
       "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ions_spheres",
+      "style": "spheres",
+      "material": "ion_soft",
+      "selection": {
+        "query": "ligand and resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.33,
+      "subdivisions": 3,
+      "shade_smooth": true
+    },
+    {
+      "name": "water_spheres",
+      "style": "spheres",
+      "material": "water_soft",
+      "selection": {
+        "query": "resn HOH,WAT,DOD,SOL,TIP3,TIP3P"
+      },
+      "radius": 0.22,
+      "subdivisions": 2,
       "shade_smooth": true
     }
   ]

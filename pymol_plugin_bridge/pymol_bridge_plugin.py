@@ -538,6 +538,7 @@ def bridge_render(
     poll_interval: int | str = 5,
     save_blend: int | str = 0,
     blend_output: str = "",
+    keep_temp: int | str = 0,
 ) -> dict[str, Any]:
     if _PYMOL_CMD is None:
         raise RuntimeError("PyMOL cmd API is unavailable. Load this module from inside PyMOL.")
@@ -559,10 +560,26 @@ def bridge_render(
     slurm_gres = _normalize_cli_string(slurm_gres)
     slurm_time = _normalize_cli_string(slurm_time)
     save_blend_flag = _parse_bool(save_blend)
+    keep_temp_flag = _parse_bool(keep_temp)
     blend_output = _normalize_cli_string(blend_output)
 
-    if render_mode not in {"local", "interactive", "slurm"}:
-        raise RuntimeError("mode must be 'local', 'interactive', or 'slurm'.")
+    if render_mode not in {"local", "interactive", "slurm", "interactive_open", "interactive_status", "interactive_close"}:
+        raise RuntimeError(
+            "mode must be 'local', 'interactive', 'slurm', "
+            "'interactive_open', 'interactive_status', or 'interactive_close'."
+        )
+
+    if render_mode == "interactive_open":
+        result = bridge_render_interactive_open(
+            backend="qlogin",
+            interactive_launcher=interactive_launcher,
+            poll_interval=_parse_int(poll_interval, 2),
+        )
+        return result
+    if render_mode == "interactive_status":
+        return bridge_render_interactive_status(session_id=interactive_session)
+    if render_mode == "interactive_close":
+        return bridge_render_interactive_close(session_id=interactive_session)
 
     use_apptainer_flag = _parse_bool(use_apptainer)
     if render_mode in {"local", "interactive"}:
@@ -571,6 +588,27 @@ def bridge_render(
         if apptainer_image:
             use_apptainer_flag = True
         elif use_apptainer_flag and default_image.is_file():
+            apptainer_image = str(default_image)
+        elif (
+            render_mode == "local"
+            and not use_apptainer_flag
+            and not apptainer_image
+            and not style_json
+            and preset == "preset_1_interface"
+            and selection == "(all)"
+            and not output_dir
+            and not output_name
+            and not rough_flag
+            and not color_follow_flag
+            and not save_blend_flag
+            and not blend_output
+            and blender_exe == DEFAULT_BLENDER_EXE
+            and default_image.is_file()
+            and sys.platform != "darwin"
+        ):
+            # Make no-arg blender_render resilient on Linux hosts where local
+            # Blender/MN stacks vary, while preserving macOS local behavior.
+            use_apptainer_flag = True
             apptainer_image = str(default_image)
     if sys.platform == "darwin" and use_apptainer_flag:
         print("blender_render: apptainer is unavailable on macOS; using host Blender execution.")
@@ -626,6 +664,7 @@ def bridge_render(
     command.extend(["--rough", "1" if rough_flag else "0"])
     command.extend(["--color-follow", "1" if color_follow_flag else "0"])
     command.extend(["--save-blend", "1" if save_blend_flag else "0"])
+    command.extend(["--keep-temp", "1" if keep_temp_flag else "0"])
     if blend_output:
         command.extend(["--blend-output", str(Path(blend_output).expanduser())])
 
@@ -651,10 +690,17 @@ def bridge_render(
     elif render_mode == "interactive":
         active_session = interactive_session or _get_active_interactive_session_id()
         if not active_session:
-            raise RuntimeError(
-                "No interactive session is active. "
-                "Run blender_render_interactive_open(...) first or pass interactive_session='...'."
+            opened = bridge_render_interactive_open(
+                backend="qlogin",
+                interactive_launcher=interactive_launcher,
+                poll_interval=2,
             )
+            active_session = str(opened.get("session_id", "")).strip()
+            if not active_session:
+                raise RuntimeError(
+                    "Interactive mode could not open a session automatically. "
+                    "Use mode='interactive_open' or pass interactive_session='...'."
+                )
         command.extend(["--session-id", active_session])
         command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
         command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
@@ -689,6 +735,12 @@ def bridge_render(
     output_blend = result.get("output_blend")
     if isinstance(output_blend, str) and output_blend:
         print(f"blender_render: blend session saved at {output_blend}")
+    temp_dir = result.get("temp_dir")
+    if isinstance(temp_dir, str) and temp_dir:
+        if bool(result.get("temp_kept", False)):
+            print(f"blender_render: kept temp session dir: {temp_dir}")
+        else:
+            print(f"blender_render: temp session dir cleaned: {temp_dir}")
 
     return result
 
@@ -700,10 +752,6 @@ def register_plugin(cmd_obj: Any | None = None) -> None:
 
     # Primary command name.
     target_cmd.extend("blender_render", bridge_render)
-    target_cmd.extend("blender_render_interactive", bridge_render_interactive)
-    target_cmd.extend("blender_render_interactive_open", bridge_render_interactive_open)
-    target_cmd.extend("blender_render_interactive_status", bridge_render_interactive_status)
-    target_cmd.extend("blender_render_interactive_close", bridge_render_interactive_close)
 
 
 def bridge_render_interactive(
@@ -722,6 +770,7 @@ def bridge_render_interactive(
     poll_interval: int | str = 5,
     save_blend: int | str = 0,
     blend_output: str = "",
+    keep_temp: int | str = 0,
 ) -> dict[str, Any]:
     return bridge_render(
         selection=selection,
@@ -740,6 +789,7 @@ def bridge_render_interactive(
         poll_interval=poll_interval,
         save_blend=save_blend,
         blend_output=blend_output,
+        keep_temp=keep_temp,
     )
 
 

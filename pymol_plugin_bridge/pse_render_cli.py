@@ -40,6 +40,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--color-follow", type=_parse_bool, default=False)
     parser.add_argument("--save-blend", type=_parse_bool, default=False)
     parser.add_argument("--blend-output", default="")
+    parser.add_argument("--keep-temp", type=_parse_bool, default=False)
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--output-name", default="")
     parser.add_argument("--blender-exe", default=DEFAULT_BLENDER_EXE)
@@ -118,6 +119,8 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         "1" if bool(args.color_follow) else "0",
         "--save-blend",
         "1" if bool(args.save_blend) else "0",
+        "--keep-temp",
+        "1" if bool(args.keep_temp) else "0",
     ]
     if args.blend_output:
         command.extend(["--blend-output", str(Path(args.blend_output).expanduser())])

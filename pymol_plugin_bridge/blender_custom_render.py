@@ -93,11 +93,17 @@ def _parse_argv(argv: list[str]) -> argparse.Namespace:
         tail = argv[1:]
 
     parser = argparse.ArgumentParser(description="Custom Blender renderer for CIF + PyMOL camera payload.")
-    parser.add_argument("--cif", required=True)
+    parser.add_argument("--structure", default="")
+    parser.add_argument("--cif", default="")
     parser.add_argument("--view-json", required=True)
     parser.add_argument("--style-json", required=True)
     parser.add_argument("--output-png", required=True)
-    return parser.parse_args(tail)
+    parsed = parser.parse_args(tail)
+    if not str(parsed.structure).strip():
+        parsed.structure = str(parsed.cif or "").strip()
+    if not str(parsed.structure).strip():
+        parser.error("Expected --structure <path> (or legacy --cif <path>).")
+    return parsed
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
@@ -672,23 +678,10 @@ class _ParserMolecule:
 
     def add_style(self, style_name: str, selection: Any = None, material: Any = None, **kwargs: Any):
         style_aliases = {
-            "ball+stick": "ball_and_stick",
             "sphere": "spheres",
         }
         resolved_style = style_aliases.get(style_name, style_name)
         style_candidates = [resolved_style]
-        sticks_backend = str(kwargs.get("sticks_backend", "") or "").strip().lower()
-        prefer_ball_and_stick = sticks_backend in {
-            "ball_and_stick",
-            "legacy_ball_and_stick",
-            "legacy",
-            "fallback_ball_and_stick",
-        }
-        if style_name == "sticks" and resolved_style != "ball_and_stick":
-            if prefer_ball_and_stick:
-                style_candidates = ["ball_and_stick", resolved_style]
-            else:
-                style_candidates.append("ball_and_stick")
         indices = self._selection_indices(selection)
 
         if indices is not None and len(indices) == 0:
@@ -717,7 +710,7 @@ class _ParserMolecule:
                 "name": f"{self._base_name}_{style_candidate}_{self._style_counter}",
                 "style": style_candidate,
                 "centre": False,
-                "del_solvent": True,
+                "del_solvent": bool(kwargs.get("del_solvent", False)),
             }
             candidate_object_name = str(create_kwargs["name"])
             if indices is not None:
@@ -800,7 +793,7 @@ class _ParserMolecule:
                     "name": f"{self._base_name}_ribbon_{self._style_counter}",
                     "style": "ribbon",
                     "centre": False,
-                    "del_solvent": True,
+                    "del_solvent": bool(kwargs.get("del_solvent", False)),
                 }
                 if indices is not None:
                     ribbon_kwargs["selection"] = indices
@@ -817,28 +810,7 @@ class _ParserMolecule:
                 except Exception:
                     pass
 
-        if style_name == "sticks" and resolved_style == "ball_and_stick":
-            desired_radius = kwargs.get("sticks_radius", kwargs.get("radius"))
-            desired_quality = kwargs.get("sticks_quality", kwargs.get("quality"))
-            desired_shade_smooth = kwargs.get("sticks_shade_smooth", kwargs.get("shade_smooth"))
-            desired_fallback_radius_scale = kwargs.get("sticks_fallback_radius_scale")
-            desired_fallback_atom_scale = kwargs.get("sticks_fallback_atom_scale")
-            desired_fallback_bond_resolution = kwargs.get("sticks_fallback_bond_resolution")
-            tuned = _tune_ball_and_stick_to_sticks(
-                created,
-                float(desired_radius) if desired_radius is not None else None,
-                desired_quality,
-                desired_shade_smooth,
-                desired_fallback_radius_scale,
-                desired_fallback_atom_scale,
-                desired_fallback_bond_resolution,
-            )
-            if tuned > 0:
-                print(
-                    "Bridge Custom: tuned ball_and_stick fallback to sticks-like render "
-                    f"(sockets={tuned}) for {self._base_name}"
-                )
-        elif style_name == "sticks" and resolved_style == "sticks":
+        if style_name == "sticks" and resolved_style == "sticks":
             desired_radius = kwargs.get("sticks_radius", kwargs.get("radius"))
             desired_quality = kwargs.get("sticks_quality", kwargs.get("quality"))
             desired_shade_smooth = kwargs.get("sticks_shade_smooth", kwargs.get("shade_smooth"))
@@ -1137,6 +1109,16 @@ def _ensure_biotite_pdbx_compat() -> None:
             print("Bridge Custom loader: installed compat pdbx.PDBxFile wrapper")
     except Exception:
         pass
+
+
+def _ensure_biotite_ccd_database() -> None:
+    try:
+        from biotite.setup_ccd import main as setup_ccd_main  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(
+            "Molecular Nodes requested CCD data but biotite.setup_ccd is unavailable."
+        ) from exc
+    setup_ccd_main()
 
 
 def _load_molecule_with_fallback(structure_path: Path, object_name: str):
@@ -1636,19 +1618,6 @@ def _set_numeric_socket_default(socket: Any, value: float) -> bool:
     return False
 
 
-def _parse_quality_to_resolution(stick_quality: Any) -> int | None:
-    if stick_quality is None:
-        return None
-    try:
-        quality = float(stick_quality)
-    except Exception:
-        return None
-    if not math.isfinite(quality) or quality <= 0.0:
-        return None
-    # Map style quality to a smoother bond cylinder resolution.
-    return max(6, int(round(quality * 2.5)))
-
-
 def _tune_native_sticks_style(
     obj: bpy.types.Object,
     stick_radius: float | None,
@@ -1703,104 +1672,6 @@ def _tune_native_sticks_style(
                     except Exception:
                         pass
                     continue
-    return changed
-
-
-def _tune_ball_and_stick_to_sticks(
-    obj: bpy.types.Object,
-    stick_radius: float | None,
-    stick_quality: Any = None,
-    stick_shade_smooth: Any = None,
-    stick_fallback_radius_scale: Any = None,
-    stick_fallback_atom_scale: Any = None,
-    stick_fallback_bond_resolution: Any = None,
-) -> int:
-    changed = 0
-    debug = _env_bool("PRESS_DEBUG_STYLE_SOCKETS", False)
-    debug_rows: list[str] = []
-    effective_stick_radius: float | None = None
-    if stick_fallback_radius_scale is not None:
-        try:
-            radius_scale = max(0.0, float(stick_fallback_radius_scale))
-        except Exception:
-            radius_scale = max(0.0, _env_float("PRESS_STICKS_FALLBACK_RADIUS_SCALE", 0.30))
-    else:
-        radius_scale = max(0.0, _env_float("PRESS_STICKS_FALLBACK_RADIUS_SCALE", 0.30))
-    if stick_radius is not None:
-        effective_stick_radius = max(0.01, float(stick_radius) * radius_scale)
-    if stick_fallback_atom_scale is not None:
-        try:
-            atom_scale = max(0.0, float(stick_fallback_atom_scale))
-        except Exception:
-            atom_scale = max(0.0, _env_float("PRESS_STICKS_FALLBACK_ATOM_SCALE", 0.0))
-    else:
-        atom_scale = max(0.0, _env_float("PRESS_STICKS_FALLBACK_ATOM_SCALE", 0.0))
-    effective_atom_radius = None
-    if effective_stick_radius is not None:
-        effective_atom_radius = max(0.0, float(effective_stick_radius) * atom_scale)
-    desired_resolution = _parse_quality_to_resolution(stick_quality)
-    if desired_resolution is None:
-        if stick_fallback_bond_resolution is not None:
-            try:
-                desired_resolution = max(6, int(round(float(stick_fallback_bond_resolution))))
-            except Exception:
-                desired_resolution = None
-        if desired_resolution is None:
-            desired_resolution = max(6, int(round(_env_float("PRESS_STICKS_FALLBACK_BOND_RESOLUTION", 12.0))))
-    desired_shade_smooth = bool(stick_shade_smooth) if stick_shade_smooth is not None else True
-    for modifier in getattr(obj, "modifiers", []):
-        if modifier.type != "NODES" or modifier.node_group is None:
-            continue
-        for node in modifier.node_group.nodes:
-            for socket in node.inputs:
-                name = str(getattr(socket, "name", "")).strip().lower()
-                radius_like = ("radius" in name) or ("radii" in name) or ("scale" in name)
-                resolution_like = "resolution" in name
-                if debug:
-                    try:
-                        debug_rows.append(f"{node.name}:{socket.name}={socket.default_value!r}")
-                    except Exception:
-                        pass
-                if any(token in name for token in ("atom", "ball", "sphere", "vdw")):
-                    default_value = getattr(socket, "default_value", None)
-                    if isinstance(default_value, bool):
-                        try:
-                            socket.default_value = bool(
-                                effective_atom_radius is not None and float(effective_atom_radius) > 1e-6
-                            )
-                            changed += 1
-                        except Exception:
-                            pass
-                    elif effective_atom_radius is not None and radius_like and _set_numeric_socket_default(
-                        socket, float(effective_atom_radius)
-                    ):
-                        changed += 1
-                elif any(token in name for token in ("bond", "stick", "cylinder")):
-                    default_value = getattr(socket, "default_value", None)
-                    if isinstance(default_value, bool):
-                        try:
-                            socket.default_value = desired_shade_smooth
-                            changed += 1
-                        except Exception:
-                            pass
-                    elif resolution_like and _set_numeric_socket_default(socket, float(desired_resolution)):
-                        changed += 1
-                    elif (
-                        effective_stick_radius is not None
-                        and (radius_like or isinstance(default_value, (int, float)))
-                        and _set_numeric_socket_default(socket, float(effective_stick_radius))
-                    ):
-                        changed += 1
-                elif "shade smooth" in name:
-                    default_value = getattr(socket, "default_value", None)
-                    if isinstance(default_value, bool):
-                        try:
-                            socket.default_value = desired_shade_smooth
-                            changed += 1
-                        except Exception:
-                            pass
-    if debug and debug_rows:
-        print("Bridge Custom debug sockets:\n" + "\n".join(debug_rows))
     return changed
 
 
@@ -1924,10 +1795,6 @@ def _add_style(
         "sticks_radius",
         "sticks_quality",
         "sticks_shade_smooth",
-        "sticks_backend",
-        "sticks_fallback_radius_scale",
-        "sticks_fallback_atom_scale",
-        "sticks_fallback_bond_resolution",
     ):
         if key in style_cfg:
             extra_kwargs[key] = style_cfg[key]
@@ -2445,9 +2312,9 @@ def _render(args: argparse.Namespace) -> None:
     view_path = Path(args.view_json).expanduser()
     if not view_path.is_absolute():
         view_path = (Path.cwd() / view_path).absolute()
-    cif_path = Path(args.cif).expanduser()
-    if not cif_path.is_absolute():
-        cif_path = (Path.cwd() / cif_path).absolute()
+    structure_path = Path(args.structure).expanduser()
+    if not structure_path.is_absolute():
+        structure_path = (Path.cwd() / structure_path).absolute()
     output_png = Path(args.output_png).expanduser()
     if not output_png.is_absolute():
         output_png = (Path.cwd() / output_png).absolute()
@@ -2467,7 +2334,26 @@ def _render(args: argparse.Namespace) -> None:
     except Exception:
         pymol_up_axis = None
 
-    load_result = _load_molecule_with_fallback(cif_path, "BridgeCustom")
+    ccd_retry_used = False
+
+    def _load_with_ccd_retry(path: Path, object_name: str):
+        nonlocal ccd_retry_used
+        try:
+            return _load_molecule_with_fallback(path, object_name)
+        except Exception as exc:
+            message = str(exc).lower()
+            needs_ccd = (
+                "components.bcif" in message
+                or "ccd" in message
+                or "chemical component" in message
+            )
+            if not needs_ccd or ccd_retry_used:
+                raise
+            _ensure_biotite_ccd_database()
+            ccd_retry_used = True
+            return _load_molecule_with_fallback(path, object_name)
+
+    load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
     base_obj = _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
     parser_mode = isinstance(load_result, _ParserMolecule)
 
@@ -2482,7 +2368,7 @@ def _render(args: argparse.Namespace) -> None:
         style_base_obj = base_obj
         if parser_mode:
             style_object_name = f"BridgeCustom_{style_idx}"
-            style_load_result = _load_molecule_with_fallback(cif_path, style_object_name)
+            style_load_result = _load_with_ccd_retry(structure_path, style_object_name)
             style_base_obj = _resolve_loaded_object(style_load_result, style_object_name, allow_missing=True)
 
         selection_cfg = style_cfg.get("selection", {})

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -111,6 +112,113 @@ def test_local_preset_mode_emits_expected_blender_command(monkeypatch, payload_f
     assert command[0] in allowed
     assert any(item.endswith("pymol_plugin_bridge/blender_custom_render.py") for item in command)
     assert "--style-json" in command
+    assert "--structure" in command
+    assert Path(command[command.index("--structure") + 1]).name == "structure.cif"
+
+
+def test_local_mode_retries_with_pdb_after_cif_failure(monkeypatch, tmp_path: Path):
+    payload = {
+        "version": "1.0",
+        "run_id": "testrun_retry",
+        "cif_text": "\n".join(
+            [
+                "data_demo",
+                "loop_",
+                "_atom_site.group_PDB",
+                "_atom_site.id",
+                "ATOM 1",
+            ]
+        ),
+        "pdb_text": "ATOM      1  N   GLY A   1      11.104  13.207  10.207  1.00 20.00           N\n",
+        "view": {
+            "pymol_view": [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                -50.0,
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                120.0,
+                50.0,
+            ]
+        },
+    }
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+    args = _base_args(payload_path, tmp_path)
+    args.output_name = "retry.png"
+
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, env=None):
+        calls.append(command)
+        structure_arg = Path(command[command.index("--structure") + 1])
+        output_png = Path(command[command.index("--output-png") + 1])
+        if structure_arg.suffix == ".cif":
+            return CompletedProcess(command, 1, stdout="", stderr="simulated CIF loader failure")
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    result = bridge_runner.run_local(args)
+
+    assert result["status"] == "completed"
+    assert len(calls) >= 2
+    first_structure = Path(calls[0][calls[0].index("--structure") + 1]).name
+    second_structure = Path(calls[1][calls[1].index("--structure") + 1]).name
+    assert first_structure == "structure.cif"
+    assert second_structure == "structure.pdb"
+    assert result["staged_structure_path"].endswith("structure.pdb")
+
+
+def test_local_temp_dir_is_cleaned_by_default(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.output_name = "cleaned.png"
+
+    def fake_run(command, *, env=None):
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+    result = bridge_runner.run_local(args)
+
+    temp_dir = Path(result["temp_dir"])
+    assert result["temp_kept"] is False
+    assert not temp_dir.exists()
+
+
+def test_local_temp_dir_is_kept_when_requested(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.output_name = "kept.png"
+    args.keep_temp = True
+
+    def fake_run(command, *, env=None):
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+    result = bridge_runner.run_local(args)
+
+    temp_dir = Path(result["temp_dir"])
+    assert result["temp_kept"] is True
+    assert temp_dir.exists()
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_local_custom_mode_emits_expected_blender_command(monkeypatch, payload_file: Path, tmp_path: Path):

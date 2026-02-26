@@ -24,13 +24,13 @@ Useful flags:
 
 ## JSON presets shipped
 
-- `style_preset_1_reference_exact.json`
+- `style_preset_1_opaque_pastel.json`
 - `style_preset_2_frosted_blue.json`
 - `style_preset_3_black_tubes.json`
 - `style_preset_4_milky_green.json`
 - `style_preset_5_black_interface.json`
 
-All presets include broad selections for polymer, nucleic acids, and ligands.
+All presets include broad selections for polymers, nucleic acids, ligands, ions, and waters.
 
 `preset_1_interface` now mirrors the design constants from
 `/home/magnusb/blender_bridge/render_cd3_single_frame_standalone.py`
@@ -43,12 +43,8 @@ in JSON form:
   the standalone framing behavior (not raw exact PyMOL camera position)
 
 How it is applied in Blender:
-- `bridge_runner.py` resolves `preset_1_interface` to `style_preset_1_reference_exact.json`.
+- `bridge_runner.py` resolves `preset_1_interface` to `style_preset_1_opaque_pastel.json`.
 - `blender_custom_render.py` loads CIF + PyMOL view, builds styles from JSON, assigns materials to GN style nodes, computes scene bounds, and places lights (preset vectors scaled from scene radius).
-- For `style: "sticks"`, optional `sticks_backend` can force backend choice:
-  `native` (default) or `legacy_ball_and_stick` (the fallback used by the original onefile reference renders).
-- Legacy fallback can be tuned per style with:
-  `sticks_fallback_radius_scale`, `sticks_fallback_atom_scale`, and `sticks_fallback_bond_resolution`.
 - For lights with `relative_vector`, optional `rotate_with_pymol_yaw: true` rotates vectors around the PyMOL up-axis using `camera.yaw_offset_deg`.
 
 ## Command line from `.pse`
@@ -70,7 +66,7 @@ Custom JSON style example:
 ```bash
 /opt/pymol/bin/python pymol_plugin_bridge/pse_render_cli.py \
   --pse /home/magnusb/blender_bridge/CD3.pse \
-  --style-json /home/magnusb/blender_bridge/pymol_plugin_bridge/style_preset_1_reference_exact.json \
+  --style-json /home/magnusb/blender_bridge/pymol_plugin_bridge/style_preset_1_opaque_pastel.json \
   --mode local \
   --color-follow 1
 ```

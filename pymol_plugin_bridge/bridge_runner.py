@@ -46,7 +46,7 @@ PRESET_OUTPUT_FILENAMES: dict[str, str] = {
 }
 
 PRESET_STYLE_FILENAMES: dict[str, str] = {
-    "preset_1_interface": "style_preset_1_reference_exact.json",
+    "preset_1_interface": "style_preset_1_opaque_pastel.json",
     "preset_2_frosted_blue": "style_preset_2_frosted_blue.json",
     "preset_3_black_tubes": "style_preset_3_black_tubes.json",
     "preset_4_milky_green": "style_preset_4_milky_green.json",
@@ -58,13 +58,110 @@ SUPPORTED_STYLE_KINDS = {
     "cartoon",
     "sticks",
     "spheres",
-    "ball_and_stick",
     "ribbon",
     "wire",
 }
 
 SELECTION_DSL_KEYS = {"polymer", "nucleic", "ligand", "chain", "residue_range", "query"}
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
+STYLE_TOP_LEVEL_OPTIONAL_KEYS = {"color_follow"}
+OUTPUT_KEYS = {"format", "width", "height", "samples", "filename", "save_blend", "blend_filename"}
+RENDERER_KEYS = {
+    "engine",
+    "device",
+    "compute_device_type",
+    "transparent_background",
+    "adaptive_sampling",
+    "require_gpu",
+    "exposure",
+    "gamma",
+    "view_transform",
+    "look",
+    "seed",
+    "denoise",
+}
+CAMERA_KEYS = {
+    "mode",
+    "lens_mm",
+    "shift_x",
+    "shift_y",
+    "world_scale",
+    "anchor_model_center",
+    "override_intrinsics",
+    "direction_source",
+    "yaw_offset_deg",
+    "pitch_offset_deg",
+    "yaw_deg",
+    "pitch_deg",
+    "distance_scale",
+    "focus_style",
+    "clip_start",
+    "clip_end",
+}
+WORLD_KEYS = {"background_type", "color", "top_color", "bottom_color", "strength"}
+LIGHT_KEYS = {
+    "name",
+    "type",
+    "energy",
+    "size",
+    "size_scale",
+    "min_size",
+    "color",
+    "location",
+    "rotation_deg",
+    "relative_vector",
+    "distance_scale",
+    "look_at_target",
+    "rotate_with_pymol_yaw",
+}
+MATERIAL_KEYS = {
+    "base_color",
+    "shadow_color",
+    "highlight_color",
+    "roughness",
+    "specular",
+    "transmission",
+    "alpha",
+    "emission_color",
+    "emission_strength",
+    "ao_strength",
+    "rim_strength",
+    "rim_blend",
+    "rim_power",
+    "ao_distance",
+    "coat",
+}
+STYLE_KEYS = {
+    "name",
+    "style",
+    "material",
+    "color",
+    "selection",
+    "fallback_selection",
+    "radius",
+    "quality",
+    "probe_radius",
+    "subdivisions",
+    "thickness",
+    "width",
+    "loop_radius",
+    "shade_smooth",
+    "peptide_cylinders",
+    "peptide_rounded",
+    "peptide_smoothing",
+    "nucleic_thickness",
+    "nucleic_width",
+    "nucleic_radius",
+    "backbone_shape",
+    "base_shape",
+    "base_realize",
+    "color_blur",
+    "sticks_radius",
+    "sticks_quality",
+    "sticks_shade_smooth",
+    "del_solvent",
+}
+COLOR_FOLLOW_KEYS = {"enabled", "mode", "mix", "saturation_boost", "value_boost"}
 
 try:
     import jsonschema as _jsonschema
@@ -296,6 +393,15 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
     missing = [key for key in REQUIRED_STYLE_TOP_KEYS if key not in style_doc]
     if missing:
         errors.append(f"Missing required top-level keys: {', '.join(missing)}")
+    extra_top = sorted(
+        set(style_doc.keys()) - (set(REQUIRED_STYLE_TOP_KEYS) | STYLE_TOP_LEVEL_OPTIONAL_KEYS)
+    )
+    if extra_top:
+        errors.append(
+            "Style JSON contains unsupported top-level keys: "
+            f"{', '.join(extra_top)}. "
+            f"Allowed top-level keys: {', '.join(sorted(set(REQUIRED_STYLE_TOP_KEYS) | STYLE_TOP_LEVEL_OPTIONAL_KEYS))}."
+        )
 
     version = style_doc.get("version")
     if version is not None and not isinstance(version, str):
@@ -305,6 +411,13 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         errors.append("'output' must be an object.")
     else:
+        extra_output = sorted(set(output.keys()) - OUTPUT_KEYS)
+        if extra_output:
+            errors.append(
+                "'output' contains unsupported keys: "
+                f"{', '.join(extra_output)}. "
+                f"Allowed keys: {', '.join(sorted(OUTPUT_KEYS))}."
+            )
         for key in ("width", "height", "samples"):
             value = output.get(key)
             if not isinstance(value, int) or value <= 0:
@@ -323,6 +436,13 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(renderer, dict):
         errors.append("'renderer' must be an object.")
     else:
+        extra_renderer = sorted(set(renderer.keys()) - RENDERER_KEYS)
+        if extra_renderer:
+            errors.append(
+                "'renderer' contains unsupported keys: "
+                f"{', '.join(extra_renderer)}. "
+                f"Allowed keys: {', '.join(sorted(RENDERER_KEYS))}."
+            )
         engine = renderer.get("engine")
         if not isinstance(engine, str) or engine.upper() not in {"CYCLES", "BLENDER_EEVEE", "EEVEE"}:
             errors.append("'renderer.engine' must be CYCLES, BLENDER_EEVEE, or EEVEE.")
@@ -330,10 +450,26 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
     camera = style_doc.get("camera")
     if not isinstance(camera, dict):
         errors.append("'camera' must be an object.")
+    else:
+        extra_camera = sorted(set(camera.keys()) - CAMERA_KEYS)
+        if extra_camera:
+            errors.append(
+                "'camera' contains unsupported keys: "
+                f"{', '.join(extra_camera)}. "
+                f"Allowed keys: {', '.join(sorted(CAMERA_KEYS))}."
+            )
 
     world = style_doc.get("world")
     if not isinstance(world, dict):
         errors.append("'world' must be an object.")
+    else:
+        extra_world = sorted(set(world.keys()) - WORLD_KEYS)
+        if extra_world:
+            errors.append(
+                "'world' contains unsupported keys: "
+                f"{', '.join(extra_world)}. "
+                f"Allowed keys: {', '.join(sorted(WORLD_KEYS))}."
+            )
 
     lights = style_doc.get("lights")
     if not isinstance(lights, list):
@@ -343,6 +479,12 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(light, dict):
                 errors.append(f"'lights[{idx}]' must be an object.")
                 continue
+            extra_light = sorted(set(light.keys()) - LIGHT_KEYS)
+            if extra_light:
+                errors.append(
+                    f"'lights[{idx}]' contains unsupported keys: {', '.join(extra_light)}. "
+                    f"Allowed keys: {', '.join(sorted(LIGHT_KEYS))}."
+                )
             light_type = light.get("type")
             if not isinstance(light_type, str) or light_type.upper() not in {"AREA", "SUN", "POINT", "SPOT"}:
                 errors.append(f"'lights[{idx}].type' must be AREA/SUN/POINT/SPOT.")
@@ -358,6 +500,12 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(mat_def, dict):
                 errors.append(f"'materials.{mat_name}' must be an object.")
                 continue
+            extra_mat_keys = sorted(set(mat_def.keys()) - MATERIAL_KEYS)
+            if extra_mat_keys:
+                errors.append(
+                    f"'materials.{mat_name}' contains unsupported keys: {', '.join(extra_mat_keys)}. "
+                    f"Allowed keys: {', '.join(sorted(MATERIAL_KEYS))}."
+                )
             base_color = mat_def.get("base_color")
             if base_color is not None and (
                 not isinstance(base_color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", base_color)
@@ -373,6 +521,12 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(style, dict):
                 errors.append(f"'{field_base}' must be an object.")
                 continue
+            extra_style_keys = sorted(set(style.keys()) - STYLE_KEYS)
+            if extra_style_keys:
+                errors.append(
+                    f"'{field_base}' contains unsupported keys: {', '.join(extra_style_keys)}. "
+                    f"Allowed keys: {', '.join(sorted(STYLE_KEYS))}."
+                )
 
             for key in ("name", "style", "selection", "material"):
                 if key not in style:
@@ -412,6 +566,13 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(color_follow, dict):
             errors.append("'color_follow' must be an object when provided.")
         else:
+            extra_cf_keys = sorted(set(color_follow.keys()) - COLOR_FOLLOW_KEYS)
+            if extra_cf_keys:
+                errors.append(
+                    "'color_follow' contains unsupported keys: "
+                    f"{', '.join(extra_cf_keys)}. "
+                    f"Allowed keys: {', '.join(sorted(COLOR_FOLLOW_KEYS))}."
+                )
             enabled = color_follow.get("enabled")
             if enabled is not None and not isinstance(enabled, bool):
                 errors.append("'color_follow.enabled' must be boolean when provided.")
@@ -481,26 +642,30 @@ def _resolve_output_png(
     return out_dir / filename
 
 
-def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[Path, Path, Path, Path]:
+def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[Path, Path, Path, Path | None, Path]:
     temp_root = Path("/tmp/pymol_bridge") / run_id
     bundle_dir = temp_root / "bundle"
     structures_dir = bundle_dir / "structures"
     structures_dir.mkdir(parents=True, exist_ok=True)
 
-    structure_path: Path
     pdb_text = payload.get("pdb_text")
     cif_text = payload.get("cif_text")
+    cif_path: Path | None = None
+    pdb_path: Path | None = None
+    if isinstance(cif_text, str) and _looks_like_cif_atom_site(cif_text):
+        cif_path = structures_dir / "structure.cif"
+        cif_path.write_text(cif_text, encoding="utf-8")
     if isinstance(pdb_text, str) and _looks_like_pdb_atoms(pdb_text):
-        structure_path = structures_dir / "input.pdb"
-        structure_path.write_text(pdb_text, encoding="utf-8")
-    elif isinstance(cif_text, str) and _looks_like_cif_atom_site(cif_text):
-        structure_path = structures_dir / "input.cif"
-        structure_path.write_text(cif_text, encoding="utf-8")
-    else:
+        pdb_path = structures_dir / "structure.pdb"
+        pdb_path.write_text(pdb_text, encoding="utf-8")
+
+    if cif_path is None and pdb_path is None:
         raise RunnerError(
             "Payload did not contain usable structure text. "
             "Expected CIF atom-site data or PDB ATOM/HETATM records."
         )
+    structure_path = cif_path if cif_path is not None else pdb_path
+    fallback_path = pdb_path if (cif_path is not None and pdb_path is not None) else None
 
     view_path = bundle_dir / "view.json"
     view_doc = dict(payload["view"])
@@ -512,7 +677,7 @@ def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[P
     payload_path = temp_root / "payload.json"
     payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    return temp_root, bundle_dir, structure_path, view_path
+    return temp_root, bundle_dir, structure_path, fallback_path, view_path
 
 
 def _run_subprocess(
@@ -647,7 +812,7 @@ def build_local_blender_command(
     *,
     blender_exe: str,
     preset: str | None,
-    cif_path: Path,
+    structure_path: Path,
     view_json_path: Path,
     style_json_path: Path | None,
     output_png: Path,
@@ -668,8 +833,8 @@ def build_local_blender_command(
         "--python",
         str(custom_script),
         "--",
-        "--cif",
-        str(cif_path),
+        "--structure",
+        str(structure_path),
         "--view-json",
         str(view_json_path),
         "--style-json",
@@ -684,7 +849,7 @@ def build_local_blender_command(
         apptainer_exe = _resolve_apptainer_executable()
         bind_paths = [
             output_png.parent,
-            cif_path.parent,
+            structure_path.parent,
             view_json_path.parent,
             custom_script.parent,
             Path.cwd(),
@@ -818,6 +983,7 @@ def _build_local_runner_cli(
     color_follow: bool,
     save_blend: bool,
     blend_output: str,
+    keep_temp: bool,
 ) -> list[str]:
     command = [
         python_executable,
@@ -835,6 +1001,8 @@ def _build_local_runner_cli(
         "1" if color_follow else "0",
         "--save-blend",
         "1" if save_blend else "0",
+        "--keep-temp",
+        "1" if keep_temp else "0",
     ]
     if blend_output:
         command.extend(["--blend-output", blend_output])
@@ -985,6 +1153,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
     rough = bool(getattr(args, "rough", False))
     color_follow = bool(getattr(args, "color_follow", False))
     save_blend = bool(getattr(args, "save_blend", False))
+    keep_temp = bool(getattr(args, "keep_temp", False))
     blend_output = str(getattr(args, "blend_output", "") or "").strip()
     payload_path = Path(args.payload_json).expanduser().resolve()
     payload = validate_payload_document(_load_json(payload_path))
@@ -1003,113 +1172,132 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
     style_doc = _apply_save_blend_override(style_doc, enabled=save_blend, blend_output=blend_output)
 
     run_id = payload.get("run_id") if isinstance(payload.get("run_id"), str) else _new_run_id()
-    temp_root, _bundle_dir, cif_path, view_path = _materialize_payload_bundle(payload, run_id)
+    temp_root: Path | None = None
+    try:
+        temp_root, _bundle_dir, structure_path, pdb_fallback_path, view_path = _materialize_payload_bundle(payload, run_id)
 
-    staged_style = temp_root / "style.json"
-    staged_style.write_text(json.dumps(style_doc, indent=2), encoding="utf-8")
-    style_json_path = staged_style
+        staged_style = temp_root / "style.json"
+        staged_style.write_text(json.dumps(style_doc, indent=2), encoding="utf-8")
+        style_json_path = staged_style
 
-    output_png = _resolve_output_png(
-        output_dir=args.output_dir,
-        output_name=args.output_name,
-        preset=args.preset,
-        style_doc=style_doc,
-    )
-
-    if not args.use_apptainer and not _blender_executable_exists(args.blender_exe):
-        detected_blender = _detect_host_blender_executable()
-        if detected_blender:
-            args.blender_exe = detected_blender
-
-    command = build_local_blender_command(
-        blender_exe=args.blender_exe,
-        preset=args.preset,
-        cif_path=cif_path,
-        view_json_path=view_path,
-        style_json_path=style_json_path,
-        output_png=output_png,
-        custom_script=_expand_path_no_resolve(args.custom_script),
-        use_apptainer=args.use_apptainer,
-        apptainer_image=args.apptainer_image,
-    )
-
-    subprocess_env: dict[str, str] | None = os.environ.copy()
-    subprocess_env.setdefault("PRESS_CYCLES_DEVICE", "GPU")
-    subprocess_env.setdefault("PRESS_CYCLES_COMPUTE_TYPE", "AUTO")
-    subprocess_env.setdefault("PRESS_PRINT_DEVICE_INFO", "1")
-    # Prefer GPU but do not hard-fail unless explicitly requested by caller env.
-    subprocess_env.setdefault("PRESS_REQUIRE_GPU", "0")
-    if rough:
-        subprocess_env["PRESS_RENDER_SCALE"] = "0.30"
-        subprocess_env["PRESS_SAMPLES"] = "24"
-
-    started_at = time.time()
-    result = _run_subprocess(command, env=subprocess_env)
-    runtime_seconds = round(time.time() - started_at, 3)
-    if result.returncode != 0:
-        raise RunnerError(
-            "Local Blender render failed.\n"
-            f"Command: {' '.join(shlex.quote(item) for item in command)}\n"
-            f"{_debug_process_text(result)}"
+        output_png = _resolve_output_png(
+            output_dir=args.output_dir,
+            output_name=args.output_name,
+            preset=args.preset,
+            style_doc=style_doc,
         )
 
-    final_output = output_png
+        if not args.use_apptainer and not _blender_executable_exists(args.blender_exe):
+            detected_blender = _detect_host_blender_executable()
+            if detected_blender:
+                args.blender_exe = detected_blender
 
-    if not final_output.exists():
-        if args.use_apptainer and not final_output.exists():
-            fallback_out = Path("/tmp/pymol_bridge_apptainer_output") / run_id / final_output.name
-            fallback_out.parent.mkdir(parents=True, exist_ok=True)
-            fallback_command = build_local_blender_command(
+        subprocess_env: dict[str, str] | None = os.environ.copy()
+        subprocess_env.setdefault("PRESS_CYCLES_DEVICE", "GPU")
+        subprocess_env.setdefault("PRESS_CYCLES_COMPUTE_TYPE", "AUTO")
+        subprocess_env.setdefault("PRESS_PRINT_DEVICE_INFO", "1")
+        # Prefer GPU but do not hard-fail unless explicitly requested by caller env.
+        subprocess_env.setdefault("PRESS_REQUIRE_GPU", "0")
+        if rough:
+            subprocess_env["PRESS_RENDER_SCALE"] = "0.30"
+            subprocess_env["PRESS_SAMPLES"] = "24"
+
+        def _run_for_structure(struct_path: Path, target_output: Path) -> tuple[list[str], subprocess.CompletedProcess[str], float]:
+            cmd = build_local_blender_command(
                 blender_exe=args.blender_exe,
                 preset=args.preset,
-                cif_path=cif_path,
+                structure_path=struct_path,
                 view_json_path=view_path,
                 style_json_path=style_json_path,
-                output_png=fallback_out,
+                output_png=target_output,
                 custom_script=_expand_path_no_resolve(args.custom_script),
                 use_apptainer=args.use_apptainer,
                 apptainer_image=args.apptainer_image,
             )
-            fallback_started_at = time.time()
-            fallback_result = _run_subprocess(fallback_command, env=subprocess_env)
-            fallback_runtime_seconds = round(time.time() - fallback_started_at, 3)
-            if fallback_result.returncode == 0 and fallback_out.exists():
-                try:
-                    final_output.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(fallback_out, final_output)
-                    final_output = final_output
-                    result = fallback_result
-                    runtime_seconds = fallback_runtime_seconds
-                except Exception:
-                    final_output = fallback_out
-                    result = fallback_result
-                    runtime_seconds = fallback_runtime_seconds
+            started = time.time()
+            proc = _run_subprocess(cmd, env=subprocess_env)
+            elapsed = round(time.time() - started, 3)
+            return cmd, proc, elapsed
 
-        if not final_output.exists():
+        used_structure = structure_path
+        command, result, runtime_seconds = _run_for_structure(used_structure, output_png)
+        if (
+            result.returncode != 0
+            and used_structure.suffix.lower() == ".cif"
+            and pdb_fallback_path is not None
+        ):
+            retry_command, retry_result, retry_runtime = _run_for_structure(pdb_fallback_path, output_png)
+            if retry_result.returncode == 0:
+                used_structure = pdb_fallback_path
+                command, result, runtime_seconds = retry_command, retry_result, retry_runtime
+
+        if result.returncode != 0:
             raise RunnerError(
-                "Blender process completed but output image was not found.\n"
-                f"Expected: {final_output}\n"
+                "Local Blender render failed.\n"
+                f"Command: {' '.join(shlex.quote(item) for item in command)}\n"
                 f"{_debug_process_text(result)}"
             )
 
-    gpu_info = _extract_gpu_info(result.stdout or "", result.stderr or "")
-    output_blend_path = _resolve_output_blend(final_output, style_doc)
-    output_blend = ""
-    if output_blend_path is not None and output_blend_path.exists():
-        output_blend = str(output_blend_path)
-    return {
-        "status": "completed",
-        "mode": "local",
-        "run_id": run_id,
-        "output_png": str(final_output),
-        "output_dir": str(final_output.parent),
-        "command": command,
-        "runtime_seconds": runtime_seconds,
-        "gpu_info": gpu_info,
-        "output_blend": output_blend,
-        "blender_stdout_tail": _tail_text(result.stdout or "", max_chars=10000),
-        "blender_stderr_tail": _tail_text(result.stderr or "", max_chars=10000),
-    }
+        final_output = output_png
+
+        if not final_output.exists():
+            if (
+                used_structure.suffix.lower() == ".cif"
+                and pdb_fallback_path is not None
+            ):
+                retry_command, retry_result, retry_runtime = _run_for_structure(pdb_fallback_path, output_png)
+                if retry_result.returncode == 0 and output_png.exists():
+                    used_structure = pdb_fallback_path
+                    command, result, runtime_seconds = retry_command, retry_result, retry_runtime
+
+            if args.use_apptainer and not final_output.exists():
+                fallback_out = Path("/tmp/pymol_bridge_apptainer_output") / run_id / final_output.name
+                fallback_out.parent.mkdir(parents=True, exist_ok=True)
+                fallback_command, fallback_result, fallback_runtime_seconds = _run_for_structure(
+                    used_structure, fallback_out
+                )
+                if fallback_result.returncode == 0 and fallback_out.exists():
+                    try:
+                        final_output.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(fallback_out, final_output)
+                        final_output = final_output
+                    except Exception:
+                        final_output = fallback_out
+                    command = fallback_command
+                    result = fallback_result
+                    runtime_seconds = fallback_runtime_seconds
+
+            if not final_output.exists():
+                raise RunnerError(
+                    "Blender process completed but output image was not found.\n"
+                    f"Expected: {final_output}\n"
+                    f"{_debug_process_text(result)}"
+                )
+
+        gpu_info = _extract_gpu_info(result.stdout or "", result.stderr or "")
+        output_blend_path = _resolve_output_blend(final_output, style_doc)
+        output_blend = ""
+        if output_blend_path is not None and output_blend_path.exists():
+            output_blend = str(output_blend_path)
+        return {
+            "status": "completed",
+            "mode": "local",
+            "run_id": run_id,
+            "output_png": str(final_output),
+            "output_dir": str(final_output.parent),
+            "command": command,
+            "runtime_seconds": runtime_seconds,
+            "gpu_info": gpu_info,
+            "output_blend": output_blend,
+            "staged_structure_path": str(used_structure),
+            "temp_dir": str(temp_root),
+            "temp_kept": bool(keep_temp),
+            "blender_stdout_tail": _tail_text(result.stdout or "", max_chars=10000),
+            "blender_stderr_tail": _tail_text(result.stderr or "", max_chars=10000),
+        }
+    finally:
+        if temp_root is not None and temp_root.exists() and not keep_temp:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
@@ -1154,6 +1342,7 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
         color_follow=color_follow,
         save_blend=save_blend,
         blend_output=blend_output,
+        keep_temp=bool(getattr(args, "keep_temp", False)),
     )
     local_runner_command_q = " ".join(
         f'"{item}"' if item.startswith("$RUN_DIR/") else shlex.quote(item)
@@ -1285,6 +1474,7 @@ def _build_interactive_request(
         "color_follow": bool(getattr(args, "color_follow", False)),
         "save_blend": bool(getattr(args, "save_blend", False)),
         "blend_output": str(getattr(args, "blend_output", "") or ""),
+        "keep_temp": bool(getattr(args, "keep_temp", False)),
     }
     return request_id, request_doc
 
@@ -1293,47 +1483,55 @@ def _execute_session_request(*, session_id: str, request_doc: dict[str, Any]) ->
     request_id = str(request_doc.get("request_id", _new_run_id()))
     stage_dir = _session_dir(session_id) / "staged" / request_id
     stage_dir.mkdir(parents=True, exist_ok=True)
+    keep_temp = bool(request_doc.get("keep_temp", False))
 
-    payload = request_doc.get("payload")
-    if not isinstance(payload, dict):
-        raise RunnerError("Interactive request is missing payload object.")
-    validate_payload_document(payload)
-    payload_path = stage_dir / "payload.json"
-    _write_json_atomic(payload_path, payload)
+    try:
+        payload = request_doc.get("payload")
+        if not isinstance(payload, dict):
+            raise RunnerError("Interactive request is missing payload object.")
+        validate_payload_document(payload)
+        payload_path = stage_dir / "payload.json"
+        _write_json_atomic(payload_path, payload)
 
-    style_json_path = ""
-    style_doc = request_doc.get("style_doc")
-    if style_doc is not None:
-        if not isinstance(style_doc, dict):
-            raise RunnerError("Interactive request 'style_doc' must be an object when provided.")
-        validate_style_document(style_doc)
-        style_path = stage_dir / "style.json"
-        _write_json_atomic(style_path, style_doc)
-        style_json_path = str(style_path)
+        style_json_path = ""
+        style_doc = request_doc.get("style_doc")
+        if style_doc is not None:
+            if not isinstance(style_doc, dict):
+                raise RunnerError("Interactive request 'style_doc' must be an object when provided.")
+            validate_style_document(style_doc)
+            style_path = stage_dir / "style.json"
+            _write_json_atomic(style_path, style_doc)
+            style_json_path = str(style_path)
 
-    local_args = argparse.Namespace(
-        payload_json=str(payload_path),
-        preset=request_doc.get("preset"),
-        style_json=style_json_path,
-        rough=bool(request_doc.get("rough", False)),
-        output_dir=str(request_doc.get("output_dir", "") or ""),
-        output_name=str(request_doc.get("output_name", "") or ""),
-        blender_exe=str(request_doc.get("blender_exe", DEFAULT_BLENDER_EXE) or DEFAULT_BLENDER_EXE),
-        custom_script=str(request_doc.get("custom_script", str(_default_custom_script())) or str(_default_custom_script())),
-        use_apptainer=bool(request_doc.get("use_apptainer", False)),
-        apptainer_image=str(request_doc.get("apptainer_image", "") or ""),
-        color_follow=bool(request_doc.get("color_follow", False)),
-        save_blend=bool(request_doc.get("save_blend", False)),
-        blend_output=str(request_doc.get("blend_output", "") or ""),
-    )
-    if not local_args.preset and not local_args.style_json:
-        raise RunnerError("Interactive request must include either a preset or style_doc.")
+        local_args = argparse.Namespace(
+            payload_json=str(payload_path),
+            preset=request_doc.get("preset"),
+            style_json=style_json_path,
+            rough=bool(request_doc.get("rough", False)),
+            output_dir=str(request_doc.get("output_dir", "") or ""),
+            output_name=str(request_doc.get("output_name", "") or ""),
+            blender_exe=str(request_doc.get("blender_exe", DEFAULT_BLENDER_EXE) or DEFAULT_BLENDER_EXE),
+            custom_script=str(
+                request_doc.get("custom_script", str(_default_custom_script())) or str(_default_custom_script())
+            ),
+            use_apptainer=bool(request_doc.get("use_apptainer", False)),
+            apptainer_image=str(request_doc.get("apptainer_image", "") or ""),
+            color_follow=bool(request_doc.get("color_follow", False)),
+            save_blend=bool(request_doc.get("save_blend", False)),
+            blend_output=str(request_doc.get("blend_output", "") or ""),
+            keep_temp=keep_temp,
+        )
+        if not local_args.preset and not local_args.style_json:
+            raise RunnerError("Interactive request must include either a preset or style_doc.")
 
-    result = run_local(local_args)
-    result["mode"] = "interactive"
-    result["session_id"] = session_id
-    result["request_id"] = request_id
-    return result
+        result = run_local(local_args)
+        result["mode"] = "interactive"
+        result["session_id"] = session_id
+        result["request_id"] = request_id
+        return result
+    finally:
+        if stage_dir.exists() and not keep_temp:
+            shutil.rmtree(stage_dir, ignore_errors=True)
 
 
 def run_interactive_worker(args: argparse.Namespace) -> dict[str, Any]:
@@ -1840,6 +2038,7 @@ def build_sbatch_script(
     color_follow: bool,
     save_blend: bool,
     blend_output: str,
+    keep_temp: bool = False,
     slurm_partition: str,
     slurm_account: str,
     slurm_gres: str,
@@ -1916,6 +2115,8 @@ def build_sbatch_script(
         local_command_lines.append("  --color-follow 1")
     if blend_output:
         local_command_lines.append(f"  --blend-output {shlex.quote(blend_output)}")
+    if keep_temp:
+        local_command_lines.append("  --keep-temp 1")
 
     script_lines.append("")
     for idx, line in enumerate(local_command_lines):
@@ -1988,6 +2189,7 @@ def run_slurm(args: argparse.Namespace) -> dict[str, Any]:
         color_follow=bool(getattr(args, "color_follow", False)),
         save_blend=bool(getattr(args, "save_blend", False)),
         blend_output=str(getattr(args, "blend_output", "") or ""),
+        keep_temp=bool(getattr(args, "keep_temp", False)),
         slurm_partition=args.slurm_partition,
         slurm_account=args.slurm_account,
         slurm_gres=args.slurm_gres,
@@ -2063,6 +2265,7 @@ def _build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--color-follow", type=_parse_bool, default=False)
         sp.add_argument("--save-blend", type=_parse_bool, default=False)
         sp.add_argument("--blend-output", default="")
+        sp.add_argument("--keep-temp", type=_parse_bool, default=False)
 
     local_parser = subparsers.add_parser("local", help="Run render locally with Blender.")
     add_common_options(local_parser)
