@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import pymol_plugin_bridge.pymol_bridge_plugin as plugin
+import blender_render.pymol_bridge_plugin as plugin
 
 
 class _DummyCode:

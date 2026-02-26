@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pymol_plugin_bridge.pymol_bridge_plugin import build_render_payload
+from blender_render.pymol_bridge_plugin import build_render_payload
 
 
 class FakeCmd:
@@ -63,6 +63,16 @@ class FakeCmd:
         if self._dss_error is not None:
             raise RuntimeError(self._dss_error)
 
+    def iterate(self, selection, expression, space):
+        assert selection == "(all)"
+        records = space["records"]
+        records.append(("A", "17", "H", 0))
+        records.append(("A", "18", "H", 0))
+        records.append(("A", "19", "S", 0))
+        records.append(("A", "20", "L", 0))
+        records.append(("A", "21", "", 0))
+        records.append(("A", "22", "H", 1))
+
 
 def test_build_render_payload_contains_cif_and_view_fields():
     fake = FakeCmd()
@@ -75,6 +85,10 @@ def test_build_render_payload_contains_cif_and_view_fields():
     assert payload["dss"]["ran"] is True
     assert payload["dss"]["selection"] == "(all)"
     assert fake.dss_calls == ["(all)"]
+    assert payload["ss_hints"]["source"] == "pymol_dss"
+    assert payload["ss_hints"]["by_chain_resi"]["A:17"] == "H"
+    assert payload["ss_hints"]["by_chain_resi"]["A:19"] == "S"
+    assert payload["ss_hints"]["by_chain_resi"]["A:20"] == "L"
 
     view = payload["view"]
     assert "pymol_view" in view

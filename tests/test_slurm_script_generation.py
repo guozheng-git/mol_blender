@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pymol_plugin_bridge.bridge_runner import (
+from blender_render.bridge_runner import (
     build_sbatch_script,
     extract_embedded_payload,
     extract_embedded_style,
@@ -51,7 +51,7 @@ def test_sbatch_flags_and_embedded_payload_roundtrip():
         blender_exe="/Applications/Blender.app/Contents/MacOS/Blender",
         output_dir="/tmp/out",
         output_name="output.png",
-        custom_script=Path("pymol_plugin_bridge/blender_custom_render.py"),
+        custom_script=Path("blender_render/blender_custom_render.py"),
         use_apptainer=False,
         apptainer_image="",
         rough=False,
@@ -95,7 +95,7 @@ def test_sbatch_embeds_style_when_custom_mode():
         blender_exe="blender",
         output_dir="/tmp/out",
         output_name="output.png",
-        custom_script=Path("pymol_plugin_bridge/blender_custom_render.py"),
+        custom_script=Path("blender_render/blender_custom_render.py"),
         use_apptainer=False,
         apptainer_image="",
         rough=False,
@@ -122,7 +122,7 @@ def test_sbatch_includes_rough_flag_for_local_replay():
         blender_exe="blender",
         output_dir="/tmp/out",
         output_name="output.png",
-        custom_script=Path("pymol_plugin_bridge/blender_custom_render.py"),
+        custom_script=Path("blender_render/blender_custom_render.py"),
         use_apptainer=False,
         apptainer_image="",
         rough=True,

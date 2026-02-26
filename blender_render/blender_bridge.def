@@ -6,7 +6,7 @@ From: ubuntu:24.04
     Description "PyMOL -> Blender GPU/SLURM bridge runtime"
 
 %files
-    . /opt/pymol_plugin_bridge
+    . /opt/blender_render
 
 %post
     set -eux
@@ -50,8 +50,8 @@ From: ubuntu:24.04
     rm -rf /var/lib/apt/lists/*
 
     # Install official Blender build (bundled Python runtime, compatible with Molecular Nodes).
-    BLENDER_VERSION=4.2.5
-    BLENDER_SERIES=4.2
+    BLENDER_VERSION=5.0.1
+    BLENDER_SERIES=5.0
     BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
     BLENDER_URL="https://download.blender.org/release/Blender${BLENDER_SERIES}/${BLENDER_TAR}"
     wget -q -O "/tmp/${BLENDER_TAR}" "${BLENDER_URL}"
@@ -69,7 +69,7 @@ From: ubuntu:24.04
 cat > /tmp/install_molecularnodes.py <<'PY'
 import ensurepip
 import importlib
-from pathlib import Path
+import importlib.metadata as metadata
 import subprocess
 import sys
 import bpy
@@ -79,8 +79,7 @@ print("Blender Python version:", sys.version)
 
 ensurepip.bootstrap(upgrade=True)
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "pip", "setuptools", "wheel"])
-# For Blender 4.2.x (Python 3.11), install a Molecular Nodes line with native sticks style.
-# Install dependencies explicitly while skipping pip's bpy requirement.
+# Pinned runtime versions for preset fidelity.
 subprocess.check_call(
     [
         sys.executable,
@@ -88,12 +87,16 @@ subprocess.check_call(
         "pip",
         "install",
         "--no-cache-dir",
-        "numpy<2",
-        "MDAnalysis>=2.7.0",
-        "biotite~=0.40",
+        "numpy==1.26.4",
+        "biotite==1.6.0",
+        "MDAnalysis>=2.10",
         "mrcfile",
         "starfile",
-        "https://github.com/BradyAJohnston/databpy/archive/refs/tags/v0.6.0.zip",
+        "PyYAML",
+        "databpy>=0.6.0",
+        "imdclient>=0.2.3",
+        "ipython>=9.7.0",
+        "pandas<3.0.0",
     ]
 )
 subprocess.check_call(
@@ -104,34 +107,41 @@ subprocess.check_call(
         "install",
         "--no-cache-dir",
         "--no-deps",
-        "molecularnodes==4.2.12",
+        "molecularnodes==4.5.10",
     ]
 )
-import databpy
-# Persist compatibility alias for MN releases importing databpy.Domains.
-databpy_init = Path(databpy.__file__)
-databpy_src = databpy_init.read_text()
-if "Domains = AttributeDomains" not in databpy_src:
-    databpy_src += "\nif 'Domains' not in globals() and 'AttributeDomains' in globals():\n    Domains = AttributeDomains\n"
-    databpy_init.write_text(databpy_src)
-# Also set alias in the current interpreter before importing MN.
-if not hasattr(databpy, "Domains") and hasattr(databpy, "AttributeDomains"):
-    setattr(databpy, "Domains", databpy.AttributeDomains)
 mn = importlib.import_module("molecularnodes")
+numpy = importlib.import_module("numpy")
+biotite = importlib.import_module("biotite")
 print("molecularnodes version:", getattr(mn, "__version__", "unknown"))
+print("numpy version:", getattr(numpy, "__version__", "unknown"))
+print("biotite version:", getattr(biotite, "__version__", "unknown"))
 print("bpy version:", bpy.app.version_string)
+
+# Build-time guard: fail image build if pinned versions drift.
+expected = {
+    "molecularnodes": "4.5.10",
+    "numpy": "1.26.4",
+    "biotite": "1.6.0",
+}
+for pkg, version in expected.items():
+    got = metadata.version(pkg)
+    if got != version:
+        raise SystemExit(f"Version mismatch for {pkg}: expected {version}, got {got}")
+if tuple(bpy.app.version[:3]) != (5, 0, 1):
+    raise SystemExit(f"Blender version mismatch: expected (5, 0, 1), got {tuple(bpy.app.version[:3])}")
 PY
 
     blender --background --factory-startup --python-exit-code 1 --python /tmp/install_molecularnodes.py
     rm -f /tmp/install_molecularnodes.py
 
 %environment
-    export BRIDGE_ROOT=/opt/pymol_plugin_bridge
+    export BRIDGE_ROOT=/opt/blender_render
     export PATH=/usr/bin:$PATH
-    export PYTHONPATH=/opt/pymol_plugin_bridge:$PYTHONPATH
+    export PYTHONPATH=/opt/blender_render:$PYTHONPATH
 
 %runscript
-    exec python3 /opt/pymol_plugin_bridge/bridge_runner.py "$@"
+    exec python3 /opt/blender_render/bridge_runner.py "$@"
 
 %help
     Build:
@@ -139,4 +149,4 @@ PY
 
     Run local render from payload JSON:
       apptainer exec --nv blender_bridge.sif \
-        python3 /opt/pymol_plugin_bridge/bridge_runner.py local ...
+        python3 /opt/blender_render/bridge_runner.py local ...

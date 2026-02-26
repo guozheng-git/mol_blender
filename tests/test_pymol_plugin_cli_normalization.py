@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pymol_plugin_bridge.pymol_bridge_plugin as plugin
+import blender_render.pymol_bridge_plugin as plugin
 
 
 class FakeCmd:

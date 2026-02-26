@@ -6,7 +6,7 @@ Preset names (`preset_1_interface` ... `preset_5_black_interface`) are only shor
 ## Load in PyMOL
 
 ```python
-run /home/magnusb/blender_bridge/pymol_plugin_bridge/pymol_bridge_plugin.py
+run /home/magnusb/blender_bridge/blender_render/pymol_bridge_plugin.py
 ```
 
 ## Main PyMOL command
@@ -52,7 +52,7 @@ How it is applied in Blender:
 Run with PyMOL's Python interpreter:
 
 ```bash
-/opt/pymol/bin/python pymol_plugin_bridge/pse_render_cli.py \
+/opt/pymol/bin/python blender_render/pse_render_cli.py \
   --pse /home/magnusb/blender_bridge/CD3.pse \
   --preset preset_1_interface \
   --mode local \
@@ -64,9 +64,9 @@ Run with PyMOL's Python interpreter:
 Custom JSON style example:
 
 ```bash
-/opt/pymol/bin/python pymol_plugin_bridge/pse_render_cli.py \
+/opt/pymol/bin/python blender_render/pse_render_cli.py \
   --pse /home/magnusb/blender_bridge/CD3.pse \
-  --style-json /home/magnusb/blender_bridge/pymol_plugin_bridge/style_preset_1_opaque_pastel.json \
+  --style-json /home/magnusb/blender_bridge/blender_render/style_preset_1_opaque_pastel.json \
   --mode local \
   --color-follow 1
 ```
@@ -74,7 +74,7 @@ Custom JSON style example:
 Interactive submit from `.pse` (session must be opened first):
 
 ```bash
-/opt/pymol/bin/python pymol_plugin_bridge/pse_render_cli.py \
+/opt/pymol/bin/python blender_render/pse_render_cli.py \
   --pse /home/magnusb/blender_bridge/CD3.pse \
   --preset preset_1_interface \
   --mode interactive \
@@ -84,13 +84,13 @@ Interactive submit from `.pse` (session must be opened first):
 ## Runner CLI
 
 ```bash
-python pymol_plugin_bridge/bridge_runner.py local \
+python blender_render/bridge_runner.py local \
   --payload-json /tmp/pymol_bridge/<run_id>/payload.json \
   --preset preset_1_interface
 ```
 
 ```bash
-python pymol_plugin_bridge/bridge_runner.py slurm \
+python blender_render/bridge_runner.py slurm \
   --payload-json /tmp/pymol_bridge/<run_id>/payload.json \
   --preset preset_1_interface \
   --slurm-partition gpu \

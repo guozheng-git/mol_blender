@@ -8,7 +8,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from pymol_plugin_bridge import bridge_runner
+from blender_render import bridge_runner
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def _base_args(payload_path: Path, tmp_path: Path) -> argparse.Namespace:
         blender_exe="/Applications/Blender.app/Contents/MacOS/Blender",
         scene_path="__FACTORY_STARTUP__",
         preset_script=str(Path("scripts/render_press_release_examples.py")),
-        custom_script=str(Path("pymol_plugin_bridge/blender_custom_render.py")),
+        custom_script=str(Path("blender_render/blender_custom_render.py")),
         use_apptainer=False,
         apptainer_image="",
         interactive_launcher="qlogin -p gpu --gres=gpu:a4000:1 --mem=16g -c 2",
@@ -115,7 +115,7 @@ def test_local_preset_mode_emits_expected_blender_command(monkeypatch, payload_f
     if detected:
         allowed.add(detected)
     assert command[0] in allowed
-    assert any(item.endswith("pymol_plugin_bridge/blender_custom_render.py") for item in command)
+    assert any(item.endswith("blender_render/blender_custom_render.py") for item in command)
     assert "--style-json" in command
     assert "--structure" in command
     assert "--run-manifest" in command
@@ -327,7 +327,7 @@ def test_local_custom_mode_emits_expected_blender_command(monkeypatch, payload_f
 
     assert result["status"] == "completed"
     command = calls[0]
-    assert any(item.endswith("pymol_plugin_bridge/blender_custom_render.py") for item in command)
+    assert any(item.endswith("blender_render/blender_custom_render.py") for item in command)
     assert "--style-json" in command
     assert "--output-png" in command
 

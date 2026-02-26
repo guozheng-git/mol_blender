@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from pymol_plugin_bridge.pymol_bridge_plugin import (
+from blender_render.pymol_bridge_plugin import (
     DEFAULT_BLENDER_EXE,
     SUPPORTED_PRESETS,
     _parse_bool,

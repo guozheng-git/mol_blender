@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pymol_plugin_bridge.bridge_runner import (
+from blender_render.bridge_runner import (
     CAMERA_KEYS,
     COLOR_FOLLOW_KEYS,
     LIGHT_KEYS,
@@ -22,12 +22,12 @@ from pymol_plugin_bridge.bridge_runner import (
 
 
 def _example_style() -> dict:
-    path = Path("pymol_plugin_bridge/example_full_custom.json")
+    path = Path("blender_render/example_full_custom.json")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _preset_style() -> dict:
-    path = Path("pymol_plugin_bridge/style_preset_1_opaque_pastel.json")
+    path = Path("blender_render/style_preset_1_opaque_pastel.json")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -75,7 +75,7 @@ def test_preset_1_covers_polymer_nucleic_ligand_ion_water():
 
 @pytest.mark.parametrize(
     "preset_path",
-    sorted(Path("pymol_plugin_bridge").glob("style_preset_*.json")),
+    sorted(Path("blender_render").glob("style_preset_*.json")),
 )
 def test_all_presets_use_supported_key_set_only(preset_path: Path):
     style = json.loads(preset_path.read_text(encoding="utf-8"))

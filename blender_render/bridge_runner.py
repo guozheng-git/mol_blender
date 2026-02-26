@@ -672,6 +672,9 @@ def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[P
     color_hints = payload.get("color_hints")
     if isinstance(color_hints, dict):
         view_doc["color_hints"] = color_hints
+    ss_hints = payload.get("ss_hints")
+    if isinstance(ss_hints, dict):
+        view_doc["ss_hints"] = ss_hints
     view_path.write_text(json.dumps(view_doc, indent=2), encoding="utf-8")
 
     payload_path = temp_root / "payload.json"

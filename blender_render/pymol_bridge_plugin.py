@@ -133,6 +133,49 @@ def _collect_color_hints(cmd_obj: Any, selection: str) -> dict[str, Any]:
     }
 
 
+def _collect_secondary_structure_hints(cmd_obj: Any, selection: str) -> dict[str, Any]:
+    records: list[tuple[str, str, str, int]] = []
+    space: dict[str, Any] = {"records": records}
+    try:
+        cmd_obj.iterate(
+            selection,
+            "records.append((chain, resi, ss, int(hetatm)))",
+            space=space,
+        )
+    except Exception:
+        return {}
+
+    by_chain_resi: dict[str, str] = {}
+    counts: Counter[str] = Counter()
+    for chain, resi, ss, hetatm in records:
+        if int(hetatm):
+            continue
+        ss_code = str(ss or "").strip().upper()
+        if ss_code not in {"H", "S", "L"}:
+            continue
+        try:
+            resi_i = int(str(resi or "").strip())
+        except Exception:
+            continue
+        chain_name = str(chain or "").strip().upper()
+        if not chain_name:
+            continue
+        key = f"{chain_name}:{resi_i}"
+        previous = by_chain_resi.get(key)
+        if previous in {"H", "S"} and ss_code == "L":
+            continue
+        by_chain_resi[key] = ss_code
+        counts[ss_code] += 1
+
+    if not by_chain_resi:
+        return {}
+    return {
+        "source": "pymol_dss",
+        "by_chain_resi": by_chain_resi,
+        "counts": dict(counts),
+    }
+
+
 def collect_view_payload(cmd_obj: Any) -> dict[str, Any]:
     view_raw = cmd_obj.get_view(quiet=1)
     if not isinstance(view_raw, (list, tuple)) or len(view_raw) < 18:
@@ -371,6 +414,9 @@ def build_render_payload(
         "view": collect_view_payload(cmd_obj),
         "dss": dss_status,
     }
+    ss_hints = _collect_secondary_structure_hints(cmd_obj, selection)
+    if ss_hints:
+        payload["ss_hints"] = ss_hints
     if cif_ok:
         payload["cif_text"] = cif_text
     if pdb_ok:
@@ -442,7 +488,7 @@ def _default_apptainer_image() -> Path:
     except Exception:
         pass
 
-    candidates.append(Path.cwd() / "pymol_plugin_bridge" / "blender_bridge.sif")
+    candidates.append(Path.cwd() / "blender_render" / "blender_bridge.sif")
 
     seen: set[str] = set()
     fallback: Path | None = None

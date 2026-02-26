@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -381,6 +382,213 @@ def _query_to_indices(
     return np.where(mask)[0].astype(int).tolist()
 
 
+def _atom_array_count(atom_array: Any) -> int:
+    try:
+        return int(atom_array.array_length()) if hasattr(atom_array, "array_length") else len(atom_array)
+    except Exception:
+        return 0
+
+
+def _get_atom_array(source: Any) -> Any:
+    array = getattr(source, "atom_array", None)
+    if array is None:
+        array = getattr(source, "array", None)
+    return array
+
+
+def _auth_chain_override_for_structure(structure_path: Path, count: int) -> np.ndarray | None:
+    if count <= 0:
+        return None
+    if str(structure_path.suffix).strip().lower() != ".cif":
+        return None
+    auth_chain_ids = _extract_auth_chain_ids_from_cif(structure_path)
+    if not auth_chain_ids:
+        return None
+    auth_upper = np.asarray([str(item).strip().upper() for item in auth_chain_ids], dtype=object).astype(str)
+    if auth_upper.shape[0] != count:
+        return None
+    if not bool(np.any(np.array([item not in {"", ".", "?"} for item in auth_upper], dtype=bool))):
+        return None
+    return auth_upper
+
+
+def _chain_upper_for_selection(load_result: Any, atom_array: Any, count: int, structure_path: Path) -> np.ndarray:
+    chain_getter = getattr(load_result, "_chain_upper", None)
+    if callable(chain_getter):
+        try:
+            chain_values = np.asarray(chain_getter(count), dtype=object).astype(str)
+            if chain_values.shape[0] == count:
+                return chain_values
+        except Exception:
+            pass
+
+    bridge_override = getattr(load_result, "_bridge_chain_override_upper", None)
+    if isinstance(bridge_override, np.ndarray) and bridge_override.shape[0] == count:
+        return bridge_override
+
+    chain_upper = _array_as_upper(
+        getattr(atom_array, "chain_id", np.array([""] * count, dtype=object)),
+        count,
+    )
+    current_values = {str(item).strip().upper() for item in chain_upper.tolist() if str(item).strip()}
+    if current_values.issubset({"", ".", "?"}):
+        auth_override = _auth_chain_override_for_structure(structure_path, count)
+        if auth_override is not None:
+            return auth_override
+    return chain_upper
+
+
+def _selection_indices_from_cfg(
+    load_result: Any,
+    selection_cfg: dict[str, Any],
+    *,
+    structure_path: Path,
+) -> list[int] | None:
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return None
+
+    count = _atom_array_count(atom_array)
+    if count <= 0:
+        return []
+
+    chain_upper = _chain_upper_for_selection(load_result, atom_array, count, structure_path)
+    query_value = selection_cfg.get("query")
+    if isinstance(query_value, str) and query_value.strip():
+        return _query_to_indices(
+            atom_array,
+            query_value,
+            chain_upper_override=chain_upper,
+        )
+
+    mask = np.ones(count, dtype=bool)
+    has_filter = False
+    polymer_mask, nucleic_mask, ligand_mask = _semantic_masks(atom_array, count)
+    if bool(selection_cfg.get("polymer", False)):
+        mask &= polymer_mask
+        has_filter = True
+    if bool(selection_cfg.get("nucleic", False)):
+        mask &= nucleic_mask
+        has_filter = True
+    if bool(selection_cfg.get("ligand", False)):
+        mask &= ligand_mask
+        has_filter = True
+
+    chain_value = selection_cfg.get("chain")
+    chain_ids: list[str] = []
+    if isinstance(chain_value, str):
+        chain_ids = [item.strip().upper() for item in chain_value.split(",") if item.strip()]
+    elif isinstance(chain_value, (list, tuple)):
+        chain_ids = [str(item).strip().upper() for item in chain_value if str(item).strip()]
+    if chain_ids:
+        mask &= np.isin(chain_upper, chain_ids)
+        has_filter = True
+
+    residue_range = selection_cfg.get("residue_range")
+    if isinstance(residue_range, (list, tuple)) and len(residue_range) == 2:
+        try:
+            start = int(residue_range[0])
+            end = int(residue_range[1])
+            lo, hi = (start, end) if start <= end else (end, start)
+            res_ids = np.asarray(getattr(atom_array, "res_id", np.full(count, -1, dtype=int))).astype(int)
+            mask &= (res_ids >= lo) & (res_ids <= hi)
+            has_filter = True
+        except Exception:
+            pass
+
+    if not has_filter:
+        return None
+    return np.where(mask)[0].astype(int).tolist()
+
+
+def _selection_to_named_attribute(
+    load_result: Any,
+    indices: list[int] | None,
+    *,
+    style_name: str,
+) -> Any:
+    if indices is None:
+        return None
+    if isinstance(load_result, _ParserMolecule):
+        return indices
+    if not hasattr(load_result, "store_named_attribute"):
+        return indices
+
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return indices
+    count = _atom_array_count(atom_array)
+    if count <= 0:
+        return indices
+
+    mask = np.zeros(count, dtype=bool)
+    for idx in indices:
+        if 0 <= int(idx) < count:
+            mask[int(idx)] = True
+
+    style_token = re.sub(r"[^A-Za-z0-9_]+", "_", str(style_name or "style")).strip("_") or "style"
+    attr_name = f"bridge_sel_{style_token.lower()}_{uuid.uuid4().hex[:8]}"
+    try:
+        load_result.store_named_attribute(mask, name=attr_name, atype="BOOLEAN", domain="POINT")
+        return attr_name
+    except Exception:
+        pass
+    try:
+        load_result.store_named_attribute(mask, name=attr_name)
+        return attr_name
+    except Exception:
+        return indices
+
+
+def _normalized_amino_mask(atom_array: Any, count: int) -> np.ndarray:
+    try:
+        import biotite.structure as bs  # type: ignore
+
+        return _safe_bool_mask(bs.filter_amino_acids(atom_array), count)
+    except Exception:
+        res_name_upper = _array_as_upper(getattr(atom_array, "res_name", np.array([""] * count, dtype=object)), count)
+        return np.isin(
+            res_name_upper,
+            [
+                "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+                "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+                "PTR", "TPO", "SEP",
+            ],
+        )
+
+
+def _normalize_sec_struct_values(values: Any, amino_mask: np.ndarray) -> np.ndarray:
+    count = int(amino_mask.shape[0])
+    sec = np.zeros(count, dtype=int)
+    raw = np.asarray(values, dtype=object)
+    if raw.shape[0] != count:
+        return sec
+
+    parsed_numeric = False
+    try:
+        numeric = raw.astype(float)
+        finite = np.isfinite(numeric)
+        if bool(np.any(finite)):
+            clipped = np.clip(np.rint(numeric), 0, 3).astype(int)
+            sec[finite] = clipped[finite]
+            parsed_numeric = True
+    except Exception:
+        parsed_numeric = False
+
+    if not parsed_numeric:
+        text = np.char.upper(raw.astype(str))
+        helix_mask = np.isin(text, ["1", "H", "A", "G", "I"])
+        sheet_mask = np.isin(text, ["2", "S", "E", "B"])
+        loop_mask = np.isin(text, ["3", "L", "C", "T"])
+        sec[helix_mask] = 1
+        sec[sheet_mask] = 2
+        sec[loop_mask] = 3
+
+    sec[~amino_mask] = 0
+    sec[np.asarray(amino_mask, dtype=bool) & (sec == 0)] = 3
+    return sec
+
+
 class _ParserSelection:
     def __init__(self, owner: "_ParserMolecule"):
         self._owner = owner
@@ -550,22 +758,32 @@ class _ParserMolecule:
                 categories = list(array.get_annotation_categories())
             has_sse = "sec_struct" in categories
             needs_sse = True
+            count = int(array.array_length()) if hasattr(array, "array_length") else len(array)
+            amino_mask = _normalized_amino_mask(array, count)
             if has_sse:
-                existing = np.asarray(getattr(array, "sec_struct", []), dtype=object).astype(str)
-                if existing.size > 0:
-                    non_empty = [item for item in existing if item.strip() and item.strip() not in {".", "?"}]
-                    needs_sse = len(non_empty) == 0
-            if needs_sse:
-                import biotite.structure as bs  # type: ignore
-
-                sec_struct = bs.annotate_sse(array)
-                if sec_struct is not None and len(sec_struct) == len(array):
+                existing_raw = np.asarray(getattr(array, "sec_struct", []), dtype=object)
+                if existing_raw.size == count:
+                    existing_numeric = _normalize_sec_struct_values(existing_raw, amino_mask)
+                    if bool(np.any(existing_numeric > 0)):
+                        needs_sse = False
                     if has_sse:
                         try:
                             array.del_annotation("sec_struct")
                         except Exception:
                             pass
-                    array.set_annotation("sec_struct", sec_struct)
+                    array.set_annotation("sec_struct", existing_numeric.astype(int))
+            if needs_sse:
+                import biotite.structure as bs  # type: ignore
+
+                sec_struct = bs.annotate_sse(array)
+                if sec_struct is not None and len(sec_struct) == len(array):
+                    sec_struct = _normalize_sec_struct_values(sec_struct, amino_mask)
+                    if has_sse:
+                        try:
+                            array.del_annotation("sec_struct")
+                        except Exception:
+                            pass
+                    array.set_annotation("sec_struct", sec_struct.astype(int))
         except Exception:
             pass
         return array
@@ -914,6 +1132,52 @@ def _as_style_molecule(loaded: Any, name: str, structure_path: Path):
     if (hasattr(loaded, "create_model") or hasattr(loaded, "create_object")) and hasattr(loaded, "array"):
         return _ParserMolecule(loaded, name=name, auth_chain_ids=auth_chain_ids)
     return _CompatMolecule(loaded)
+
+
+def _apply_auth_chain_override(load_result: Any, structure_path: Path) -> None:
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return
+    count = _atom_array_count(atom_array)
+    if count <= 0:
+        return
+
+    chain_upper = _array_as_upper(
+        getattr(atom_array, "chain_id", np.array([""] * count, dtype=object)),
+        count,
+    )
+    current_values = {str(item).strip().upper() for item in chain_upper.tolist() if str(item).strip()}
+    if not current_values.issubset({"", ".", "?"}):
+        return
+
+    auth_override = _auth_chain_override_for_structure(structure_path, count)
+    if auth_override is None:
+        return
+    try:
+        setattr(load_result, "_bridge_chain_override_upper", auth_override)
+    except Exception:
+        pass
+
+    patched = False
+    try:
+        atom_array.chain_id = auth_override
+        patched = True
+    except Exception:
+        patched = False
+    if not patched:
+        try:
+            categories = list(atom_array.get_annotation_categories()) if hasattr(atom_array, "get_annotation_categories") else []
+            if "chain_id" in categories:
+                try:
+                    atom_array.del_annotation("chain_id")
+                except Exception:
+                    pass
+            atom_array.set_annotation("chain_id", auth_override)
+            patched = True
+        except Exception:
+            patched = False
+    if patched and _env_bool("PRESS_DEBUG_CHAIN_PATCH", False):
+        print("Bridge Custom: patched molecule chain_id from CIF auth_asym_id")
 
 
 def _cycles_compute_options(cycles_prefs) -> list[str]:
@@ -1575,6 +1839,17 @@ def _apply_material_fallback(obj: bpy.types.Object, material: bpy.types.Material
             materials[idx] = material
 
 
+def _object_modifier_names(obj: bpy.types.Object | None) -> list[str]:
+    if obj is None:
+        return []
+    names: list[str] = []
+    for modifier in getattr(obj, "modifiers", []):
+        name = str(getattr(modifier, "name", "")).strip()
+        if name:
+            names.append(name)
+    return names
+
+
 def _set_numeric_socket_default(socket: Any, value: float) -> bool:
     try:
         current = socket.default_value
@@ -1594,6 +1869,21 @@ def _set_numeric_socket_default(socket: Any, value: float) -> bool:
     return False
 
 
+def _is_sticks_atom_sphere_socket_name(socket_name: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(socket_name).strip().lower()).strip()
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    if tokens.intersection({"sphere", "spheres", "ball", "balls", "vdw"}):
+        return True
+    if tokens.intersection({"atom", "atoms"}):
+        if tokens.intersection({"radius", "scale", "size"}):
+            return True
+        if tokens.intersection({"show", "display", "enable", "enabled", "visible", "visibility"}):
+            return True
+    return False
+
+
 def _tune_native_sticks_style(
     obj: bpy.types.Object,
     stick_radius: float | None,
@@ -1601,6 +1891,7 @@ def _tune_native_sticks_style(
     stick_shade_smooth: Any = None,
     stick_color_blur: Any = None,
     disable_atom_spheres: bool = True,
+    modifier_names: list[str] | None = None,
 ) -> int:
     """
     Molecular Nodes native sticks do not always honor radius/quality kwargs at
@@ -1618,7 +1909,12 @@ def _tune_native_sticks_style(
     desired_shade_smooth = bool(stick_shade_smooth) if stick_shade_smooth is not None else None
     desired_color_blur = bool(stick_color_blur) if stick_color_blur is not None else None
 
+    modifier_filter = {str(item) for item in modifier_names} if modifier_names else None
+    debug_stick_sockets = _env_bool("PRESS_DEBUG_STICK_SOCKETS", False)
+
     for modifier in getattr(obj, "modifiers", []):
+        if modifier_filter is not None and str(getattr(modifier, "name", "")) not in modifier_filter:
+            continue
         if modifier.type != "NODES" or modifier.node_group is None:
             continue
         for node in modifier.node_group.nodes:
@@ -1627,9 +1923,14 @@ def _tune_native_sticks_style(
                 continue
             for socket in node.inputs:
                 socket_name = str(getattr(socket, "name", "")).strip().lower()
-                if disable_atom_spheres and any(
-                    token in socket_name for token in ("atom", "ball", "sphere", "vdw")
-                ):
+                sphere_socket = _is_sticks_atom_sphere_socket_name(socket_name)
+                if debug_stick_sockets:
+                    print(
+                        "Bridge Custom sticks socket: "
+                        f"node={node_name} socket={socket_name} sphere_socket={int(sphere_socket)} "
+                        f"value={getattr(socket, 'default_value', '<unreadable>')!r}"
+                    )
+                if disable_atom_spheres and sphere_socket:
                     default_value = getattr(socket, "default_value", None)
                     if isinstance(default_value, bool):
                         try:
@@ -1686,8 +1987,15 @@ def _socket_enables_feature(default_value: Any) -> bool:
     return False
 
 
-def _native_sticks_atom_spheres_enabled(obj: bpy.types.Object) -> bool:
+def _native_sticks_atom_spheres_enabled(
+    obj: bpy.types.Object,
+    *,
+    modifier_names: list[str] | None = None,
+) -> bool:
+    modifier_filter = {str(item) for item in modifier_names} if modifier_names else None
     for modifier in getattr(obj, "modifiers", []):
+        if modifier_filter is not None and str(getattr(modifier, "name", "")) not in modifier_filter:
+            continue
         if modifier.type != "NODES" or modifier.node_group is None:
             continue
         for node in modifier.node_group.nodes:
@@ -1696,7 +2004,7 @@ def _native_sticks_atom_spheres_enabled(obj: bpy.types.Object) -> bool:
                 continue
             for socket in node.inputs:
                 socket_name = str(getattr(socket, "name", "")).strip().lower()
-                if not any(token in socket_name for token in ("atom", "ball", "sphere", "vdw")):
+                if not _is_sticks_atom_sphere_socket_name(socket_name):
                     continue
                 default_value = getattr(socket, "default_value", None)
                 if _socket_enables_feature(default_value):
@@ -1704,9 +2012,17 @@ def _native_sticks_atom_spheres_enabled(obj: bpy.types.Object) -> bool:
     return False
 
 
-def _assign_material_to_style_nodes(obj: bpy.types.Object, material: bpy.types.Material) -> bool:
+def _assign_material_to_style_nodes(
+    obj: bpy.types.Object,
+    material: bpy.types.Material,
+    *,
+    modifier_names: list[str] | None = None,
+) -> bool:
     assigned = 0
+    modifier_filter = {str(item) for item in modifier_names} if modifier_names else None
     for modifier in obj.modifiers:
+        if modifier_filter is not None and str(getattr(modifier, "name", "")) not in modifier_filter:
+            continue
         if modifier.type != "NODES" or modifier.node_group is None:
             continue
         for node in modifier.node_group.nodes:
@@ -1753,13 +2069,28 @@ def _selector_call(selector: Any, names: tuple[str, ...], *args: Any) -> tuple[A
     return selector, False
 
 
-def _build_selection(load_result: Any, selection_cfg: dict[str, Any]) -> Any:
-    if "query" in selection_cfg and isinstance(selection_cfg["query"], str) and selection_cfg["query"].strip():
-        return selection_cfg["query"]
+def _build_selection(
+    load_result: Any,
+    selection_cfg: dict[str, Any],
+    *,
+    structure_path: Path,
+    style_name: str,
+) -> tuple[Any, list[int] | None]:
+    indices = _selection_indices_from_cfg(
+        load_result,
+        selection_cfg,
+        structure_path=structure_path,
+    )
+    if indices is not None:
+        return _selection_to_named_attribute(
+            load_result,
+            indices,
+            style_name=style_name,
+        ), indices
 
     selector = getattr(load_result, "select", None)
     if selector is None:
-        return None
+        return None, None
 
     reset_fn = getattr(selector, "reset", None)
     if callable(reset_fn):
@@ -1787,7 +2118,79 @@ def _build_selection(load_result: Any, selection_cfg: dict[str, Any]) -> Any:
             values = list(range(start, end + 1 if end >= start else start + 1))
             selector, _ = _selector_call(selector, ("res_id", "residue_id"), values)
 
-    return selector
+    return selector, None
+
+
+def _is_native_mn_molecule(load_result: Any) -> bool:
+    if isinstance(load_result, (_ParserMolecule, _CompatMolecule)):
+        return False
+    return bool(hasattr(load_result, "add_style") and hasattr(load_result, "tree"))
+
+
+def _native_style_from_cfg(style_cfg: dict[str, Any]) -> Any:
+    try:
+        import molecularnodes.nodes.styles as mn_styles  # type: ignore
+    except Exception:
+        return str(style_cfg.get("style", "spheres"))
+
+    style_kind = str(style_cfg.get("style", "spheres")).strip().lower()
+    if style_kind == "cartoon":
+        return mn_styles.StyleCartoon(
+            quality=int(style_cfg.get("quality", 2)),
+            peptide_dssp=True,
+            peptide_cylinders=bool(style_cfg.get("peptide_cylinders", False)),
+            peptide_arrows=False,
+            peptide_rounded=bool(style_cfg.get("peptide_rounded", False)),
+            peptide_smoothing=float(style_cfg.get("peptide_smoothing", 0.5)),
+            peptide_thickness=float(style_cfg.get("thickness", 0.6)),
+            peptide_width=float(style_cfg.get("width", 2.2)),
+            peptide_loop_radius=float(style_cfg.get("loop_radius", 0.3)),
+            nucleic_thickness=float(style_cfg.get("nucleic_thickness", 1.0)),
+            nucleic_width=float(style_cfg.get("nucleic_width", 3.0)),
+            nucleic_radius=float(style_cfg.get("nucleic_radius", 2.0)),
+            backbone_shape=style_cfg.get("backbone_shape", "Cylinder"),
+            base_shape=style_cfg.get("base_shape", "Rectangle"),
+            base_realize=bool(style_cfg.get("base_realize", False)),
+            color_blur=bool(style_cfg.get("color_blur", False)),
+            shade_smooth=bool(style_cfg.get("shade_smooth", True)),
+        )
+    if style_kind == "sticks":
+        sticks_radius = style_cfg.get("sticks_radius", style_cfg.get("radius", 0.2))
+        sticks_quality = style_cfg.get("sticks_quality", style_cfg.get("quality", 3))
+        return mn_styles.StyleSticks(
+            quality=int(sticks_quality),
+            radius=float(sticks_radius),
+            color_blur=bool(style_cfg.get("color_blur", False)),
+            shade_smooth=bool(style_cfg.get("sticks_shade_smooth", style_cfg.get("shade_smooth", True))),
+        )
+    if style_kind == "spheres":
+        return mn_styles.StyleSpheres(
+            radius=float(style_cfg.get("radius", 0.8)),
+            subdivisions=int(style_cfg.get("subdivisions", 2)),
+            shade_smooth=bool(style_cfg.get("shade_smooth", True)),
+        )
+    if style_kind == "ribbon":
+        return mn_styles.StyleRibbon(
+            quality=int(style_cfg.get("quality", 3)),
+            backbone_radius=float(style_cfg.get("radius", 1.6)),
+            backbone_width=float(style_cfg.get("width", 3.0)),
+            backbone_thickness=float(style_cfg.get("thickness", 1.0)),
+            color_blur=bool(style_cfg.get("color_blur", False)),
+            shade_smooth=bool(style_cfg.get("shade_smooth", True)),
+        )
+    if style_kind == "surface":
+        return mn_styles.StyleSurface(
+            quality=int(style_cfg.get("quality", 3)),
+            probe_size=float(style_cfg.get("probe_radius", 1.0)),
+            shade_smooth=bool(style_cfg.get("shade_smooth", True)),
+            color_blur=int(2 if bool(style_cfg.get("color_blur", False)) else 0),
+        )
+    if style_kind == "wire":
+        return mn_styles.StyleDensityWire(
+            wire_radius=float(style_cfg.get("radius", 1.0)),
+            wire_resolution=int(style_cfg.get("quality", 3)),
+        )
+    return style_kind
 
 
 def _add_style(
@@ -1800,6 +2203,36 @@ def _add_style(
         return None
 
     style_kind = str(style_cfg["style"])
+    if _is_native_mn_molecule(load_result):
+        native_style = _native_style_from_cfg(style_cfg)
+        attempts = []
+        base_kwargs: dict[str, Any] = {"color": None}
+        style_name = str(style_cfg.get("name", "")).strip()
+        if style_name:
+            base_kwargs["name"] = style_name
+        if material is not None:
+            base_kwargs["material"] = material
+        if selection is not None:
+            attempts.append({"selection": selection, **base_kwargs})
+            attempts.append({"selection": selection})
+        attempts.append(base_kwargs)
+        attempts.append({})
+
+        errors: list[str] = []
+        for kwargs in attempts:
+            try:
+                return load_result.add_style(native_style, **kwargs)
+            except TypeError as exc:
+                errors.append(str(exc))
+                continue
+            except Exception as exc:
+                errors.append(str(exc))
+                continue
+        raise RuntimeError(
+            f"Could not add native style {style_cfg.get('name', style_kind)!r}. "
+            f"Last errors: {' | '.join(errors[-2:])}"
+        )
+
     extra_kwargs: dict[str, Any] = {}
     for key in (
         "color",
@@ -1860,6 +2293,7 @@ def _assign_style_material(
     base_object: bpy.types.Object | None,
     style_result: Any,
     material: bpy.types.Material,
+    modifier_names: list[str] | None = None,
 ) -> None:
     style_obj = getattr(style_result, "_object", None) if style_result is not None else None
     if style_obj is not None:
@@ -1870,6 +2304,10 @@ def _assign_style_material(
 
     target = base_object or _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
     if target is None:
+        return
+    if modifier_names is not None:
+        if modifier_names:
+            _assign_material_to_style_nodes(target, material, modifier_names=modifier_names)
         return
     if not _assign_material_to_style_nodes(target, material):
         _apply_material_fallback(target, material)
@@ -1941,7 +2379,7 @@ def _is_ligand_style(style_cfg: dict[str, Any]) -> bool:
 
 
 def _protein_chain_ids(load_result: Any) -> list[str]:
-    array = getattr(load_result, "atom_array", None)
+    array = _get_atom_array(load_result)
     if array is None:
         return []
     try:
@@ -1961,7 +2399,10 @@ def _protein_chain_ids(load_result: Any) -> list[str]:
         return []
 
     chain_getter = getattr(load_result, "_chain_upper", None)
-    if callable(chain_getter):
+    bridge_override = getattr(load_result, "_bridge_chain_override_upper", None)
+    if isinstance(bridge_override, np.ndarray) and bridge_override.shape[0] == count:
+        chain_upper = np.asarray(bridge_override, dtype=object).astype(str)
+    elif callable(chain_getter):
         try:
             chain_upper = np.asarray(chain_getter(count), dtype=object).astype(str)
         except Exception:
@@ -2349,6 +2790,35 @@ def _style_result_is_empty(style_result: Any) -> bool:
     return False
 
 
+def _add_style_with_tracking(
+    *,
+    load_result: Any,
+    style_cfg: dict[str, Any],
+    selection: Any,
+    material: bpy.types.Material,
+    base_object: bpy.types.Object | None,
+) -> tuple[Any, list[str], bool]:
+    tree = getattr(load_result, "tree", None)
+    before_tree_nodes = -1
+    if tree is not None:
+        try:
+            before_tree_nodes = len(getattr(tree, "nodes", []))
+        except Exception:
+            before_tree_nodes = -1
+    before_modifiers = _object_modifier_names(base_object)
+    style_result = _add_style(load_result, style_cfg, selection, material=material)
+    after_modifiers = _object_modifier_names(base_object)
+    added = [name for name in after_modifiers if name not in before_modifiers]
+    tree_changed = False
+    if before_tree_nodes >= 0:
+        try:
+            after_tree_nodes = len(getattr(tree, "nodes", []))
+            tree_changed = after_tree_nodes > before_tree_nodes
+        except Exception:
+            tree_changed = False
+    return style_result, added, tree_changed
+
+
 def _resolve_blend_output_path(style_doc: dict[str, Any], output_png: Path) -> Path | None:
     output_cfg = style_doc.get("output")
     if not isinstance(output_cfg, dict):
@@ -2363,6 +2833,83 @@ def _resolve_blend_output_path(style_doc: dict[str, Any], output_png: Path) -> P
     if configured.is_absolute():
         return configured
     return output_png.parent / configured
+
+
+def _apply_pymol_ss_hints(load_result: Any, view_doc: dict[str, Any]) -> int:
+    hints = view_doc.get("ss_hints")
+    if not isinstance(hints, dict):
+        return 0
+    by_chain_resi = hints.get("by_chain_resi")
+    if not isinstance(by_chain_resi, dict) or not by_chain_resi:
+        return 0
+
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return 0
+
+    try:
+        count = int(atom_array.array_length()) if hasattr(atom_array, "array_length") else len(atom_array)
+    except Exception:
+        return 0
+    if count <= 0:
+        return 0
+
+    chain_upper_getter = getattr(load_result, "_chain_upper", None)
+    bridge_override = getattr(load_result, "_bridge_chain_override_upper", None)
+    if isinstance(bridge_override, np.ndarray) and bridge_override.shape[0] == count:
+        chain_upper = np.asarray(bridge_override, dtype=object).astype(str)
+    elif callable(chain_upper_getter):
+        try:
+            chain_upper = np.asarray(chain_upper_getter(count), dtype=object).astype(str)
+        except Exception:
+            chain_upper = _array_as_upper(getattr(atom_array, "chain_id", np.array([""] * count, dtype=object)), count)
+    else:
+        chain_upper = _array_as_upper(getattr(atom_array, "chain_id", np.array([""] * count, dtype=object)), count)
+
+    try:
+        res_ids = np.asarray(getattr(atom_array, "res_id", np.full(count, -1, dtype=int))).astype(int)
+    except Exception:
+        return 0
+
+    amino_mask = _normalized_amino_mask(atom_array, count)
+    try:
+        existing_raw = np.asarray(getattr(atom_array, "sec_struct", np.zeros(count, dtype=int)), dtype=object)
+    except Exception:
+        existing_raw = np.zeros(count, dtype=int)
+    sec_struct = _normalize_sec_struct_values(existing_raw, amino_mask)
+
+    applied = 0
+    for idx in range(count):
+        if not bool(amino_mask[idx]):
+            continue
+        chain_id = _strip_wrapping_quotes(str(chain_upper[idx])).strip().upper()
+        if not chain_id or chain_id in {".", "?"}:
+            continue
+        key = f"{chain_id}:{int(res_ids[idx])}"
+        ss_code = str(by_chain_resi.get(key, "")).strip().upper()
+        if ss_code == "H":
+            sec_struct[idx] = 1
+            applied += 1
+        elif ss_code == "S":
+            sec_struct[idx] = 2
+            applied += 1
+        elif ss_code == "L":
+            sec_struct[idx] = 3
+            applied += 1
+
+    if applied <= 0:
+        return 0
+    try:
+        categories = list(atom_array.get_annotation_categories()) if hasattr(atom_array, "get_annotation_categories") else []
+        if "sec_struct" in categories:
+            try:
+                atom_array.del_annotation("sec_struct")
+            except Exception:
+                pass
+        atom_array.set_annotation("sec_struct", sec_struct.astype(int))
+        return applied
+    except Exception:
+        return 0
 
 
 def _render(args: argparse.Namespace) -> None:
@@ -2414,6 +2961,10 @@ def _render(args: argparse.Namespace) -> None:
             return _load_molecule_with_fallback(path, object_name)
 
     load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
+    _apply_auth_chain_override(load_result, structure_path)
+    ss_applied = _apply_pymol_ss_hints(load_result, view_doc)
+    if ss_applied > 0 and _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+        print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object=BridgeCustom")
     base_obj = _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
     parser_mode = isinstance(load_result, _ParserMolecule)
 
@@ -2426,6 +2977,7 @@ def _render(args: argparse.Namespace) -> None:
     runtime_polymer_backend = "none"
     runtime_ligand_backend = "none"
     runtime_ligand_atom_spheres = False
+    styled_geometry_applied = False
 
     for style_idx, style_cfg in enumerate(style_doc["styles"]):
         style_load_result = load_result
@@ -2433,27 +2985,81 @@ def _render(args: argparse.Namespace) -> None:
         if parser_mode:
             style_object_name = f"BridgeCustom_{style_idx}"
             style_load_result = _load_with_ccd_retry(structure_path, style_object_name)
+            _apply_auth_chain_override(style_load_result, structure_path)
+            ss_applied = _apply_pymol_ss_hints(style_load_result, view_doc)
+            if ss_applied > 0 and debug_styles:
+                print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object={style_object_name}")
             style_base_obj = _resolve_loaded_object(style_load_result, style_object_name, allow_missing=True)
 
+        style_name = str(style_cfg.get("name", f"style_{style_idx}"))
         selection_cfg = style_cfg.get("selection", {})
-        selection = _build_selection(style_load_result, selection_cfg if isinstance(selection_cfg, dict) else {})
+        selection, selection_indices = _build_selection(
+            style_load_result,
+            selection_cfg if isinstance(selection_cfg, dict) else {},
+            structure_path=structure_path,
+            style_name=style_name,
+        )
 
         material_name = style_cfg["material"]
         material = materials[material_name]
-        style_result = _add_style(style_load_result, style_cfg, selection, material=material)
+        style_result, new_modifier_names, style_tree_changed = _add_style_with_tracking(
+            load_result=style_load_result,
+            style_cfg=style_cfg,
+            selection=selection,
+            material=material,
+            base_object=style_base_obj,
+        )
         used_fallback = False
         used_auto_chain_fallback = False
+        style_empty = _style_result_is_empty(style_result) and not new_modifier_names and not style_tree_changed
         fallback_cfg = style_cfg.get("fallback_selection")
-        if _style_result_is_empty(style_result) and isinstance(fallback_cfg, dict):
-            fallback_selection = _build_selection(style_load_result, fallback_cfg)
-            style_result = _add_style(style_load_result, style_cfg, fallback_selection, material=material)
+        if style_empty and isinstance(fallback_cfg, dict):
+            fallback_selection, fallback_indices = _build_selection(
+                style_load_result,
+                fallback_cfg,
+                structure_path=structure_path,
+                style_name=f"{style_name}_fallback",
+            )
+            if fallback_indices is not None:
+                selection_indices = fallback_indices
+            style_result, fallback_modifiers, fallback_tree_changed = _add_style_with_tracking(
+                load_result=style_load_result,
+                style_cfg=style_cfg,
+                selection=fallback_selection,
+                material=material,
+                base_object=style_base_obj,
+            )
+            for modifier_name in fallback_modifiers:
+                if modifier_name not in new_modifier_names:
+                    new_modifier_names.append(modifier_name)
+            style_tree_changed = style_tree_changed or fallback_tree_changed
             used_fallback = True
-        if _style_result_is_empty(style_result):
+            style_empty = _style_result_is_empty(style_result) and not new_modifier_names and not style_tree_changed
+        if style_empty:
             chain_ids = _protein_chain_ids(style_load_result)
             auto_query = _auto_chain_fallback_query(style_cfg, chain_ids)
             if auto_query:
-                style_result = _add_style(style_load_result, style_cfg, auto_query, material=material)
+                auto_selection, auto_indices = _build_selection(
+                    style_load_result,
+                    {"query": auto_query},
+                    structure_path=structure_path,
+                    style_name=f"{style_name}_auto_chain",
+                )
+                if auto_indices is not None:
+                    selection_indices = auto_indices
+                style_result, auto_modifiers, auto_tree_changed = _add_style_with_tracking(
+                    load_result=style_load_result,
+                    style_cfg=style_cfg,
+                    selection=auto_selection,
+                    material=material,
+                    base_object=style_base_obj,
+                )
+                for modifier_name in auto_modifiers:
+                    if modifier_name not in new_modifier_names:
+                        new_modifier_names.append(modifier_name)
+                style_tree_changed = style_tree_changed or auto_tree_changed
                 used_auto_chain_fallback = True
+                style_empty = _style_result_is_empty(style_result) and not new_modifier_names and not style_tree_changed
         style_kind_lower = str(style_cfg.get("style", "")).strip().lower()
         style_name_lower = str(style_cfg.get("name", "")).strip().lower()
         if style_kind_lower == "sticks" and _is_ligand_style(style_cfg):
@@ -2469,7 +3075,7 @@ def _render(args: argparse.Namespace) -> None:
                 require_geometry = len(protein_chain_ids) >= 3
             elif len(protein_chain_ids) >= 1:
                 require_geometry = True
-            if require_geometry and _style_result_is_empty(style_result):
+            if require_geometry and style_empty:
                 raise RuntimeError(
                     "Cartoon polymer style produced no geometry. "
                     f"style={style_cfg.get('name', '<unnamed>')} protein_chains={protein_chain_ids} "
@@ -2479,11 +3085,45 @@ def _render(args: argparse.Namespace) -> None:
         if (
             style_kind_lower == "sticks"
             and _is_ligand_style(style_cfg)
+            and style_obj is None
+            and style_base_obj is not None
+            and (new_modifier_names or style_tree_changed)
+        ):
+            tuned = _tune_native_sticks_style(
+                style_base_obj,
+                float(style_cfg.get("sticks_radius", style_cfg.get("radius"))) if style_cfg.get("sticks_radius", style_cfg.get("radius")) is not None else None,
+                style_cfg.get("sticks_quality", style_cfg.get("quality")),
+                style_cfg.get("sticks_shade_smooth", style_cfg.get("shade_smooth")),
+                style_cfg.get("color_blur"),
+                disable_atom_spheres=True,
+                modifier_names=new_modifier_names if new_modifier_names else None,
+            )
+            if tuned > 0 and debug_styles:
+                print(
+                    "Bridge Custom: tuned native sticks modifiers "
+                    f"(sockets={tuned}) style={style_name}"
+                )
+        if (
+            style_kind_lower == "sticks"
+            and _is_ligand_style(style_cfg)
             and style_obj is not None
         ):
             runtime_ligand_atom_spheres = (
                 runtime_ligand_atom_spheres
                 or _native_sticks_atom_spheres_enabled(style_obj)
+            )
+        elif (
+            style_kind_lower == "sticks"
+            and _is_ligand_style(style_cfg)
+            and style_base_obj is not None
+            and (new_modifier_names or style_tree_changed)
+        ):
+            runtime_ligand_atom_spheres = (
+                runtime_ligand_atom_spheres
+                or _native_sticks_atom_spheres_enabled(
+                    style_base_obj,
+                    modifier_names=new_modifier_names if new_modifier_names else None,
+                )
             )
         if (
             _is_polymer_cartoon_style(style_cfg)
@@ -2496,19 +3136,26 @@ def _render(args: argparse.Namespace) -> None:
                 "Refusing tube/trace downgrade for preset fidelity."
             )
         if style_obj is not None:
+            styled_geometry_applied = True
             created_objects.append(style_obj)
             style_name = str(style_cfg.get("name", "")).strip()
             if style_name:
                 style_objects_by_name.setdefault(style_name, []).append(style_obj)
+        elif (new_modifier_names or style_tree_changed) and style_base_obj is not None and style_base_obj not in created_objects:
+            styled_geometry_applied = True
+            created_objects.append(style_base_obj)
         _assign_style_material(
             load_result=style_load_result,
             base_object=style_base_obj,
             style_result=style_result,
             material=material,
+            modifier_names=new_modifier_names,
         )
         if debug_styles:
             sel_indices = getattr(style_result, "_selection_indices", None)
             sel_count = len(sel_indices) if isinstance(sel_indices, list) else None
+            if sel_count is None and isinstance(selection_indices, list):
+                sel_count = len(selection_indices)
             obj_name = getattr(style_obj, "name", None) if style_obj is not None else None
             material_slots: list[str] = []
             if style_obj is not None:
@@ -2527,11 +3174,19 @@ def _render(args: argparse.Namespace) -> None:
                 f"selection_count={sel_count} "
                 f"fallback={int(used_fallback)} "
                 f"auto_chain_fallback={int(used_auto_chain_fallback)} "
+                f"selection={selection!r} "
+                f"new_modifiers={new_modifier_names} "
+                f"tree_changed={int(style_tree_changed)} "
                 f"object={obj_name} "
                 f"materials={material_slots}"
             )
 
     if not created_objects and base_obj is not None:
+        if not styled_geometry_applied:
+            raise RuntimeError(
+                "Styles produced no geometry (no style objects/modifiers were created). "
+                "Refusing fallback molecule display because preset fidelity would be invalid."
+            )
         try:
             base_obj.hide_render = False
             base_obj.hide_set(False)

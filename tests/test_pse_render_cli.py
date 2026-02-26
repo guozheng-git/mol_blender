@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pymol_plugin_bridge.pse_render_cli as cli
+import blender_render.pse_render_cli as cli
 
 
 def test_pse_cli_builds_runner_command(monkeypatch, tmp_path: Path):
