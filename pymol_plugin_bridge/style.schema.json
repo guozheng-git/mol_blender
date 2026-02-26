@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/pymol-blender-bridge/style.schema.json",
+  "title": "PyMOL Blender Bridge Full Custom Style",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "output",
+    "renderer",
+    "camera",
+    "world",
+    "lights",
+    "materials",
+    "styles"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version string, for example 1.0"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "width", "height", "samples"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["PNG", "JPEG", "TIFF", "OPEN_EXR"]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "save_blend": {
+          "type": "boolean"
+        },
+        "blend_filename": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "renderer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["engine"],
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["CYCLES", "BLENDER_EEVEE", "EEVEE"]
+        },
+        "device": {
+          "type": "string",
+          "enum": ["GPU", "CPU"]
+        },
+        "compute_device_type": {
+          "type": "string"
+        },
+        "transparent_background": {
+          "type": "boolean"
+        },
+        "adaptive_sampling": {
+          "type": "boolean"
+        },
+        "require_gpu": {
+          "type": "boolean"
+        },
+        "exposure": {
+          "type": "number"
+        },
+        "gamma": {
+          "type": "number",
+          "minimum": 0.01
+        },
+        "view_transform": {
+          "type": "string"
+        },
+        "look": {
+          "type": "string"
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["pymol", "override"]
+        },
+        "lens_mm": {
+          "type": "number"
+        },
+        "shift_x": {
+          "type": "number"
+        },
+        "shift_y": {
+          "type": "number"
+        },
+        "world_scale": {
+          "type": "number",
+          "minimum": 0
+        },
+        "anchor_model_center": {
+          "type": "boolean"
+        }
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "background_type": {
+          "type": "string",
+          "enum": ["solid", "gradient"]
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "top_color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "bottom_color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "lights": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["type", "energy", "location"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["AREA", "SUN", "POINT", "SPOT"]
+          },
+          "energy": {
+            "type": "number"
+          },
+          "size": {
+            "type": "number",
+            "minimum": 0
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "location": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "rotation_deg": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number"
+            }
+          },
+          "rotate_with_pymol_yaw": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "materials": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "base_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "roughness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "specular": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "transmission": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "alpha": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "emission_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "emission_strength": {
+            "type": "number",
+            "minimum": 0
+          },
+          "shadow_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "highlight_color": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "ao_strength": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rim_strength": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rim_blend": {
+            "type": "number",
+            "minimum": 0
+          },
+          "rim_power": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ao_distance": {
+            "type": "number",
+            "minimum": 0
+          },
+          "coat": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "styles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "style", "selection", "material"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "surface",
+              "cartoon",
+              "sticks",
+              "spheres",
+              "ball_and_stick",
+              "ribbon",
+              "wire"
+            ]
+          },
+          "material": {
+            "type": "string",
+            "minLength": 1
+          },
+          "color": {
+            "type": "string"
+          },
+          "selection": {
+            "$ref": "#/$defs/selectionDsl"
+          },
+          "fallback_selection": {
+            "$ref": "#/$defs/selectionDsl"
+          },
+          "radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "quality": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "probe_radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "subdivisions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "thickness": {
+            "type": "number",
+            "minimum": 0
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0
+          },
+          "loop_radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "shade_smooth": {
+            "type": "boolean"
+          },
+          "sticks_backend": {
+            "type": "string",
+            "enum": [
+              "native",
+              "legacy_ball_and_stick",
+              "ball_and_stick",
+              "legacy"
+            ]
+          },
+          "sticks_fallback_radius_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sticks_fallback_atom_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "sticks_fallback_bond_resolution": {
+            "type": "integer",
+            "minimum": 6
+          }
+        }
+      }
+    },
+    "color_follow": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["auto", "chain", "class"]
+        },
+        "mix": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "saturation_boost": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "value_boost": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "selectionDsl": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "polymer": {
+          "type": "boolean"
+        },
+        "nucleic": {
+          "type": "boolean"
+        },
+        "ligand": {
+          "type": "boolean"
+        },
+        "chain": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
+        "residue_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "query": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
