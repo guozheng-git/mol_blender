@@ -73,12 +73,14 @@ def _base_args(payload_path: Path, tmp_path: Path) -> argparse.Namespace:
         custom_script=str(Path("blender_render/blender_custom_render.py")),
         use_apptainer=False,
         apptainer_image="",
-        interactive_launcher="qlogin -p gpu --gres=gpu:a4000:1 --mem=16g -c 2",
+        interactive_launcher="qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
         backend="qlogin",
         session_id="",
         job_id="",
         job_launcher="srun --jobid {job_id}",
         startup_timeout=120,
+        attach=False,
+        attach_only=False,
         wait_timeout=0,
         wait=True,
         force=False,
@@ -242,6 +244,67 @@ def test_local_mode_retries_with_pdb_after_cif_failure(monkeypatch, tmp_path: Pa
     assert first_structure == "structure.cif"
     assert second_structure == "structure.pdb"
     assert result["staged_structure_path"].endswith("structure.pdb")
+
+
+def test_local_preset_1_disables_pdb_retry_after_cif_failure(monkeypatch, tmp_path: Path):
+    payload = {
+        "version": "1.0",
+        "run_id": "testrun_retry_preset1",
+        "dss": {"ran": True, "selection": "(all)"},
+        "cif_text": "\n".join(
+            [
+                "data_demo",
+                "loop_",
+                "_atom_site.group_PDB",
+                "_atom_site.id",
+                "ATOM 1",
+            ]
+        ),
+        "pdb_text": "ATOM      1  N   GLY A   1      11.104  13.207  10.207  1.00 20.00           N\n",
+        "view": {
+            "pymol_view": [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                -50.0,
+                0.0,
+                0.0,
+                0.0,
+                2.0,
+                120.0,
+                50.0,
+            ]
+        },
+    }
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+    args = _base_args(payload_path, tmp_path)
+    args.preset = "preset_1_interface"
+    args.output_name = "retry_blocked.png"
+
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, env=None):
+        calls.append(command)
+        structure_arg = Path(command[command.index("--structure") + 1])
+        if structure_arg.suffix == ".cif":
+            return CompletedProcess(command, 1, stdout="", stderr="simulated CIF loader failure")
+        return CompletedProcess(command, 0, stdout="unexpected pdb fallback", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    with pytest.raises(bridge_runner.RunnerError, match="PDB fallback is disabled for this preset"):
+        bridge_runner.run_local(args)
+    assert len(calls) == 1
+    assert Path(calls[0][calls[0].index("--structure") + 1]).name == "structure.cif"
 
 
 def test_local_temp_dir_is_cleaned_by_default(monkeypatch, payload_file: Path, tmp_path: Path):
@@ -613,12 +676,72 @@ def test_interactive_open_qlogin_returns_ready(monkeypatch, payload_file: Path, 
             "default_output_dir": str(tmp_path / "interactive_out"),
         },
     )
+    monkeypatch.setattr(bridge_runner, "_qlogin_worker_running", lambda *_a, **_k: (True, 0.1))
 
     result = bridge_runner.run_interactive_open(args)
 
     assert result["status"] == "ready"
     assert result["backend"] == "qlogin"
     assert result["session_id"] == "sess_open"
+
+
+def test_interactive_open_attach_only_fails_without_existing_session(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.backend = "qlogin"
+    args.session_id = ""
+    args.attach = True
+    args.attach_only = True
+
+    monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
+    with pytest.raises(bridge_runner.RunnerError, match="attach_only=1"):
+        bridge_runner.run_interactive_open(args)
+
+
+def test_interactive_open_attach_reuses_running_session(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.backend = "qlogin"
+    args.session_id = "sess_attach"
+    args.attach = True
+    args.attach_only = False
+
+    monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
+    session_dir = bridge_runner.SESSION_ROOT / "sess_attach"
+    for child in ("requests", "responses", "control", "staged", "session"):
+        (session_dir / child).mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        session_dir / "session" / "session.json",
+        {
+            "session_id": "sess_attach",
+            "backend": "qlogin",
+            "status": "ready",
+            "worker_pid": 999,
+            "launcher_pid": 999,
+            "default_output_dir": str(tmp_path / "interactive_out"),
+        },
+    )
+    (session_dir / "session" / "ready.flag").write_text("ready\n", encoding="utf-8")
+    bridge_runner._write_json_atomic(
+        session_dir / "session" / "heartbeat.json",
+        {
+            "session_id": "sess_attach",
+            "updated_at_utc": bridge_runner._utc_now_iso(),
+            "status": "idle",
+            "queue_depth": 0,
+        },
+    )
+    popen_calls: list[object] = []
+    monkeypatch.setattr(
+        bridge_runner.subprocess,
+        "Popen",
+        lambda *a, **k: popen_calls.append((a, k)) or None,
+    )
+
+    result = bridge_runner.run_interactive_open(args)
+
+    assert result["status"] == "ready"
+    assert result["attached"] is True
+    assert result["session_id"] == "sess_attach"
+    assert not popen_calls
 
 
 def test_interactive_submit_qlogin_reads_result_file(monkeypatch, payload_file: Path, tmp_path: Path):
@@ -630,10 +753,10 @@ def test_interactive_submit_qlogin_reads_result_file(monkeypatch, payload_file: 
 
     monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
     session_dir = bridge_runner.SESSION_ROOT / args.session_id
-    for child in ("requests", "results", "control", "staged"):
+    for child in ("requests", "responses", "control", "staged", "session"):
         (session_dir / child).mkdir(parents=True, exist_ok=True)
     bridge_runner._write_json_atomic(
-        session_dir / "session.json",
+        session_dir / "session" / "session.json",
         {
             "session_id": args.session_id,
             "backend": "qlogin",
@@ -643,10 +766,34 @@ def test_interactive_submit_qlogin_reads_result_file(monkeypatch, payload_file: 
         },
     )
 
-    monkeypatch.setattr(bridge_runner, "_session_pid_alive", lambda _pid: True)
-    monkeypatch.setattr(bridge_runner, "_new_run_id", lambda: "req123")
+    monkeypatch.setattr(bridge_runner, "_qlogin_worker_running", lambda *_a, **_k: (True, 0.2))
+
+    def fake_build_request(*, session_id: str, args: argparse.Namespace, session: dict[str, object]):
+        return "req123", {
+            "request_id": "req123",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "submitted_by": "tester@host:123",
+            "queue_position": 1,
+            "status": "submitted",
+            "payload": bridge_runner._load_json(Path(args.payload_json)),
+            "preset": args.preset,
+            "style_doc": None,
+            "output_dir": str(tmp_path / "interactive_out"),
+            "output_name": "done.png",
+            "blender_exe": args.blender_exe,
+            "custom_script": args.custom_script,
+            "use_apptainer": False,
+            "apptainer_image": "",
+            "rough": False,
+            "color_follow": False,
+            "save_blend": False,
+            "blend_output": "",
+            "keep_temp": False,
+        }
+
+    monkeypatch.setattr(bridge_runner, "_build_interactive_request", fake_build_request)
     bridge_runner._write_json_atomic(
-        session_dir / "results" / "req123.json",
+        session_dir / "responses" / "req123" / "result.json",
         {
             "status": "completed",
             "mode": "interactive",
@@ -663,6 +810,186 @@ def test_interactive_submit_qlogin_reads_result_file(monkeypatch, payload_file: 
     assert result["request_id"] == "req123"
 
 
+def test_interactive_build_request_queue_position_counts_existing_fifo(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    session_id = "sess_fifo"
+    monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
+    session_dir = bridge_runner.SESSION_ROOT / session_id
+    for child in ("requests", "responses", "control", "staged", "session"):
+        (session_dir / child).mkdir(parents=True, exist_ok=True)
+
+    existing_request_dir = session_dir / "requests" / "00000000000000000001_oldreq"
+    existing_request_dir.mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        existing_request_dir / "request.json",
+        {"request_id": "oldreq", "status": "running"},
+    )
+    (existing_request_dir / "processing.lock").write_text("lock\n", encoding="utf-8")
+
+    request_id, request_doc = bridge_runner._build_interactive_request(
+        session_id=session_id,
+        args=args,
+        session={"session_id": session_id, "backend": "qlogin"},
+    )
+
+    assert isinstance(request_id, str) and request_id
+    assert request_doc["queue_position"] == 2
+    assert isinstance(request_doc["submitted_by"], str) and request_doc["submitted_by"]
+    assert request_doc["status"] == "submitted"
+
+
+def test_interactive_submit_prefers_response_png_copy(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.command = "interactive-submit"
+    args.session_id = "sess_copy"
+    args.poll = True
+    args.poll_interval = 1
+    args.output_name = "final.png"
+
+    monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
+    session_dir = bridge_runner.SESSION_ROOT / args.session_id
+    for child in ("requests", "responses", "control", "staged", "session"):
+        (session_dir / child).mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        session_dir / "session" / "session.json",
+        {
+            "session_id": args.session_id,
+            "backend": "qlogin",
+            "status": "ready",
+            "worker_pid": 999,
+            "default_output_dir": str(tmp_path / "interactive_out"),
+        },
+    )
+
+    monkeypatch.setattr(bridge_runner, "_qlogin_worker_running", lambda *_a, **_k: (True, 0.1))
+
+    def fake_build_request(*, session_id: str, args: argparse.Namespace, session: dict[str, object]):
+        return "reqcopy", {
+            "request_id": "reqcopy",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "submitted_by": "tester@host:123",
+            "queue_position": 1,
+            "status": "submitted",
+            "payload": bridge_runner._load_json(Path(args.payload_json)),
+            "preset": args.preset,
+            "style_doc": None,
+            "output_dir": str(tmp_path / "interactive_out"),
+            "output_name": "final.png",
+            "blender_exe": args.blender_exe,
+            "custom_script": args.custom_script,
+            "use_apptainer": False,
+            "apptainer_image": "",
+            "rough": False,
+            "color_follow": False,
+            "save_blend": False,
+            "blend_output": "",
+            "keep_temp": False,
+        }
+
+    monkeypatch.setattr(bridge_runner, "_build_interactive_request", fake_build_request)
+
+    response_dir = session_dir / "responses" / "reqcopy"
+    response_dir.mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        response_dir / "result.json",
+        {
+            "status": "completed",
+            "mode": "interactive",
+            "run_id": "testrun",
+            "output_png": "/remote/node/path/remote.png",
+            "output_dir": "/remote/node/path",
+        },
+    )
+    (response_dir / "output.png").write_bytes(b"png-bytes")
+
+    result = bridge_runner.run_interactive_submit(args)
+
+    expected = tmp_path / "interactive_out" / "final.png"
+    assert result["status"] == "completed"
+    assert result["output_png"] == str(expected)
+    assert expected.read_bytes() == b"png-bytes"
+
+
+def test_interactive_submit_restarts_stale_qlogin_worker(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.command = "interactive-submit"
+    args.session_id = "sess_restart"
+    args.poll = True
+    args.poll_interval = 1
+    args.wait_timeout = 1
+
+    monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
+    session_dir = bridge_runner.SESSION_ROOT / args.session_id
+    for child in ("requests", "responses", "control", "staged", "session"):
+        (session_dir / child).mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        session_dir / "session" / "session.json",
+        {
+            "session_id": args.session_id,
+            "backend": "qlogin",
+            "status": "ready",
+            "worker_pid": 999,
+            "launcher": "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
+            "default_output_dir": str(tmp_path / "interactive_out"),
+        },
+    )
+
+    running_states = iter([(False, 999.0), (True, 0.2)])
+    monkeypatch.setattr(bridge_runner, "_qlogin_worker_running", lambda *_a, **_k: next(running_states))
+
+    open_calls: list[argparse.Namespace] = []
+
+    def fake_open(open_args: argparse.Namespace):
+        open_calls.append(open_args)
+        return {"status": "ready", "session_id": args.session_id}
+
+    monkeypatch.setattr(bridge_runner, "run_interactive_open", fake_open)
+
+    def fake_build_request(*, session_id: str, args: argparse.Namespace, session: dict[str, object]):
+        return "req_restart", {
+            "request_id": "req_restart",
+            "created_at_utc": "2026-01-01T00:00:00+00:00",
+            "submitted_by": "tester@host:123",
+            "queue_position": 1,
+            "status": "submitted",
+            "payload": bridge_runner._load_json(Path(args.payload_json)),
+            "preset": args.preset,
+            "style_doc": None,
+            "output_dir": str(tmp_path / "interactive_out"),
+            "output_name": "restart.png",
+            "blender_exe": args.blender_exe,
+            "custom_script": args.custom_script,
+            "use_apptainer": False,
+            "apptainer_image": "",
+            "rough": False,
+            "color_follow": False,
+            "save_blend": False,
+            "blend_output": "",
+            "keep_temp": False,
+        }
+
+    monkeypatch.setattr(bridge_runner, "_build_interactive_request", fake_build_request)
+
+    response_dir = session_dir / "responses" / "req_restart"
+    response_dir.mkdir(parents=True, exist_ok=True)
+    bridge_runner._write_json_atomic(
+        response_dir / "result.json",
+        {
+            "status": "completed",
+            "mode": "interactive",
+            "run_id": "testrun",
+            "output_png": str(tmp_path / "interactive_out" / "restart.png"),
+            "output_dir": str(tmp_path / "interactive_out"),
+        },
+    )
+
+    result = bridge_runner.run_interactive_submit(args)
+
+    assert result["status"] == "completed"
+    assert open_calls
+    assert bool(open_calls[0].attach) is True
+
+
 def test_interactive_submit_jobid_uses_saved_launcher(monkeypatch, payload_file: Path, tmp_path: Path):
     args = _base_args(payload_file, tmp_path)
     args.command = "interactive-submit"
@@ -671,10 +998,10 @@ def test_interactive_submit_jobid_uses_saved_launcher(monkeypatch, payload_file:
 
     monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
     session_dir = bridge_runner.SESSION_ROOT / args.session_id
-    for child in ("requests", "results", "control", "staged"):
+    for child in ("requests", "responses", "control", "staged", "session"):
         (session_dir / child).mkdir(parents=True, exist_ok=True)
     bridge_runner._write_json_atomic(
-        session_dir / "session.json",
+        session_dir / "session" / "session.json",
         {
             "session_id": args.session_id,
             "backend": "jobid",
@@ -709,10 +1036,10 @@ def test_interactive_close_marks_session_closed(monkeypatch, payload_file: Path,
 
     monkeypatch.setattr(bridge_runner, "SESSION_ROOT", tmp_path / "sessions")
     session_dir = bridge_runner.SESSION_ROOT / args.session_id
-    for child in ("requests", "results", "control", "staged"):
+    for child in ("requests", "responses", "control", "staged", "session"):
         (session_dir / child).mkdir(parents=True, exist_ok=True)
     bridge_runner._write_json_atomic(
-        session_dir / "session.json",
+        session_dir / "session" / "session.json",
         {
             "session_id": args.session_id,
             "backend": "qlogin",
@@ -725,5 +1052,5 @@ def test_interactive_close_marks_session_closed(monkeypatch, payload_file: Path,
     result = bridge_runner.run_interactive_close(args)
 
     assert result["status"] == "closed"
-    refreshed = bridge_runner._load_json(session_dir / "session.json")
+    refreshed = bridge_runner._load_json(session_dir / "session" / "session.json")
     assert refreshed["status"] == "closed"

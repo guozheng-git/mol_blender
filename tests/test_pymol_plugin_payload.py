@@ -74,6 +74,20 @@ class FakeCmd:
         records.append(("A", "22", "H", 1))
 
 
+class FakeCmdNoDataBlock(FakeCmd):
+    def get_str(self, fmt, selection, state=-1):
+        if fmt == "cif":
+            return "\n".join(
+                [
+                    "loop_",
+                    "_atom_site.group_PDB",
+                    "_atom_site.id",
+                    "ATOM 1",
+                ]
+            )
+        return super().get_str(fmt, selection, state=state)
+
+
 def test_build_render_payload_contains_cif_and_view_fields():
     fake = FakeCmd()
     payload = build_render_payload(fake, "(all)")
@@ -96,6 +110,13 @@ def test_build_render_payload_contains_cif_and_view_fields():
     assert view["fov_deg"] == 50.0
     assert view["orthoscopic"] is False
     assert view["viewport_px"] == [1600, 900]
+
+
+def test_build_render_payload_accepts_cif_without_data_block():
+    fake = FakeCmdNoDataBlock()
+    payload = build_render_payload(fake, "(all)")
+    assert isinstance(payload["cif_text"], str)
+    assert payload["cif_text"].strip().startswith("loop_")
 
 
 def test_build_render_payload_fails_when_dss_assignment_fails():

@@ -148,6 +148,32 @@ def test_bridge_render_forwards_color_follow_flag(monkeypatch, tmp_path: Path):
     assert command[command.index("--color-follow") + 1] == "1"
 
 
+def test_bridge_render_local_preset1_auto_uses_apptainer(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+    image = tmp_path / "bridge.sif"
+    image.write_bytes(b"sif")
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+    monkeypatch.setattr(plugin, "_default_apptainer_image", lambda: image, raising=False)
+    monkeypatch.setattr(plugin.sys, "platform", "linux", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "completed", "output_png": ""},
+        raising=False,
+    )
+
+    plugin.bridge_render(selection="(all)", preset="preset_1_interface", mode="local", rough=1)
+    command = calls[0]
+    assert "--use-apptainer" in command
+    assert command[command.index("--use-apptainer") + 1] == "1"
+    assert "--apptainer-image" in command
+    assert command[command.index("--apptainer-image") + 1] == str(image)
+
+
 def test_bridge_render_interactive_forwards_launcher(monkeypatch, tmp_path: Path):
     fake = FakeCmd()
     calls = []
@@ -193,3 +219,58 @@ def test_bridge_render_interactive_submit_uses_active_session(monkeypatch, tmp_p
     assert command[2] == "interactive-submit"
     assert "--session-id" in command
     assert command[command.index("--session-id") + 1] == "sess123"
+
+
+def test_bridge_render_interactive_explicit_session_auto_opens_when_stopped(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+
+    def fake_run_runner(command):
+        calls.append(command)
+        subcommand = command[2]
+        if subcommand == "interactive-status":
+            return {"status": "stopped", "session_id": "sess_missing"}
+        if subcommand == "interactive-open":
+            return {"status": "ready", "session_id": "sess_missing", "message": "Interactive GPU session ready"}
+        if subcommand == "interactive-submit":
+            return {"status": "completed", "output_png": ""}
+        raise AssertionError(f"unexpected subcommand: {subcommand}")
+
+    monkeypatch.setattr(plugin, "_run_runner", fake_run_runner, raising=False)
+
+    plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="interactive",
+        interactive_session="sess_missing",
+    )
+
+    assert [cmd[2] for cmd in calls] == ["interactive-status", "interactive-open", "interactive-submit"]
+    submit_command = calls[-1]
+    assert submit_command[submit_command.index("--session-id") + 1] == "sess_missing"
+
+
+def test_bridge_render_interactive_open_forwards_attach_flags(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "ready", "session_id": "sess_attach"},
+        raising=False,
+    )
+
+    plugin.bridge_render_interactive_open(backend="qlogin", attach=1, attach_only=1)
+
+    command = calls[0]
+    assert "--attach" in command
+    assert command[command.index("--attach") + 1] == "1"
+    assert "--attach-only" in command
+    assert command[command.index("--attach-only") + 1] == "1"

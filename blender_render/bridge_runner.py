@@ -24,7 +24,7 @@ from typing import Any
 
 DEFAULT_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 DEFAULT_APPTAINER_BLENDER_EXE = "/usr/local/bin/blender"
-DEFAULT_INTERACTIVE_LAUNCHER = "qlogin -p gpu --gres=gpu:a4000:1 --mem=16g -c 2 -t 120"
+DEFAULT_INTERACTIVE_LAUNCHER = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4"
 
 
 def _default_session_root() -> Path:
@@ -259,9 +259,12 @@ def _looks_like_cif_atom_site(text: str) -> bool:
         return False
     lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
     has_data_block = any(line.lower().startswith("data_") for line in lines)
+    has_loop = any(line.lower() == "loop_" for line in lines)
     has_atom_headers = any(line.lower().startswith("_atom_site.") for line in lines)
     has_atom_rows = any(line.startswith("ATOM") or line.startswith("HETATM") for line in lines)
-    return bool(has_data_block and (has_atom_headers or has_atom_rows))
+    if has_atom_headers:
+        return True
+    return bool(has_atom_rows and (has_data_block or has_loop))
 
 
 def _looks_like_pdb_atoms(text: str) -> bool:
@@ -1187,12 +1190,42 @@ def _session_dir(session_id: str) -> Path:
     return SESSION_ROOT / session_id
 
 
-def _session_file(session_id: str) -> Path:
+def _spool_requests_dir(session_id: str) -> Path:
+    return _session_dir(session_id) / "requests"
+
+
+def _spool_responses_dir(session_id: str) -> Path:
+    return _session_dir(session_id) / "responses"
+
+
+def _spool_session_dir(session_id: str) -> Path:
+    return _session_dir(session_id) / "session"
+
+
+def _session_ready_flag(session_id: str) -> Path:
+    return _spool_session_dir(session_id) / "ready.flag"
+
+
+def _session_heartbeat_file(session_id: str) -> Path:
+    return _spool_session_dir(session_id) / "heartbeat.json"
+
+
+def _legacy_session_file(session_id: str) -> Path:
     return _session_dir(session_id) / "session.json"
 
 
+def _session_file(session_id: str) -> Path:
+    return _spool_session_dir(session_id) / "session.json"
+
+
 def _load_session_record(session_id: str) -> dict[str, Any]:
-    return _load_json(_session_file(session_id))
+    path = _session_file(session_id)
+    if path.exists():
+        return _load_json(path)
+    legacy = _legacy_session_file(session_id)
+    if legacy.exists():
+        return _load_json(legacy)
+    return _load_json(path)
 
 
 def _save_session_record(record: dict[str, Any]) -> None:
@@ -1200,6 +1233,45 @@ def _save_session_record(record: dict[str, Any]) -> None:
     if not session_id:
         raise RunnerError("Session record is missing 'session_id'.")
     _write_json_atomic(_session_file(session_id), record)
+
+
+def _heartbeat_age_seconds(session_id: str) -> float | None:
+    heartbeat_path = _session_heartbeat_file(session_id)
+    try:
+        payload = _load_json(heartbeat_path)
+        ts = str(payload.get("updated_at_utc", "")).strip()
+        if ts:
+            normalized = ts.replace("Z", "+00:00")
+            updated = dt.datetime.fromisoformat(normalized)
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=dt.timezone.utc)
+            return max(0.0, (dt.datetime.now(dt.timezone.utc) - updated).total_seconds())
+    except Exception:
+        pass
+    try:
+        return max(0.0, time.time() - heartbeat_path.stat().st_mtime)
+    except FileNotFoundError:
+        return None
+
+
+def _write_heartbeat(
+    session_id: str,
+    *,
+    request_id: str = "",
+    status: str = "idle",
+    queue_depth: int = 0,
+) -> None:
+    heartbeat_path = _session_heartbeat_file(session_id)
+    payload = {
+        "session_id": session_id,
+        "updated_at_utc": _utc_now_iso(),
+        "request_id": str(request_id or ""),
+        "status": str(status or "idle"),
+        "queue_depth": int(max(0, queue_depth)),
+        "worker_pid": os.getpid(),
+        "worker_host": socket.gethostname(),
+    }
+    _write_json_atomic(heartbeat_path, payload)
 
 
 def _session_pid_alive(pid_value: Any) -> bool:
@@ -1237,15 +1309,14 @@ def _qlogin_worker_running(session_id: str, session: dict[str, Any], stale_secon
     if status in {"closed", "close_requested"}:
         return False, None
 
-    heartbeat_path = _session_dir(session_id) / "heartbeat.txt"
-    heartbeat_age: float | None = None
-    try:
-        heartbeat_age = max(0.0, time.time() - heartbeat_path.stat().st_mtime)
-    except FileNotFoundError:
-        heartbeat_age = None
+    ready_flag = _session_ready_flag(session_id)
+    heartbeat_age = _heartbeat_age_seconds(session_id)
+    stale_limit = max(5, stale_seconds)
 
-    if heartbeat_age is not None and heartbeat_age <= max(5, stale_seconds):
+    if ready_flag.exists() and heartbeat_age is not None and heartbeat_age <= stale_limit:
         return True, heartbeat_age
+    if heartbeat_age is not None and heartbeat_age > stale_limit:
+        return False, heartbeat_age
 
     worker_pid = session.get("worker_pid")
     worker_host = str(session.get("worker_host", "")).strip()
@@ -1352,6 +1423,18 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             preset=args.preset,
             style_doc=style_doc,
         )
+        preset_1_gate_target = _is_preset_1_gate_target(
+            preset=args.preset,
+            style_json_path=args.style_json,
+            style_doc=style_doc,
+        )
+        if preset_1_gate_target and structure_path.suffix.lower() != ".cif":
+            raise RunnerError(
+                "Preset gate failure for preset_1_interface.\n"
+                "- structure source must be CIF-first; payload did not contain a usable CIF export\n"
+                f"Manifest: {run_manifest_path}\n"
+                "Hint: rerun with --keep-temp 1 to inspect staged payload/structure files."
+            )
 
         if not args.use_apptainer and not _blender_executable_exists(args.blender_exe):
             detected_blender = _detect_host_blender_executable()
@@ -1398,6 +1481,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             result.returncode != 0
             and used_structure.suffix.lower() == ".cif"
             and pdb_fallback_path is not None
+            and not preset_1_gate_target
         ):
             retry_command, retry_result, retry_runtime = _run_for_structure(pdb_fallback_path, output_png)
             if retry_result.returncode == 0:
@@ -1405,6 +1489,17 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
                 command, result, runtime_seconds = retry_command, retry_result, retry_runtime
 
         if result.returncode != 0:
+            if (
+                preset_1_gate_target
+                and used_structure.suffix.lower() == ".cif"
+                and pdb_fallback_path is not None
+            ):
+                raise RunnerError(
+                    "Local Blender render failed while using CIF for preset_1_interface.\n"
+                    "PDB fallback is disabled for this preset to enforce CIF-first topology.\n"
+                    f"Command: {' '.join(shlex.quote(item) for item in command)}\n"
+                    f"{_debug_process_text(result)}"
+                )
             raise RunnerError(
                 "Local Blender render failed.\n"
                 f"Command: {' '.join(shlex.quote(item) for item in command)}\n"
@@ -1417,6 +1512,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             if (
                 used_structure.suffix.lower() == ".cif"
                 and pdb_fallback_path is not None
+                and not preset_1_gate_target
             ):
                 retry_command, retry_result, retry_runtime = _run_for_structure(pdb_fallback_path, output_png)
                 if retry_result.returncode == 0 and output_png.exists():
@@ -1459,11 +1555,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             style_doc=style_doc,
         )
         manifest_doc = _load_json(run_manifest_path)
-        if _is_preset_1_gate_target(
-            preset=args.preset,
-            style_json_path=args.style_json,
-            style_doc=style_doc,
-        ):
+        if preset_1_gate_target:
             _enforce_preset_1_backend_gates(
                 manifest=manifest_doc,
                 manifest_path=run_manifest_path,
@@ -1625,12 +1717,58 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _request_spool_dir(session_id: str, request_id: str) -> Path:
+    return _spool_requests_dir(session_id) / request_id
+
+
+def _response_spool_dir(session_id: str, request_id: str) -> Path:
+    return _spool_responses_dir(session_id) / request_id
+
+
 def _interactive_result_path(session_id: str, request_id: str) -> Path:
-    return _session_dir(session_id) / "results" / f"{request_id}.json"
+    return _response_spool_dir(session_id, request_id) / "result.json"
+
+
+def _submitted_by_tag() -> str:
+    user = os.environ.get("USER", "").strip() or os.environ.get("LOGNAME", "").strip() or "unknown"
+    return f"{user}@{socket.gethostname()}:{os.getpid()}"
+
+
+def _list_request_dirs_fifo(session_id: str) -> list[Path]:
+    root = _spool_requests_dir(session_id)
+    if not root.exists():
+        return []
+    request_dirs = [
+        path for path in root.iterdir()
+        if path.is_dir() and not path.name.startswith(".") and (path / "request.json").is_file()
+    ]
+    return sorted(request_dirs, key=lambda path: path.name)
+
+
+def _pending_queue_depth(session_id: str) -> int:
+    return len(_list_request_dirs_fifo(session_id))
+
+
+def _worker_currently_running(session_id: str) -> bool:
+    heartbeat = _session_heartbeat_file(session_id)
+    try:
+        payload = _load_json(heartbeat)
+    except Exception:
+        return False
+    status = str(payload.get("status", "")).strip().lower()
+    return status == "running"
+
+
+def _queue_position_for_new_request(session_id: str) -> int:
+    # Request directories represent queued + currently running work in FIFO order.
+    # A new request will be appended behind all existing request dirs.
+    existing = len(_list_request_dirs_fifo(session_id))
+    return max(1, existing + 1)
 
 
 def _build_interactive_request(
     *,
+    session_id: str,
     args: argparse.Namespace,
     session: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
@@ -1648,10 +1786,15 @@ def _build_interactive_request(
     else:
         output_dir = str(Path("/tmp/pymol_bridge_renders") / _now_stamp())
 
-    request_id = _new_run_id()
+    request_id = f"{time.time_ns():020d}_{_new_run_id()}"
+    queue_position = _queue_position_for_new_request(session_id)
+    submitted_by = _submitted_by_tag()
     request_doc: dict[str, Any] = {
         "request_id": request_id,
         "created_at_utc": _utc_now_iso(),
+        "submitted_by": submitted_by,
+        "queue_position": int(queue_position),
+        "status": "submitted",
         "payload": payload,
         "preset": args.preset,
         "style_doc": style_doc,
@@ -1668,6 +1811,208 @@ def _build_interactive_request(
         "keep_temp": bool(getattr(args, "keep_temp", False)),
     }
     return request_id, request_doc
+
+
+def _interactive_requested_output_path(request_doc: dict[str, Any], result_doc: dict[str, Any]) -> Path | None:
+    output_dir_raw = str(request_doc.get("output_dir", "") or "").strip()
+    if not output_dir_raw:
+        return None
+    output_dir = _expand_path_no_resolve(output_dir_raw)
+    output_name_raw = str(request_doc.get("output_name", "") or "").strip()
+    if output_name_raw:
+        filename = _ensure_suffix_png(output_name_raw)
+    else:
+        result_name = Path(str(result_doc.get("output_png", "") or "")).name
+        filename = _ensure_suffix_png(result_name) if result_name else "interactive_render.png"
+    return output_dir / filename
+
+
+def _finalize_interactive_result_output(
+    *,
+    session_id: str,
+    request_id: str,
+    request_doc: dict[str, Any],
+    result_doc: dict[str, Any],
+) -> dict[str, Any]:
+    finalized = dict(result_doc)
+    response_png = _response_spool_dir(session_id, request_id) / "output.png"
+    requested_output = _interactive_requested_output_path(request_doc, finalized)
+    if requested_output is None:
+        return finalized
+
+    if response_png.is_file():
+        requested_output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(response_png, requested_output)
+        finalized["output_png"] = str(requested_output)
+        finalized["output_dir"] = str(requested_output.parent)
+        return finalized
+
+    existing_output = Path(str(finalized.get("output_png", "") or "")).expanduser()
+    if existing_output.is_file():
+        finalized["output_png"] = str(existing_output)
+        finalized["output_dir"] = str(existing_output.parent)
+        return finalized
+
+    # Preserve requested output location even if remote output file is unavailable.
+    finalized["output_png"] = str(requested_output)
+    finalized["output_dir"] = str(requested_output.parent)
+    return finalized
+
+
+def _collect_existing_sessions() -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    if not SESSION_ROOT.exists():
+        return records
+    for session_dir in SESSION_ROOT.iterdir():
+        if not session_dir.is_dir():
+            continue
+        session_id = session_dir.name
+        try:
+            record = _load_session_record(session_id)
+        except Exception:
+            continue
+        if str(record.get("session_id", "")).strip() != session_id:
+            continue
+        records.append(record)
+    return records
+
+
+def _find_attachable_qlogin_session() -> dict[str, Any] | None:
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for record in _collect_existing_sessions():
+        if str(record.get("backend", "")).strip().lower() != "qlogin":
+            continue
+        session_id = str(record.get("session_id", "")).strip()
+        if not session_id:
+            continue
+        running, heartbeat_age = _qlogin_worker_running(session_id, record, stale_seconds=120)
+        if not running:
+            continue
+        if isinstance(heartbeat_age, float):
+            rank = heartbeat_age
+        else:
+            rank = float("inf")
+        candidates.append((rank, record))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def _start_qlogin_worker(
+    *,
+    session_id: str,
+    session_record: dict[str, Any],
+    launcher: str,
+    poll_interval: int,
+) -> tuple[subprocess.Popen[str], list[str], Path, Path]:
+    session_dir = _session_dir(session_id)
+    launcher_command = shlex.split(launcher)
+    if not launcher_command:
+        raise RunnerError("Interactive launcher command is empty.")
+
+    worker_command = launcher_command + [
+        _default_remote_python_executable(),
+        "-u",
+        str(Path(__file__).resolve()),
+        "_interactive-worker",
+        "--session-dir",
+        str(session_dir),
+        "--poll-interval",
+        str(max(1, int(poll_interval))),
+    ]
+    stdout_log = session_dir / "worker.stdout.log"
+    stderr_log = session_dir / "worker.stderr.log"
+    popen_env = os.environ.copy()
+    popen_env.setdefault("PYTHONUNBUFFERED", "1")
+    _session_ready_flag(session_id).unlink(missing_ok=True)  # type: ignore[arg-type]
+    _session_heartbeat_file(session_id).unlink(missing_ok=True)  # type: ignore[arg-type]
+
+    with stdout_log.open("a", encoding="utf-8") as out_handle, stderr_log.open("a", encoding="utf-8") as err_handle:
+        process = subprocess.Popen(
+            worker_command,
+            stdout=out_handle,
+            stderr=err_handle,
+            text=True,
+            start_new_session=True,
+            env=popen_env,
+        )
+
+    session_record["launcher"] = launcher
+    session_record["launcher_pid"] = process.pid
+    session_record["worker_pid"] = process.pid
+    session_record["status"] = "starting"
+    session_record["worker_restart_count"] = int(session_record.get("worker_restart_count", 0)) + 1
+    session_record["worker_last_start_at_utc"] = _utc_now_iso()
+    _save_session_record(session_record)
+    return process, worker_command, stdout_log, stderr_log
+
+
+def _wait_for_qlogin_worker_ready(
+    *,
+    session_id: str,
+    process: subprocess.Popen[str] | None,
+    worker_command: list[str] | None,
+    stdout_log: Path,
+    stderr_log: Path,
+    startup_timeout: int,
+    poll_interval: int,
+) -> dict[str, Any]:
+    deadline = time.time() + max(1, int(startup_timeout))
+    while time.time() < deadline:
+        if process is not None and process.poll() is not None:
+            tail_out = _log_tail(stdout_log)
+            tail_err = _log_tail(stderr_log)
+            command_text = (
+                " ".join(shlex.quote(part) for part in worker_command)
+                if isinstance(worker_command, list) and worker_command
+                else "<unknown>"
+            )
+            raise RunnerError(
+                "Interactive worker exited before becoming ready.\n"
+                f"Launcher command: {command_text}\n"
+                f"stdout tail:\n{tail_out}\n"
+                f"stderr tail:\n{tail_err}"
+            )
+
+        record = _load_session_record(session_id)
+        running, _heartbeat_age = _qlogin_worker_running(session_id, record, stale_seconds=max(30, poll_interval * 4))
+        if running:
+            record["status"] = "ready"
+            record["ready_at_utc"] = _utc_now_iso()
+            _save_session_record(record)
+            return record
+        time.sleep(max(1, int(poll_interval)))
+
+    raise RunnerError(
+        f"Timed out waiting for interactive session '{session_id}' to become ready "
+        f"after {startup_timeout}s. Check logs in {_session_dir(session_id)}."
+    )
+
+
+def _restart_qlogin_session_worker(
+    *,
+    session_id: str,
+    session_record: dict[str, Any],
+    launcher: str,
+    startup_timeout: int,
+    poll_interval: int,
+) -> dict[str, Any]:
+    process, worker_command, stdout_log, stderr_log = _start_qlogin_worker(
+        session_id=session_id,
+        session_record=session_record,
+        launcher=launcher,
+        poll_interval=poll_interval,
+    )
+    return _wait_for_qlogin_worker_ready(
+        session_id=session_id,
+        process=process,
+        worker_command=worker_command,
+        stdout_log=stdout_log,
+        stderr_log=stderr_log,
+        startup_timeout=startup_timeout,
+        poll_interval=poll_interval,
+    )
 
 
 def _execute_session_request(*, session_id: str, request_doc: dict[str, Any]) -> dict[str, Any]:
@@ -1725,17 +2070,37 @@ def _execute_session_request(*, session_id: str, request_doc: dict[str, Any]) ->
             shutil.rmtree(stage_dir, ignore_errors=True)
 
 
+def _recover_stale_request_locks(session_id: str, stale_seconds: int = 300) -> int:
+    recovered = 0
+    now = time.time()
+    for request_dir in _list_request_dirs_fifo(session_id):
+        lock_path = request_dir / "processing.lock"
+        if not lock_path.exists():
+            continue
+        try:
+            age = max(0.0, now - lock_path.stat().st_mtime)
+        except Exception:
+            age = float(stale_seconds + 1)
+        if age <= max(15, stale_seconds):
+            continue
+        try:
+            lock_path.unlink()
+            recovered += 1
+        except Exception:
+            continue
+    return recovered
+
+
 def run_interactive_worker(args: argparse.Namespace) -> dict[str, Any]:
     session_dir = Path(args.session_dir).expanduser().resolve()
-    session_file = session_dir / "session.json"
-    request_dir = session_dir / "requests"
-    results_dir = session_dir / "results"
+    session_file = session_dir / "session" / "session.json"
+    request_root = session_dir / "requests"
+    response_root = session_dir / "responses"
     control_dir = session_dir / "control"
-    heartbeat_file = session_dir / "heartbeat.txt"
     stop_file = control_dir / "stop"
     worker_state_file = control_dir / "worker_state.json"
 
-    for path in (request_dir, results_dir, control_dir):
+    for path in (request_root, response_root, control_dir, session_dir / "session", session_dir / "staged"):
         path.mkdir(parents=True, exist_ok=True)
 
     session = _load_json(session_file)
@@ -1747,35 +2112,61 @@ def run_interactive_worker(args: argparse.Namespace) -> dict[str, Any]:
     session["worker_pid"] = os.getpid()
     session["worker_host"] = socket.gethostname()
     session["worker_started_at_utc"] = _utc_now_iso()
+    session["backend"] = str(session.get("backend", "qlogin") or "qlogin")
     _save_session_record(session)
+    _session_ready_flag(session_id).write_text(_utc_now_iso() + "\n", encoding="utf-8")
 
     poll_interval = max(1, int(args.poll_interval))
 
     while True:
-        heartbeat_file.write_text(_utc_now_iso() + "\n", encoding="utf-8")
+        _write_heartbeat(session_id, status="idle", queue_depth=_pending_queue_depth(session_id))
         if stop_file.exists():
             print(f"[{_utc_now_iso()}] interactive worker stop requested: session={session_id}", flush=True)
             break
 
-        request_paths = sorted(request_dir.glob("*.json"))
-        if not request_paths:
+        _recover_stale_request_locks(session_id, stale_seconds=max(120, poll_interval * 60))
+        request_dirs = _list_request_dirs_fifo(session_id)
+        if not request_dirs:
             time.sleep(poll_interval)
             continue
 
-        for request_path in request_paths:
+        for request_dir in request_dirs:
             if stop_file.exists():
                 break
 
-            request_id = request_path.stem
-            processing_path = request_dir / f"{request_id}.running.json"
+            request_id = request_dir.name
+            request_path = request_dir / "request.json"
+            lock_path = request_dir / "processing.lock"
             try:
-                request_path.replace(processing_path)
-            except FileNotFoundError:
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                os.close(fd)
+            except FileExistsError:
+                continue
+            except Exception:
                 continue
 
-            print(f"[{_utc_now_iso()}] request start: session={session_id} request={request_id}", flush=True)
+            started_at = _utc_now_iso()
+            print(f"[{started_at}] request start: session={session_id} request={request_id}", flush=True)
+            _write_heartbeat(
+                session_id,
+                request_id=request_id,
+                status="running",
+                queue_depth=max(0, _pending_queue_depth(session_id) - 1),
+            )
+
+            request_doc: dict[str, Any]
             try:
-                request_doc = _load_json(processing_path)
+                request_doc = _load_json(request_path)
+            except Exception:
+                request_doc = {"request_id": request_id}
+            request_doc["started_at"] = started_at
+            request_doc["status"] = "running"
+            try:
+                _write_json_atomic(request_path, request_doc)
+            except Exception:
+                pass
+
+            try:
                 result_doc = _execute_session_request(session_id=session_id, request_doc=request_doc)
             except Exception as exc:
                 result_doc = {
@@ -1786,12 +2177,21 @@ def run_interactive_worker(args: argparse.Namespace) -> dict[str, Any]:
                     "error": str(exc),
                     "traceback": traceback.format_exc(),
                 }
+
+            finished_at = _utc_now_iso()
+            result_doc["session_id"] = session_id
+            result_doc["submitted_by"] = str(request_doc.get("submitted_by", ""))
+            result_doc["queue_position"] = int(request_doc.get("queue_position", 1))
+            result_doc["started_at"] = str(request_doc.get("started_at", started_at))
+            result_doc["finished_at"] = finished_at
+            result_doc["status"] = str(result_doc.get("status", "completed"))
+
             status = str(result_doc.get("status", "unknown"))
             runtime = result_doc.get("runtime_seconds")
             output_png = result_doc.get("output_png", "")
             gpu_info = result_doc.get("gpu_info", [])
             print(
-                f"[{_utc_now_iso()}] request done: session={session_id} request={request_id} "
+                f"[{finished_at}] request done: session={session_id} request={request_id} "
                 f"status={status} runtime={runtime} output={output_png}",
                 flush=True,
             )
@@ -1799,31 +2199,42 @@ def run_interactive_worker(args: argparse.Namespace) -> dict[str, Any]:
                 for line in gpu_info:
                     print(f"[{_utc_now_iso()}] {line}", flush=True)
 
+            response_dir = _response_spool_dir(session_id, request_id)
+            response_dir.mkdir(parents=True, exist_ok=True)
             _write_json_atomic(_interactive_result_path(session_id, request_id), result_doc)
-            print(
-                f"[{_utc_now_iso()}] request result written: "
-                f"{_interactive_result_path(session_id, request_id)}",
-                flush=True,
-            )
+
+            output_png_path = Path(str(output_png or "")).expanduser()
+            if output_png_path.is_file():
+                try:
+                    shutil.copy2(output_png_path, response_dir / "output.png")
+                except Exception:
+                    pass
+
             _write_json_atomic(
                 worker_state_file,
                 {
                     "session_id": session_id,
                     "request_id": request_id,
-                    "updated_at_utc": _utc_now_iso(),
+                    "updated_at_utc": finished_at,
                     "status": result_doc.get("status", "unknown"),
                     "output_png": result_doc.get("output_png", ""),
                 },
             )
+
             try:
-                processing_path.unlink()
-            except FileNotFoundError:
+                lock_path.unlink(missing_ok=True)  # type: ignore[arg-type]
+            except Exception:
                 pass
+            shutil.rmtree(request_dir, ignore_errors=True)
 
     session = _load_json(session_file)
     session["status"] = "closed"
     session["closed_at_utc"] = _utc_now_iso()
     _save_session_record(session)
+    try:
+        _session_ready_flag(session_id).unlink(missing_ok=True)  # type: ignore[arg-type]
+    except Exception:
+        pass
     return {
         "status": "closed",
         "mode": "interactive_worker",
@@ -1836,26 +2247,66 @@ def run_interactive_open(args: argparse.Namespace) -> dict[str, Any]:
     if backend not in {"qlogin", "jobid"}:
         raise RunnerError("interactive-open backend must be 'qlogin' or 'jobid'.")
 
-    session_id = str(getattr(args, "session_id", "") or "").strip() or _new_run_id()
-    session_dir = _session_dir(session_id)
-    if (session_dir / "session.json").exists():
-        raise RunnerError(f"Interactive session already exists: {session_id}")
+    attach_only = bool(getattr(args, "attach_only", False))
+    attach = bool(getattr(args, "attach", False) or attach_only)
+    requested_session_id = str(getattr(args, "session_id", "") or "").strip()
+    startup_timeout = max(1, int(getattr(args, "startup_timeout", 900)))
+    poll_interval = max(1, int(getattr(args, "poll_interval", 2)))
+
+    if attach and backend != "qlogin":
+        raise RunnerError("interactive-open attach/attach-only is supported only for backend='qlogin'.")
+
+    session_record: dict[str, Any] | None = None
+    session_id = requested_session_id
+    had_existing_session = False
+
+    if session_id:
+        session_path = _session_file(session_id)
+        legacy_path = _legacy_session_file(session_id)
+        if session_path.exists() or legacy_path.exists():
+            session_record = _load_session_record(session_id)
+            had_existing_session = True
+    elif attach:
+        session_record = _find_attachable_qlogin_session()
+        if session_record is not None:
+            session_id = str(session_record.get("session_id", "")).strip()
+            had_existing_session = True
+
+    if attach_only and (not session_record or not session_id):
+        raise RunnerError("attach_only=1 requested but no healthy interactive session is available.")
+
+    if not session_id:
+        session_id = _new_run_id()
 
     default_output_dir = (
         str(Path(args.output_dir).expanduser())
         if args.output_dir
         else str((Path.cwd() / "renders" / f"interactive_{session_id}").absolute())
     )
-    for path in (session_dir / "requests", session_dir / "results", session_dir / "control", session_dir / "staged"):
+    session_dir = _session_dir(session_id)
+    for path in (
+        _spool_requests_dir(session_id),
+        _spool_responses_dir(session_id),
+        _spool_session_dir(session_id),
+        session_dir / "control",
+        session_dir / "staged",
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
-    session_record: dict[str, Any] = {
-        "session_id": session_id,
-        "backend": backend,
-        "status": "starting" if backend == "qlogin" else "ready",
-        "created_at_utc": _utc_now_iso(),
-        "default_output_dir": default_output_dir,
-    }
+    if session_record is None:
+        session_record = {
+            "session_id": session_id,
+            "backend": backend,
+            "status": "starting" if backend == "qlogin" else "ready",
+            "created_at_utc": _utc_now_iso(),
+            "default_output_dir": default_output_dir,
+        }
+    else:
+        session_record["backend"] = backend
+        if args.output_dir:
+            session_record["default_output_dir"] = default_output_dir
+        else:
+            session_record["default_output_dir"] = str(session_record.get("default_output_dir", default_output_dir) or default_output_dir)
 
     if backend == "jobid":
         job_id = str(getattr(args, "job_id", "") or "").strip()
@@ -1871,74 +2322,55 @@ def run_interactive_open(args: argparse.Namespace) -> dict[str, Any]:
             "backend": backend,
             "session_id": session_id,
             "job_id": job_id,
-            "default_output_dir": default_output_dir,
+            "default_output_dir": str(session_record.get("default_output_dir", default_output_dir)),
+            "message": "Interactive GPU session ready",
         }
 
-    launcher = str(getattr(args, "interactive_launcher", "") or DEFAULT_INTERACTIVE_LAUNCHER).strip()
-    launcher_command = shlex.split(launcher)
-    if not launcher_command:
-        raise RunnerError("Interactive launcher command is empty.")
+    existing = _load_session_record(session_id) if _session_file(session_id).exists() else session_record
+    running, heartbeat_age = _qlogin_worker_running(session_id, existing, stale_seconds=max(30, poll_interval * 4))
+    if attach and running:
+        existing["status"] = "ready"
+        existing["attached_at_utc"] = _utc_now_iso()
+        _save_session_record(existing)
+        return {
+            "status": "ready",
+            "mode": "interactive_open",
+            "backend": backend,
+            "session_id": session_id,
+            "launcher_pid": int(existing.get("launcher_pid", 0) or 0),
+            "worker_pid": int(existing.get("worker_pid", 0) or 0),
+            "default_output_dir": str(existing.get("default_output_dir", default_output_dir)),
+            "session_dir": str(session_dir),
+            "attached": True,
+            "heartbeat_age_seconds": round(heartbeat_age, 1) if isinstance(heartbeat_age, float) else None,
+            "message": "Interactive GPU session ready",
+        }
 
-    worker_command = launcher_command + [
-        _default_remote_python_executable(),
-        "-u",
-        str(Path(__file__).resolve()),
-        "_interactive-worker",
-        "--session-dir",
-        str(session_dir),
-        "--poll-interval",
-        str(max(1, int(args.poll_interval))),
-    ]
-    stdout_log = session_dir / "worker.stdout.log"
-    stderr_log = session_dir / "worker.stderr.log"
-    popen_env = os.environ.copy()
-    popen_env.setdefault("PYTHONUNBUFFERED", "1")
-    with stdout_log.open("a", encoding="utf-8") as out_handle, stderr_log.open("a", encoding="utf-8") as err_handle:
-        process = subprocess.Popen(
-            worker_command,
-            stdout=out_handle,
-            stderr=err_handle,
-            text=True,
-            start_new_session=True,
-            env=popen_env,
-        )
+    if requested_session_id and had_existing_session and not attach:
+        raise RunnerError(f"Interactive session already exists: {session_id}. Use --attach 1 to reuse it.")
 
-    session_record["launcher"] = launcher
-    session_record["launcher_pid"] = process.pid
-    session_record["worker_pid"] = process.pid
-    _save_session_record(session_record)
-
-    startup_timeout = max(1, int(args.startup_timeout))
-    deadline = time.time() + startup_timeout
-    while time.time() < deadline:
-        if process.poll() is not None:
-            tail_out = _log_tail(stdout_log)
-            tail_err = _log_tail(stderr_log)
-            raise RunnerError(
-                "Interactive worker exited before becoming ready.\n"
-                f"Launcher command: {' '.join(shlex.quote(part) for part in worker_command)}\n"
-                f"stdout tail:\n{tail_out}\n"
-                f"stderr tail:\n{tail_err}"
-            )
-
-        record = _load_session_record(session_id)
-        if str(record.get("status", "")).lower() == "ready":
-            return {
-                "status": "ready",
-                "mode": "interactive_open",
-                "backend": backend,
-                "session_id": session_id,
-                "launcher_pid": int(record.get("launcher_pid", process.pid)),
-                "worker_pid": int(record.get("worker_pid", process.pid)),
-                "default_output_dir": default_output_dir,
-                "session_dir": str(session_dir),
-            }
-        time.sleep(max(1, int(args.poll_interval)))
-
-    raise RunnerError(
-        f"Timed out waiting for interactive session '{session_id}' to become ready "
-        f"after {startup_timeout}s. Check logs in {session_dir}."
+    launcher = str(
+        getattr(args, "interactive_launcher", "") or session_record.get("launcher", "") or DEFAULT_INTERACTIVE_LAUNCHER
+    ).strip()
+    started = _restart_qlogin_session_worker(
+        session_id=session_id,
+        session_record=session_record,
+        launcher=launcher,
+        startup_timeout=startup_timeout,
+        poll_interval=poll_interval,
     )
+    return {
+        "status": "ready",
+        "mode": "interactive_open",
+        "backend": backend,
+        "session_id": session_id,
+        "launcher_pid": int(started.get("launcher_pid", 0) or 0),
+        "worker_pid": int(started.get("worker_pid", 0) or 0),
+        "default_output_dir": str(started.get("default_output_dir", default_output_dir)),
+        "session_dir": str(session_dir),
+        "attached": bool(attach and had_existing_session),
+        "message": "Interactive GPU session ready",
+    }
 
 
 def run_interactive_submit(args: argparse.Namespace) -> dict[str, Any]:
@@ -1965,18 +2397,38 @@ def run_interactive_submit(args: argparse.Namespace) -> dict[str, Any]:
 
     running, heartbeat_age = _qlogin_worker_running(session_id, session)
     if not running:
-        session_dir = _session_dir(session_id)
-        heartbeat_note = (
-            f", heartbeat_age={heartbeat_age:.1f}s" if isinstance(heartbeat_age, float) else ", heartbeat=missing"
+        open_args = argparse.Namespace(
+            backend="qlogin",
+            session_id=session_id,
+            output_dir=str(session.get("default_output_dir", "") or ""),
+            interactive_launcher=str(session.get("launcher", "") or getattr(args, "interactive_launcher", "") or DEFAULT_INTERACTIVE_LAUNCHER),
+            job_id="",
+            job_launcher="",
+            startup_timeout=max(30, int(getattr(args, "wait_timeout", 0)) or 180),
+            poll_interval=max(1, int(getattr(args, "poll_interval", 5))),
+            attach=True,
+            attach_only=False,
         )
-        raise RunnerError(
-            f"Interactive session '{session_id}' is not running{heartbeat_note}. "
-            "Re-open the session with interactive-open.\n"
-            f"Session logs:\n- {session_dir / 'worker.stdout.log'}\n- {session_dir / 'worker.stderr.log'}"
-        )
+        reopened = run_interactive_open(open_args)
+        session = _load_session_record(session_id)
+        running, heartbeat_age = _qlogin_worker_running(session_id, session)
+        if not running:
+            session_dir = _session_dir(session_id)
+            heartbeat_note = (
+                f", heartbeat_age={heartbeat_age:.1f}s" if isinstance(heartbeat_age, float) else ", heartbeat=missing"
+            )
+            raise RunnerError(
+                f"Interactive session '{session_id}' is not running after restart attempt{heartbeat_note}. "
+                "Re-open the session with interactive-open.\n"
+                f"Session logs:\n- {session_dir / 'worker.stdout.log'}\n- {session_dir / 'worker.stderr.log'}"
+            )
+        if isinstance(reopened, dict):
+            session["last_auto_restart_at_utc"] = _utc_now_iso()
+            _save_session_record(session)
 
-    request_id, request_doc = _build_interactive_request(args=args, session=session)
-    request_path = _session_dir(session_id) / "requests" / f"{request_id}.json"
+    request_id, request_doc = _build_interactive_request(session_id=session_id, args=args, session=session)
+    request_path = _request_spool_dir(session_id, request_id) / "request.json"
+    request_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(request_path, request_doc)
 
     if not bool(args.poll):
@@ -1986,6 +2438,10 @@ def run_interactive_submit(args: argparse.Namespace) -> dict[str, Any]:
             "session_id": session_id,
             "request_id": request_id,
             "backend": backend,
+            "submitted_by": request_doc.get("submitted_by", ""),
+            "queue_position": int(request_doc.get("queue_position", 1)),
+            "started_at": None,
+            "finished_at": None,
             "output_dir": request_doc.get("output_dir", ""),
         }
 
@@ -1997,6 +2453,12 @@ def run_interactive_submit(args: argparse.Namespace) -> dict[str, Any]:
     while True:
         if result_path.exists():
             result = _load_json(result_path)
+            result = _finalize_interactive_result_output(
+                session_id=session_id,
+                request_id=request_id,
+                request_doc=request_doc,
+                result_doc=result,
+            )
             result["mode"] = "interactive"
             result["backend"] = backend
             result["session_id"] = session_id
@@ -2042,8 +2504,8 @@ def run_interactive_status(args: argparse.Namespace) -> dict[str, Any]:
         pid = session.get("worker_pid")
         launcher_pid = session.get("launcher_pid")
         running, heartbeat_age = _qlogin_worker_running(session_id, session)
-        pending = len(list((_session_dir(session_id) / "requests").glob("*.json")))
-        completed = len(list((_session_dir(session_id) / "results").glob("*.json")))
+        pending = len(_list_request_dirs_fifo(session_id))
+        completed = len([path for path in _spool_responses_dir(session_id).glob("*/result.json") if path.is_file()])
         job_ids = _discover_slurm_job_ids(session_id)
         result.update(
             {
@@ -2153,6 +2615,9 @@ def run_interactive_close(args: argparse.Namespace) -> dict[str, Any]:
             refreshed["closed_at_utc"] = _utc_now_iso()
             final_status = "closed"
         _save_session_record(refreshed)
+        if final_status == "closed":
+            _session_ready_flag(session_id).unlink(missing_ok=True)  # type: ignore[arg-type]
+            _session_heartbeat_file(session_id).unlink(missing_ok=True)  # type: ignore[arg-type]
         return {
             "status": final_status,
             "mode": "interactive_close",
@@ -2472,6 +2937,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--interactive-launcher",
         default=DEFAULT_INTERACTIVE_LAUNCHER,
         help="Launcher command used to reserve an interactive GPU allocation (qlogin backend).",
+    )
+    interactive_open_parser.add_argument(
+        "--attach",
+        type=_parse_bool,
+        default=False,
+        help="Attach to an existing healthy qlogin session when possible.",
+    )
+    interactive_open_parser.add_argument(
+        "--attach-only",
+        type=_parse_bool,
+        default=False,
+        help="Require attaching to an existing healthy qlogin session; fail otherwise.",
     )
     interactive_open_parser.add_argument("--job-id", default="", help="Existing allocation job id (jobid backend).")
     interactive_open_parser.add_argument(

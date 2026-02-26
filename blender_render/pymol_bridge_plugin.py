@@ -348,9 +348,12 @@ def _looks_like_cif_atom_site(text: str) -> bool:
         return False
     lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
     has_data_block = any(line.lower().startswith("data_") for line in lines)
+    has_loop = any(line.lower() == "loop_" for line in lines)
     has_atom_headers = any(line.lower().startswith("_atom_site.") for line in lines)
     has_atom_rows = any(line.startswith("ATOM") or line.startswith("HETATM") for line in lines)
-    return bool(has_data_block and (has_atom_headers or has_atom_rows))
+    if has_atom_headers:
+        return True
+    return bool(has_atom_rows and (has_data_block or has_loop))
 
 
 def _looks_like_pdb_atoms(text: str) -> bool:
@@ -588,7 +591,9 @@ def bridge_render(
     style_json: str = "",
     mode: str = "local",
     interactive_session: str = "",
-    interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=16g -c 2 -t 120",
+    interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
+    attach: int | str = 0,
+    attach_only: int | str = 0,
     rough: int | str = 0,
     color_follow: int | str = 0,
     output_dir: str = "",
@@ -615,6 +620,10 @@ def bridge_render(
     render_mode = _normalize_cli_string(mode).lower()
     interactive_session = _normalize_cli_string(interactive_session)
     interactive_launcher = _normalize_cli_string(interactive_launcher)
+    attach_flag = _parse_bool(attach)
+    attach_only_flag = _parse_bool(attach_only)
+    if attach_only_flag:
+        attach_flag = True
     rough_flag = _parse_bool(rough)
     color_follow_flag = _parse_bool(color_follow)
     output_dir = _normalize_cli_string(output_dir)
@@ -640,6 +649,9 @@ def bridge_render(
             backend="qlogin",
             interactive_launcher=interactive_launcher,
             poll_interval=_parse_int(poll_interval, 2),
+            session_id=interactive_session,
+            attach=1 if attach_flag else 0,
+            attach_only=1 if attach_only_flag else 0,
         )
         return result
     if render_mode == "interactive_status":
@@ -656,24 +668,17 @@ def bridge_render(
         elif use_apptainer_flag and default_image.is_file():
             apptainer_image = str(default_image)
         elif (
-            render_mode == "local"
-            and not use_apptainer_flag
+            not use_apptainer_flag
             and not apptainer_image
-            and not style_json
-            and preset == "preset_1_interface"
-            and selection == "(all)"
-            and not output_dir
-            and not output_name
-            and not rough_flag
-            and not color_follow_flag
-            and not save_blend_flag
-            and not blend_output
-            and blender_exe == DEFAULT_BLENDER_EXE
             and default_image.is_file()
             and sys.platform != "darwin"
+            and (
+                render_mode == "interactive"
+                or (render_mode == "local" and not style_json and preset == "preset_1_interface")
+            )
         ):
-            # Make no-arg blender_render resilient on Linux hosts where local
-            # Blender/MN stacks vary, while preserving macOS local behavior.
+            # Keep Linux preset-1/interactice output on the validated container
+            # path by default; macOS remains host-local by design.
             use_apptainer_flag = True
             apptainer_image = str(default_image)
     if sys.platform == "darwin" and use_apptainer_flag:
@@ -755,13 +760,31 @@ def bridge_render(
             command.extend(["--slurm-account", slurm_account])
     elif render_mode == "interactive":
         active_session = interactive_session or _get_active_interactive_session_id()
-        if not active_session:
+        should_open_session = bool(attach_flag or not active_session)
+        # If caller explicitly requested a session id, probe readiness and
+        # auto-open/restart when the session is missing or unhealthy.
+        if not should_open_session and interactive_session:
+            try:
+                status_doc = bridge_render_interactive_status(session_id=active_session)
+            except Exception:
+                should_open_session = True
+            else:
+                session_status = _normalize_cli_string(status_doc.get("status", "")).lower()
+                if session_status not in {"ready", "running"}:
+                    should_open_session = True
+        if should_open_session:
             opened = bridge_render_interactive_open(
                 backend="qlogin",
                 interactive_launcher=interactive_launcher,
                 poll_interval=2,
+                session_id=active_session,
+                attach=1 if attach_flag else 0,
+                attach_only=1 if attach_only_flag else 0,
             )
             active_session = str(opened.get("session_id", "")).strip()
+            ready_message = _normalize_cli_string(opened.get("message", ""))
+            if ready_message:
+                print(ready_message)
             if not active_session:
                 raise RuntimeError(
                     "Interactive mode could not open a session automatically. "
@@ -825,6 +848,8 @@ def bridge_render_interactive(
     preset: str = "preset_1_interface",
     style_json: str = "",
     interactive_session: str = "",
+    attach: int | str = 0,
+    attach_only: int | str = 0,
     rough: int | str = 0,
     color_follow: int | str = 0,
     output_dir: str = "",
@@ -844,6 +869,8 @@ def bridge_render_interactive(
         style_json=style_json,
         mode="interactive",
         interactive_session=interactive_session,
+        attach=attach,
+        attach_only=attach_only,
         rough=rough,
         color_follow=color_follow,
         output_dir=output_dir,
@@ -861,11 +888,13 @@ def bridge_render_interactive(
 
 def bridge_render_interactive_open(
     backend: str = "qlogin",
-    interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=16g -c 2 -t 120",
+    interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
     job_id: str = "",
     job_launcher: str = "srun --jobid {job_id}",
     output_dir: str = "",
     session_id: str = "",
+    attach: int | str = 0,
+    attach_only: int | str = 0,
     startup_timeout: int | str = 900,
     poll_interval: int | str = 2,
 ) -> dict[str, Any]:
@@ -875,6 +904,10 @@ def bridge_render_interactive_open(
     job_launcher = _normalize_cli_string(job_launcher)
     output_dir = _normalize_cli_string(output_dir)
     session_id = _normalize_cli_string(session_id)
+    attach_flag = _parse_bool(attach)
+    attach_only_flag = _parse_bool(attach_only)
+    if attach_only_flag:
+        attach_flag = True
 
     if backend not in SUPPORTED_INTERACTIVE_BACKENDS:
         raise RuntimeError(
@@ -896,6 +929,10 @@ def bridge_render_interactive_open(
         command.extend(["--output-dir", str(Path(output_dir).expanduser())])
     if session_id:
         command.extend(["--session-id", session_id])
+    if attach_flag:
+        command.extend(["--attach", "1"])
+    if attach_only_flag:
+        command.extend(["--attach-only", "1"])
 
     if backend == "qlogin":
         command.extend(["--interactive-launcher", interactive_launcher])
