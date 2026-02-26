@@ -137,13 +137,43 @@ def test_local_manifest_contains_required_runtime_guard_fields(monkeypatch, payl
 
     result = bridge_runner.run_local(args)
     manifest = result["manifest"]
+    assert manifest["structure_source"] == "cif"
     assert manifest["chosen_structure_file"] == "structure.cif"
     assert manifest["dss_ran"] is True
+    assert manifest["polymer_backend"] == "mn_cartoon"
+    assert manifest["ligand_backend"] == "mn_native_sticks"
+    assert manifest["ligand_atom_spheres"] is False
+    # Backward-compatible aliases.
     assert manifest["sticks_backend"] == "mn_native_sticks"
     assert manifest["polymer_cartoon_backend"] == "mn_cartoon"
     manifest_path = Path(result["manifest_path"])
     assert manifest_path.is_file()
     shutil.rmtree(Path(result["temp_dir"]), ignore_errors=True)
+
+
+def test_local_preset_1_gate_fails_when_manifest_reports_non_cif(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.keep_temp = True
+    args.output_name = "gate_fail.png"
+
+    def fake_run(command, *, env=None):
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        manifest_path = Path(command[command.index("--run-manifest") + 1])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["structure_source"] = "pdb"
+        manifest["polymer_backend"] = "legacy_trace"
+        manifest["ligand_backend"] = "legacy_ball_and_stick"
+        manifest["ligand_atom_spheres"] = True
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    with pytest.raises(bridge_runner.RunnerError, match="Preset gate failure for preset_1_interface"):
+        bridge_runner.run_local(args)
+    shutil.rmtree(Path("/tmp/pymol_bridge/testrun"), ignore_errors=True)
 
 
 def test_local_mode_retries_with_pdb_after_cif_failure(monkeypatch, tmp_path: Path):
@@ -186,6 +216,7 @@ def test_local_mode_retries_with_pdb_after_cif_failure(monkeypatch, tmp_path: Pa
     payload_path = tmp_path / "payload.json"
     payload_path.write_text(json.dumps(payload), encoding="utf-8")
     args = _base_args(payload_path, tmp_path)
+    args.preset = "preset_2_frosted_blue"
     args.output_name = "retry.png"
 
     calls: list[list[str]] = []

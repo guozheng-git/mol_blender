@@ -1000,6 +1000,42 @@ def _resolve_polymer_cartoon_backend_name(style_doc: dict[str, Any] | None) -> s
     return "none"
 
 
+def _style_entry_targets_ligand(style_entry: dict[str, Any]) -> bool:
+    style_name = str(style_entry.get("name", "")).strip().lower()
+    if "ligand" in style_name:
+        return True
+    selection = style_entry.get("selection")
+    if not isinstance(selection, dict):
+        return False
+    if bool(selection.get("ligand")):
+        return True
+    query = str(selection.get("query", "")).strip().lower()
+    if "ligand" in query:
+        return True
+    if "resn ptr" in query:
+        return True
+    return False
+
+
+def _resolve_ligand_backend_name(style_doc: dict[str, Any] | None) -> str:
+    for style_entry in _style_entries(style_doc):
+        style_kind = str(style_entry.get("style", "")).strip().lower()
+        if style_kind != "sticks":
+            continue
+        if _style_entry_targets_ligand(style_entry):
+            return "mn_native_sticks"
+    return "none"
+
+
+def _style_source_from_path(path: Path) -> str:
+    suffix = path.suffix.strip().lower()
+    if suffix == ".cif":
+        return "cif"
+    if suffix == ".pdb":
+        return "pdb"
+    return suffix.lstrip(".") or "unknown"
+
+
 def _write_run_manifest(path: Path, payload: dict[str, Any], *, chosen_structure_path: Path, style_doc: dict[str, Any] | None) -> None:
     dss_doc = payload.get("dss")
     dss_ran = bool(isinstance(dss_doc, dict) and dss_doc.get("ran", False))
@@ -1011,14 +1047,28 @@ def _write_run_manifest(path: Path, payload: dict[str, Any], *, chosen_structure
                 existing = loaded
         except Exception:
             existing = {}
+    polymer_backend = str(existing.get("polymer_backend", "")).strip()
+    if not polymer_backend:
+        polymer_backend = _resolve_polymer_cartoon_backend_name(style_doc)
+    ligand_backend = str(existing.get("ligand_backend", "")).strip()
+    if not ligand_backend:
+        ligand_backend = _resolve_ligand_backend_name(style_doc)
+    ligand_atom_spheres_value = existing.get("ligand_atom_spheres")
+    if not isinstance(ligand_atom_spheres_value, bool):
+        ligand_atom_spheres_value = False
     manifest: dict[str, Any] = dict(existing)
     manifest.update(
         {
+        "structure_source": _style_source_from_path(chosen_structure_path),
         "chosen_structure_file": chosen_structure_path.name,
         "chosen_structure_path": str(chosen_structure_path),
         "dss_ran": dss_ran,
-        "sticks_backend": _resolve_sticks_backend_name(style_doc),
-        "polymer_cartoon_backend": _resolve_polymer_cartoon_backend_name(style_doc),
+        "polymer_backend": polymer_backend,
+        "ligand_backend": ligand_backend,
+        "ligand_atom_spheres": bool(ligand_atom_spheres_value),
+        # Backward-compatible aliases.
+        "sticks_backend": ligand_backend if ligand_backend else _resolve_sticks_backend_name(style_doc),
+        "polymer_cartoon_backend": polymer_backend,
         "generated_at_utc": _utc_now_iso(),
         }
     )
@@ -1026,6 +1076,51 @@ def _write_run_manifest(path: Path, payload: dict[str, Any], *, chosen_structure
         manifest["dss"] = dss_doc
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def _is_preset_1_gate_target(*, preset: str | None, style_json_path: str | None, style_doc: dict[str, Any] | None) -> bool:
+    if str(preset or "").strip() == "preset_1_interface":
+        return True
+    raw_style_json = str(style_json_path or "").strip()
+    if raw_style_json:
+        name = Path(raw_style_json).name
+        if name == "style_preset_1_opaque_pastel.json":
+            return True
+    if isinstance(style_doc, dict):
+        output = style_doc.get("output")
+        if isinstance(output, dict):
+            filename = str(output.get("filename", "")).strip()
+            if filename == "01_opaque_pastel_ses_interface.png":
+                return True
+    return False
+
+
+def _enforce_preset_1_backend_gates(*, manifest: dict[str, Any], manifest_path: Path) -> None:
+    structure_source = str(manifest.get("structure_source", "")).strip().lower()
+    dss_ran = bool(manifest.get("dss_ran", False))
+    polymer_backend = str(manifest.get("polymer_backend", "")).strip().lower()
+    ligand_backend = str(manifest.get("ligand_backend", "")).strip().lower()
+    ligand_atom_spheres = bool(manifest.get("ligand_atom_spheres", True))
+
+    errors: list[str] = []
+    if structure_source != "cif":
+        errors.append(f"structure source must be CIF-first; got structure_source={structure_source or '<empty>'}")
+    if not dss_ran:
+        errors.append("secondary-structure assignment must run before export (dss_ran=false)")
+    if polymer_backend != "mn_cartoon":
+        errors.append(f"polymer backend must be cartoon secondary structure; got polymer_backend={polymer_backend or '<empty>'}")
+    if ligand_backend != "mn_native_sticks":
+        errors.append(f"ligand backend must be non-legacy native sticks; got ligand_backend={ligand_backend or '<empty>'}")
+    if ligand_atom_spheres:
+        errors.append("ligand atom spheres must be disabled; got ligand_atom_spheres=true")
+
+    if errors:
+        bullet = "\n".join(f"- {item}" for item in errors)
+        raise RunnerError(
+            "Preset gate failure for preset_1_interface.\n"
+            f"{bullet}\n"
+            f"Manifest: {manifest_path}"
+        )
 
 
 def _build_local_runner_cli(
@@ -1361,6 +1456,15 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             style_doc=style_doc,
         )
         manifest_doc = _load_json(run_manifest_path)
+        if _is_preset_1_gate_target(
+            preset=args.preset,
+            style_json_path=args.style_json,
+            style_doc=style_doc,
+        ):
+            _enforce_preset_1_backend_gates(
+                manifest=manifest_doc,
+                manifest_path=run_manifest_path,
+            )
         return {
             "status": "completed",
             "mode": "local",

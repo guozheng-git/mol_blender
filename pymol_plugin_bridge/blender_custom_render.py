@@ -1666,6 +1666,44 @@ def _tune_native_sticks_style(
     return changed
 
 
+def _socket_enables_feature(default_value: Any) -> bool:
+    if isinstance(default_value, bool):
+        return bool(default_value)
+    if isinstance(default_value, (int, float)):
+        try:
+            return float(default_value) > 1e-6
+        except Exception:
+            return False
+    if isinstance(default_value, (list, tuple)) and default_value:
+        first = default_value[0]
+        if isinstance(first, bool):
+            return bool(first)
+        if isinstance(first, (int, float)):
+            try:
+                return float(first) > 1e-6
+            except Exception:
+                return False
+    return False
+
+
+def _native_sticks_atom_spheres_enabled(obj: bpy.types.Object) -> bool:
+    for modifier in getattr(obj, "modifiers", []):
+        if modifier.type != "NODES" or modifier.node_group is None:
+            continue
+        for node in modifier.node_group.nodes:
+            node_name = str(getattr(node, "name", "")).strip().lower()
+            if "stick" not in node_name:
+                continue
+            for socket in node.inputs:
+                socket_name = str(getattr(socket, "name", "")).strip().lower()
+                if not any(token in socket_name for token in ("atom", "ball", "sphere", "vdw")):
+                    continue
+                default_value = getattr(socket, "default_value", None)
+                if _socket_enables_feature(default_value):
+                    return True
+    return False
+
+
 def _assign_material_to_style_nodes(obj: bpy.types.Object, material: bpy.types.Material) -> bool:
     assigned = 0
     for modifier in obj.modifiers:
@@ -1883,6 +1921,23 @@ def _is_polymer_cartoon_style(style_cfg: dict[str, Any]) -> bool:
             return True
     style_name = str(style_cfg.get("name", "")).strip().lower()
     return style_name in {"chain_a_cartoon", "chain_b_cartoon", "polymer_other_cartoon"}
+
+
+def _is_ligand_style(style_cfg: dict[str, Any]) -> bool:
+    style_name = str(style_cfg.get("name", "")).strip().lower()
+    if "ligand" in style_name:
+        return True
+    selection = style_cfg.get("selection")
+    if not isinstance(selection, dict):
+        return False
+    if bool(selection.get("ligand")):
+        return True
+    query = str(selection.get("query", "")).strip().lower()
+    if "ligand" in query:
+        return True
+    if "resn ptr" in query:
+        return True
+    return False
 
 
 def _protein_chain_ids(load_result: Any) -> list[str]:
@@ -2368,8 +2423,9 @@ def _render(args: argparse.Namespace) -> None:
     style_objects_by_name: dict[str, list[bpy.types.Object]] = {}
     debug_styles = _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False)
     protein_chain_ids = _protein_chain_ids(load_result)
-    runtime_sticks_backend = "none"
-    runtime_polymer_cartoon_backend = "none"
+    runtime_polymer_backend = "none"
+    runtime_ligand_backend = "none"
+    runtime_ligand_atom_spheres = False
 
     for style_idx, style_cfg in enumerate(style_doc["styles"]):
         style_load_result = load_result
@@ -2400,10 +2456,10 @@ def _render(args: argparse.Namespace) -> None:
                 used_auto_chain_fallback = True
         style_kind_lower = str(style_cfg.get("style", "")).strip().lower()
         style_name_lower = str(style_cfg.get("name", "")).strip().lower()
-        if style_kind_lower == "sticks":
-            runtime_sticks_backend = "mn_native_sticks"
+        if style_kind_lower == "sticks" and _is_ligand_style(style_cfg):
+            runtime_ligand_backend = "mn_native_sticks"
         if _is_polymer_cartoon_style(style_cfg):
-            runtime_polymer_cartoon_backend = "mn_cartoon"
+            runtime_polymer_backend = "mn_cartoon"
             require_geometry = False
             if style_name_lower == "chain_a_cartoon":
                 require_geometry = len(protein_chain_ids) >= 1
@@ -2420,6 +2476,15 @@ def _render(args: argparse.Namespace) -> None:
                     "Secondary-structure assignment is required (run dss before export)."
                 )
         style_obj = getattr(style_result, "_object", None)
+        if (
+            style_kind_lower == "sticks"
+            and _is_ligand_style(style_cfg)
+            and style_obj is not None
+        ):
+            runtime_ligand_atom_spheres = (
+                runtime_ligand_atom_spheres
+                or _native_sticks_atom_spheres_enabled(style_obj)
+            )
         if (
             _is_polymer_cartoon_style(style_cfg)
             and style_obj is not None
@@ -2536,8 +2601,12 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc = {}
             if run_manifest_path.is_file():
                 manifest_doc = _load_json(run_manifest_path)
-            manifest_doc["sticks_backend"] = runtime_sticks_backend
-            manifest_doc["polymer_cartoon_backend"] = runtime_polymer_cartoon_backend
+            manifest_doc["polymer_backend"] = runtime_polymer_backend
+            manifest_doc["ligand_backend"] = runtime_ligand_backend
+            manifest_doc["ligand_atom_spheres"] = bool(runtime_ligand_atom_spheres)
+            # Backward-compatible aliases.
+            manifest_doc["sticks_backend"] = runtime_ligand_backend
+            manifest_doc["polymer_cartoon_backend"] = runtime_polymer_backend
             manifest_doc["cartoon_polymer_chain_ids"] = protein_chain_ids
             run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
             run_manifest_path.write_text(json.dumps(manifest_doc, indent=2), encoding="utf-8")
