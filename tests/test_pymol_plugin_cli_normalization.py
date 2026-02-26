@@ -6,6 +6,10 @@ import pymol_plugin_bridge.pymol_bridge_plugin as plugin
 
 
 class FakeCmd:
+    def dss(self, selection):
+        assert selection == "(all)"
+        return None
+
     def get_str(self, fmt, selection, state=-1):
         assert selection == "(all)"
         assert state == -1

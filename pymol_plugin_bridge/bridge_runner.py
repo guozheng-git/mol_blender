@@ -817,6 +817,7 @@ def build_local_blender_command(
     style_json_path: Path | None,
     output_png: Path,
     custom_script: Path,
+    run_manifest_path: Path | None = None,
     use_apptainer: bool,
     apptainer_image: str,
 ) -> list[str]:
@@ -842,6 +843,8 @@ def build_local_blender_command(
         "--output-png",
         str(output_png),
     ]
+    if run_manifest_path is not None:
+        command.extend(["--run-manifest", str(run_manifest_path)])
 
     if use_apptainer:
         if not apptainer_image:
@@ -965,6 +968,64 @@ def _resolve_output_blend(output_png: Path, style_doc: dict[str, Any] | None) ->
             return configured_path
         return output_png.parent / configured_path
     return output_png.with_suffix(".blend")
+
+
+def _style_entries(style_doc: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(style_doc, dict):
+        return []
+    styles = style_doc.get("styles")
+    if not isinstance(styles, list):
+        return []
+    return [entry for entry in styles if isinstance(entry, dict)]
+
+
+def _resolve_sticks_backend_name(style_doc: dict[str, Any] | None) -> str:
+    for style_entry in _style_entries(style_doc):
+        if str(style_entry.get("style", "")).strip().lower() == "sticks":
+            return "mn_native_sticks"
+    return "none"
+
+
+def _resolve_polymer_cartoon_backend_name(style_doc: dict[str, Any] | None) -> str:
+    for style_entry in _style_entries(style_doc):
+        if str(style_entry.get("style", "")).strip().lower() != "cartoon":
+            continue
+        selection = style_entry.get("selection")
+        if isinstance(selection, dict):
+            if bool(selection.get("polymer")):
+                return "mn_cartoon"
+            query = str(selection.get("query", "")).strip().lower()
+            if "polymer" in query:
+                return "mn_cartoon"
+    return "none"
+
+
+def _write_run_manifest(path: Path, payload: dict[str, Any], *, chosen_structure_path: Path, style_doc: dict[str, Any] | None) -> None:
+    dss_doc = payload.get("dss")
+    dss_ran = bool(isinstance(dss_doc, dict) and dss_doc.get("ran", False))
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = _load_json(path)
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception:
+            existing = {}
+    manifest: dict[str, Any] = dict(existing)
+    manifest.update(
+        {
+        "chosen_structure_file": chosen_structure_path.name,
+        "chosen_structure_path": str(chosen_structure_path),
+        "dss_ran": dss_ran,
+        "sticks_backend": _resolve_sticks_backend_name(style_doc),
+        "polymer_cartoon_backend": _resolve_polymer_cartoon_backend_name(style_doc),
+        "generated_at_utc": _utc_now_iso(),
+        }
+    )
+    if isinstance(dss_doc, dict):
+        manifest["dss"] = dss_doc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def _build_local_runner_cli(
@@ -1175,6 +1236,13 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
     temp_root: Path | None = None
     try:
         temp_root, _bundle_dir, structure_path, pdb_fallback_path, view_path = _materialize_payload_bundle(payload, run_id)
+        run_manifest_path = temp_root / "run_manifest.json"
+        _write_run_manifest(
+            run_manifest_path,
+            payload,
+            chosen_structure_path=structure_path,
+            style_doc=style_doc,
+        )
 
         staged_style = temp_root / "style.json"
         staged_style.write_text(json.dumps(style_doc, indent=2), encoding="utf-8")
@@ -1203,6 +1271,12 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             subprocess_env["PRESS_SAMPLES"] = "24"
 
         def _run_for_structure(struct_path: Path, target_output: Path) -> tuple[list[str], subprocess.CompletedProcess[str], float]:
+            _write_run_manifest(
+                run_manifest_path,
+                payload,
+                chosen_structure_path=struct_path,
+                style_doc=style_doc,
+            )
             cmd = build_local_blender_command(
                 blender_exe=args.blender_exe,
                 preset=args.preset,
@@ -1211,6 +1285,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
                 style_json_path=style_json_path,
                 output_png=target_output,
                 custom_script=_expand_path_no_resolve(args.custom_script),
+                run_manifest_path=run_manifest_path,
                 use_apptainer=args.use_apptainer,
                 apptainer_image=args.apptainer_image,
             )
@@ -1279,6 +1354,13 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
         output_blend = ""
         if output_blend_path is not None and output_blend_path.exists():
             output_blend = str(output_blend_path)
+        _write_run_manifest(
+            run_manifest_path,
+            payload,
+            chosen_structure_path=used_structure,
+            style_doc=style_doc,
+        )
+        manifest_doc = _load_json(run_manifest_path)
         return {
             "status": "completed",
             "mode": "local",
@@ -1292,6 +1374,8 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
             "staged_structure_path": str(used_structure),
             "temp_dir": str(temp_root),
             "temp_kept": bool(keep_temp),
+            "manifest_path": str(run_manifest_path),
+            "manifest": manifest_doc,
             "blender_stdout_tail": _tail_text(result.stdout or "", max_chars=10000),
             "blender_stderr_tail": _tail_text(result.stderr or "", max_chars=10000),
         }

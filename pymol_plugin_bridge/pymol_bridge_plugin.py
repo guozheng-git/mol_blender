@@ -169,6 +169,17 @@ def collect_view_payload(cmd_obj: Any) -> dict[str, Any]:
     return payload
 
 
+def _run_dss_assignment(cmd_obj: Any, selection: str) -> dict[str, Any]:
+    dss_target = str(selection or "(all)").strip() or "(all)"
+    result: dict[str, Any] = {"ran": False, "selection": dss_target}
+    try:
+        cmd_obj.dss(dss_target)
+        result["ran"] = True
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
 def _summarize_cif_text(cif_text: str) -> dict[str, Any]:
     atom_count = 0
     chain_ids: set[str] = set()
@@ -312,6 +323,14 @@ def build_render_payload(
     *,
     include_color_hints: bool = False,
 ) -> dict[str, Any]:
+    dss_status = _run_dss_assignment(cmd_obj, selection)
+    if not bool(dss_status.get("ran", False)):
+        raise RuntimeError(
+            "Secondary-structure assignment failed before export. "
+            f"dss selection={dss_status.get('selection', selection)!r} "
+            f"error={dss_status.get('error', '<unknown>')}"
+        )
+
     cif_text = ""
     pdb_text = ""
     cif_ok = False
@@ -350,6 +369,7 @@ def build_render_payload(
         "run_id": uuid.uuid4().hex[:12],
         "structure_summary": structure_summary,
         "view": collect_view_payload(cmd_obj),
+        "dss": dss_status,
     }
     if cif_ok:
         payload["cif_text"] = cif_text

@@ -98,6 +98,7 @@ def _parse_argv(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--view-json", required=True)
     parser.add_argument("--style-json", required=True)
     parser.add_argument("--output-png", required=True)
+    parser.add_argument("--run-manifest", default="")
     parsed = parser.parse_args(tail)
     if not str(parsed.structure).strip():
         parsed.structure = str(parsed.cif or "").strip()
@@ -784,32 +785,6 @@ class _ParserMolecule:
                 f"Recent errors: {' | '.join(creation_errors[-2:])}"
             )
 
-        if resolved_style == "cartoon":
-            # Some CIF payloads collapse MN cartoon output to zero-size geometry.
-            # Ribbon is robust for those payloads and still preserves the intended look.
-            eval_count, eval_extent = self._evaluated_mesh_stats(created)
-            if eval_count <= 0 or eval_extent < 1e-6 or self._object_dimension_max(created) < 1e-6:
-                ribbon_kwargs: dict[str, Any] = {
-                    "name": f"{self._base_name}_ribbon_{self._style_counter}",
-                    "style": "ribbon",
-                    "centre": False,
-                    "del_solvent": bool(kwargs.get("del_solvent", False)),
-                }
-                if indices is not None:
-                    ribbon_kwargs["selection"] = indices
-                try:
-                    ribbon_obj = self._parser.create_model(**ribbon_kwargs)
-                    ribbon_count, ribbon_extent = self._evaluated_mesh_stats(ribbon_obj)
-                    if ribbon_count > 0 and ribbon_extent > 1e-6:
-                        created = self._replace_object(created, ribbon_obj)
-                        resolved_style = "ribbon"
-                        print(
-                            "Bridge Custom: cartoon geometry collapsed; "
-                            f"using ribbon fallback for {self._base_name} (eval_verts={eval_count})"
-                        )
-                except Exception:
-                    pass
-
         if style_name == "sticks" and resolved_style == "sticks":
             desired_radius = kwargs.get("sticks_radius", kwargs.get("radius"))
             desired_quality = kwargs.get("sticks_quality", kwargs.get("quality"))
@@ -821,6 +796,7 @@ class _ParserMolecule:
                 desired_quality,
                 desired_shade_smooth,
                 desired_color_blur,
+                disable_atom_spheres=True,
             )
             if tuned > 0:
                 print(
@@ -1624,6 +1600,7 @@ def _tune_native_sticks_style(
     stick_quality: Any = None,
     stick_shade_smooth: Any = None,
     stick_color_blur: Any = None,
+    disable_atom_spheres: bool = True,
 ) -> int:
     """
     Molecular Nodes native sticks do not always honor radius/quality kwargs at
@@ -1650,6 +1627,20 @@ def _tune_native_sticks_style(
                 continue
             for socket in node.inputs:
                 socket_name = str(getattr(socket, "name", "")).strip().lower()
+                if disable_atom_spheres and any(
+                    token in socket_name for token in ("atom", "ball", "sphere", "vdw")
+                ):
+                    default_value = getattr(socket, "default_value", None)
+                    if isinstance(default_value, bool):
+                        try:
+                            socket.default_value = False
+                            changed += 1
+                        except Exception:
+                            pass
+                    elif isinstance(default_value, (int, float)):
+                        if _set_numeric_socket_default(socket, 0.0):
+                            changed += 1
+                    continue
                 if stick_radius is not None and "radius" in socket_name:
                     if _set_numeric_socket_default(socket, float(stick_radius)):
                         changed += 1
@@ -1878,6 +1869,20 @@ def _style_chain_candidates(style_cfg: dict[str, Any]) -> list[str]:
     query = str(selection.get("query", ""))
     chain_ids.extend(re.findall(r"\bchain\s*=?\s*([A-Za-z0-9_]+)", query, flags=re.IGNORECASE))
     return [item.upper() for item in chain_ids if item]
+
+
+def _is_polymer_cartoon_style(style_cfg: dict[str, Any]) -> bool:
+    if str(style_cfg.get("style", "")).strip().lower() != "cartoon":
+        return False
+    selection = style_cfg.get("selection")
+    if isinstance(selection, dict):
+        if bool(selection.get("polymer")):
+            return True
+        query = str(selection.get("query", "")).strip().lower()
+        if "polymer" in query and "not polymer" not in query:
+            return True
+    style_name = str(style_cfg.get("name", "")).strip().lower()
+    return style_name in {"chain_a_cartoon", "chain_b_cartoon", "polymer_other_cartoon"}
 
 
 def _protein_chain_ids(load_result: Any) -> list[str]:
@@ -2362,6 +2367,9 @@ def _render(args: argparse.Namespace) -> None:
     created_objects: list[bpy.types.Object] = []
     style_objects_by_name: dict[str, list[bpy.types.Object]] = {}
     debug_styles = _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False)
+    protein_chain_ids = _protein_chain_ids(load_result)
+    runtime_sticks_backend = "none"
+    runtime_polymer_cartoon_backend = "none"
 
     for style_idx, style_cfg in enumerate(style_doc["styles"]):
         style_load_result = load_result
@@ -2390,7 +2398,38 @@ def _render(args: argparse.Namespace) -> None:
             if auto_query:
                 style_result = _add_style(style_load_result, style_cfg, auto_query, material=material)
                 used_auto_chain_fallback = True
+        style_kind_lower = str(style_cfg.get("style", "")).strip().lower()
+        style_name_lower = str(style_cfg.get("name", "")).strip().lower()
+        if style_kind_lower == "sticks":
+            runtime_sticks_backend = "mn_native_sticks"
+        if _is_polymer_cartoon_style(style_cfg):
+            runtime_polymer_cartoon_backend = "mn_cartoon"
+            require_geometry = False
+            if style_name_lower == "chain_a_cartoon":
+                require_geometry = len(protein_chain_ids) >= 1
+            elif style_name_lower == "chain_b_cartoon":
+                require_geometry = len(protein_chain_ids) >= 2
+            elif style_name_lower == "polymer_other_cartoon":
+                require_geometry = len(protein_chain_ids) >= 3
+            elif len(protein_chain_ids) >= 1:
+                require_geometry = True
+            if require_geometry and _style_result_is_empty(style_result):
+                raise RuntimeError(
+                    "Cartoon polymer style produced no geometry. "
+                    f"style={style_cfg.get('name', '<unnamed>')} protein_chains={protein_chain_ids} "
+                    "Secondary-structure assignment is required (run dss before export)."
+                )
         style_obj = getattr(style_result, "_object", None)
+        if (
+            _is_polymer_cartoon_style(style_cfg)
+            and style_obj is not None
+            and not _object_has_renderable_geometry(style_obj)
+        ):
+            raise RuntimeError(
+                "Cartoon polymer style produced non-renderable geometry. "
+                f"style={style_cfg.get('name', '<unnamed>')} "
+                "Refusing tube/trace downgrade for preset fidelity."
+            )
         if style_obj is not None:
             created_objects.append(style_obj)
             style_name = str(style_cfg.get("name", "")).strip()
@@ -2488,6 +2527,22 @@ def _render(args: argparse.Namespace) -> None:
         blend_output.parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), copy=True)
         print(f"Custom blend saved: {blend_output}")
+    run_manifest_raw = str(getattr(args, "run_manifest", "") or "").strip()
+    if run_manifest_raw:
+        run_manifest_path = Path(run_manifest_raw).expanduser()
+        if not run_manifest_path.is_absolute():
+            run_manifest_path = (Path.cwd() / run_manifest_path).absolute()
+        try:
+            manifest_doc = {}
+            if run_manifest_path.is_file():
+                manifest_doc = _load_json(run_manifest_path)
+            manifest_doc["sticks_backend"] = runtime_sticks_backend
+            manifest_doc["polymer_cartoon_backend"] = runtime_polymer_cartoon_backend
+            manifest_doc["cartoon_polymer_chain_ids"] = protein_chain_ids
+            run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            run_manifest_path.write_text(json.dumps(manifest_doc, indent=2), encoding="utf-8")
+        except Exception as exc:
+            print(f"Bridge Custom: failed to update run manifest: {exc}")
     print(f"Custom render complete: {output_png}")
 
 

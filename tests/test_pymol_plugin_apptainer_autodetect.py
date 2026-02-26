@@ -6,6 +6,10 @@ import pymol_plugin_bridge.pymol_bridge_plugin as plugin
 
 
 class FakeCmd:
+    def dss(self, selection):
+        assert selection == "(all)"
+        return None
+
     def get_str(self, fmt, selection, state=-1):
         assert fmt == "cif"
         return "\n".join(["data_demo", "loop_", "_atom_site.group_PDB", "_atom_site.id", "ATOM 1"])
