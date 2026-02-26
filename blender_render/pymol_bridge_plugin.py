@@ -41,6 +41,10 @@ SUPPORTED_PRESETS = {
     "preset_4_milky_green",
     "preset_5_black_interface",
 }
+PRESET_1_STYLE_JSON_FILENAMES = {
+    "style_preset_1_opaque_pastel.json",
+    "style_preset_1_reference_exact.json",
+}
 SUPPORTED_INTERACTIVE_BACKENDS = {"qlogin", "jobid"}
 _ACTIVE_INTERACTIVE_SESSION_ID: str | None = None
 NUCLEIC_RES_NAMES = {"DA", "DT", "DG", "DC", "A", "U", "G", "C"}
@@ -534,6 +538,22 @@ def _blender_executable_exists(blender_exe: str) -> bool:
     return False
 
 
+def _is_preset_1_style_json_path(style_path: Path) -> bool:
+    if style_path.name in PRESET_1_STYLE_JSON_FILENAMES:
+        return True
+    try:
+        payload = json.loads(style_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    output = payload.get("output")
+    if not isinstance(output, dict):
+        return False
+    filename = _normalize_cli_string(output.get("filename", ""))
+    return filename == "01_opaque_pastel_ses_interface.png"
+
+
 def _write_payload(payload: dict[str, Any]) -> Path:
     run_id = payload.get("run_id") or uuid.uuid4().hex[:12]
     run_dir = Path("/tmp/pymol_bridge") / str(run_id)
@@ -659,6 +679,19 @@ def bridge_render(
     if render_mode == "interactive_close":
         return bridge_render_interactive_close(session_id=interactive_session)
 
+    style_path: Path | None = None
+    style_json_is_preset_1 = False
+    if style_json:
+        style_path = Path(style_json).expanduser().resolve()
+        if not style_path.exists():
+            raise RuntimeError(f"style_json file not found: {style_path}")
+        style_json_is_preset_1 = _is_preset_1_style_json_path(style_path)
+    else:
+        if preset not in SUPPORTED_PRESETS:
+            raise RuntimeError(
+                f"Unknown preset: {preset}. Expected one of: {', '.join(sorted(SUPPORTED_PRESETS))}"
+            )
+
     use_apptainer_flag = _parse_bool(use_apptainer)
     if render_mode in {"local", "interactive"}:
         default_image = _default_apptainer_image()
@@ -674,7 +707,7 @@ def bridge_render(
             and sys.platform != "darwin"
             and (
                 render_mode == "interactive"
-                or (render_mode == "local" and not style_json and preset == "preset_1_interface")
+                or (render_mode == "local" and ((not style_json and preset == "preset_1_interface") or style_json_is_preset_1))
             )
         ):
             # Keep Linux preset-1/interactice output on the validated container
@@ -685,16 +718,6 @@ def bridge_render(
         print("blender_render: apptainer is unavailable on macOS; using host Blender execution.")
         use_apptainer_flag = False
         apptainer_image = ""
-
-    if style_json:
-        style_path = Path(style_json).expanduser().resolve()
-        if not style_path.exists():
-            raise RuntimeError(f"style_json file not found: {style_path}")
-    else:
-        if preset not in SUPPORTED_PRESETS:
-            raise RuntimeError(
-                f"Unknown preset: {preset}. Expected one of: {', '.join(sorted(SUPPORTED_PRESETS))}"
-            )
 
     payload = build_render_payload(
         _PYMOL_CMD,
@@ -729,7 +752,9 @@ def bridge_render(
     ]
 
     if style_json:
-        command.extend(["--style-json", str(Path(style_json).expanduser().resolve())])
+        if style_path is None:
+            raise RuntimeError("Internal error: style_json path was not resolved.")
+        command.extend(["--style-json", str(style_path)])
     else:
         command.extend(["--preset", preset])
     command.extend(["--rough", "1" if rough_flag else "0"])
