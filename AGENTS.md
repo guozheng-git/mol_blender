@@ -67,6 +67,38 @@ These are hard requirements because they directly map to the current failure ima
 - On macOS, local mode must work without Apptainer.
 - Do not create a separate user-facing command for interactive mode.
 
+### Interactive GPU Session (SLURM qlogin)
+
+Use interactive mode through `blender_render` only; no separate user command.
+
+Required behavior:
+
+1. Session bootstrap:
+   - On first `blender_render(..., mode='interactive')`, if no active GPU session exists, launch a background allocator using:
+     - `qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4`
+   - Once the interactive allocation is active and worker is listening, return a clear readiness message to PyMOL:
+     - `Interactive GPU session ready`
+2. Shared spool directory (must be on filesystem visible to both login node and GPU node):
+   - `<shared_spool>/requests/<request_id>/` for staged input bundle + request JSON
+   - `<shared_spool>/responses/<request_id>/` for output PNG + status JSON + logs
+   - `<shared_spool>/session/` for `session.json`, `ready.flag`, `heartbeat.json`
+3. Worker loop:
+   - Run inside the interactive allocation and keep alive until idle-timeout or explicit stop.
+   - Poll `requests/` for pending work, execute exactly one render transaction at a time, write `responses/`.
+   - Reuse the same renderer path used by local/apptainer modes (no style divergence).
+   - Prefer implementing worker mode inside existing bridge code (`bridge_runner.py --worker-loop`) rather than adding a separate extra script.
+4. Render transaction protocol:
+   - PyMOL side stages structure/view/style payload exactly as local mode does.
+   - For execution, worker runs Apptainer with GPU passthrough (`apptainer exec --nv ...`) and produces PNG.
+   - PyMOL side waits for response file, retrieves PNG, copies/links to requested `output_dir/output_name`, and displays it in PyMOL.
+5. Robustness:
+   - If session is starting, emit progress status and keep polling up to timeout.
+   - If heartbeat is stale or worker died, auto-restart allocation and worker.
+   - If interactive mode cannot start, fail with explicit message and fallback option (`mode='local'`).
+6. Cleanup:
+   - Keep interactive session alive between renders (warm GPU path).
+   - Support explicit stop command/flag and cleanup stale request directories by retention policy.
+
 ### Preset system
 
 - Use one JSON schema for presets (single source of truth).
