@@ -1,0 +1,166 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "width": 1536,
+    "height": 984,
+    "samples": 188,
+    "filename": "04_milky_white_green_shell_cyan_dna.png"
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "adaptive_sampling": true,
+    "exposure": -0.05,
+    "gamma": 0.90,
+    "view_transform": "Standard",
+    "look": "None"
+  },
+  "camera": {
+    "mode": "pymol",
+    "world_scale": 0.015,
+    "lens_mm": 60.0,
+    "shift_x": 0.0,
+    "shift_y": 0.0
+  },
+  "world": {
+    "background_type": "solid",
+    "color": "#D3E0DF",
+    "strength": 1.0
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 24.0,
+      "size": 4.5,
+      "color": "#FFFFFF",
+      "location": [2.4, -2.5, 0.9],
+      "rotation_deg": [58.0, 0.0, 34.0]
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 9.0,
+      "size": 5.0,
+      "color": "#E7FFF9",
+      "location": [-2.5, -2.0, 0.6],
+      "rotation_deg": [65.0, 0.0, -130.0]
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 6.0,
+      "size": 3.0,
+      "color": "#FFFFFF",
+      "location": [0.0, 3.1, 1.2],
+      "rotation_deg": [120.0, 0.0, 0.0]
+    }
+  ],
+  "color_follow": {
+    "enabled": false,
+    "mode": "auto",
+    "mix": 0.66,
+    "saturation_boost": 0.06,
+    "value_boost": 0.02
+  },
+  "materials": {
+    "surface_milky": {
+      "base_color": "#F2FFF9",
+      "shadow_color": "#D7F0E5",
+      "highlight_color": "#FFFFFF",
+      "roughness": 0.72,
+      "specular": 0.06,
+      "alpha": 0.50,
+      "ao_strength": 0.12,
+      "rim_strength": 0.03
+    },
+    "polymer_green": {
+      "base_color": "#A2D4C0",
+      "shadow_color": "#79B49D",
+      "highlight_color": "#C7EBDD",
+      "roughness": 0.56,
+      "specular": 0.17,
+      "alpha": 0.86,
+      "ao_strength": 0.18,
+      "rim_strength": 0.05
+    },
+    "nucleic_cyan": {
+      "base_color": "#6BD6E0",
+      "shadow_color": "#49AAB4",
+      "highlight_color": "#9DEAF1",
+      "roughness": 0.42,
+      "specular": 0.24,
+      "alpha": 0.96,
+      "ao_strength": 0.10,
+      "rim_strength": 0.07
+    },
+    "ligand_coral": {
+      "base_color": "#F48D95",
+      "shadow_color": "#D56C74",
+      "highlight_color": "#FFB4BB",
+      "roughness": 0.38,
+      "specular": 0.30,
+      "alpha": 1.0,
+      "ao_strength": 0.10,
+      "rim_strength": 0.10
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_surface",
+      "style": "surface",
+      "material": "surface_milky",
+      "selection": {
+        "query": "polymer"
+      },
+      "probe_radius": 1.08,
+      "quality": 3,
+      "shade_smooth": true
+    },
+    {
+      "name": "protein_backbone",
+      "style": "ribbon",
+      "material": "polymer_green",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "fallback_selection": {
+        "query": "polymer"
+      },
+      "shade_smooth": true
+    },
+    {
+      "name": "nucleic_backbone",
+      "style": "cartoon",
+      "material": "nucleic_cyan",
+      "selection": {
+        "nucleic": true
+      },
+      "fallback_selection": {
+        "query": "nucleic"
+      },
+      "thickness": 0.18,
+      "width": 0.58,
+      "loop_radius": 0.11,
+      "quality": 4,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_ballstick",
+      "style": "ball_and_stick",
+      "material": "ligand_coral",
+      "selection": {
+        "ligand": true
+      },
+      "fallback_selection": {
+        "query": "ligand"
+      },
+      "radius": 0.24,
+      "quality": 4,
+      "shade_smooth": true
+    }
+  ]
+}

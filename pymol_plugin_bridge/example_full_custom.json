@@ -1,0 +1,118 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "width": 1920,
+    "height": 1080,
+    "samples": 128,
+    "filename": "custom_full_style.png",
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "METAL",
+    "transparent_background": false,
+    "adaptive_sampling": true
+  },
+  "camera": {
+    "mode": "pymol",
+    "lens_mm": 58.0,
+    "shift_x": 0.0,
+    "shift_y": -0.02
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#D9E8F3",
+    "bottom_color": "#BDD2E2",
+    "strength": 1.0
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 2200,
+      "size": 4.0,
+      "color": "#FFFFFF",
+      "location": [6.0, -5.0, 8.0],
+      "rotation_deg": [58.0, 0.0, 35.0]
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 900,
+      "size": 6.0,
+      "color": "#D5E7FF",
+      "location": [-7.0, 5.0, 6.0],
+      "rotation_deg": [62.0, 0.0, -132.0]
+    },
+    {
+      "name": "Rim",
+      "type": "SUN",
+      "energy": 2.4,
+      "color": "#C9F2FF",
+      "location": [0.0, 0.0, 12.0],
+      "rotation_deg": [120.0, 0.0, 45.0]
+    }
+  ],
+  "materials": {
+    "protein_surface": {
+      "base_color": "#93BDE3",
+      "roughness": 0.58,
+      "specular": 0.22,
+      "alpha": 0.92
+    },
+    "dna_cartoon": {
+      "base_color": "#5DD7D8",
+      "roughness": 0.36,
+      "specular": 0.30,
+      "alpha": 1.0
+    },
+    "ligand_sticks": {
+      "base_color": "#D39A4F",
+      "roughness": 0.38,
+      "specular": 0.26,
+      "alpha": 1.0,
+      "emission_color": "#FFD8A3",
+      "emission_strength": 0.2
+    }
+  },
+  "styles": [
+    {
+      "name": "surface_ab",
+      "style": "surface",
+      "material": "protein_surface",
+      "color": "chain",
+      "selection": {
+        "polymer": true,
+        "chain": ["A", "B"]
+      },
+      "probe_radius": 1.4,
+      "quality": 5
+    },
+    {
+      "name": "dna_focus",
+      "style": "cartoon",
+      "material": "dna_cartoon",
+      "color": "common",
+      "selection": {
+        "nucleic": true,
+        "residue_range": [5, 60]
+      },
+      "thickness": 0.42,
+      "width": 1.2,
+      "loop_radius": 0.55,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_highlight",
+      "style": "sticks",
+      "material": "ligand_sticks",
+      "color": "common",
+      "selection": {
+        "ligand": true
+      },
+      "radius": 0.24
+    }
+  ]
+}

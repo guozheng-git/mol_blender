@@ -1,0 +1,151 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "width": 1536,
+    "height": 984,
+    "samples": 196,
+    "filename": "05_black_background_interface.png"
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "adaptive_sampling": true,
+    "exposure": -0.22,
+    "gamma": 0.95,
+    "view_transform": "Standard",
+    "look": "High Contrast"
+  },
+  "camera": {
+    "mode": "pymol",
+    "world_scale": 0.015,
+    "lens_mm": 58.0,
+    "shift_x": 0.0,
+    "shift_y": 0.0
+  },
+  "world": {
+    "background_type": "solid",
+    "color": "#080A0D",
+    "strength": 0.95
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 46.0,
+      "size": 4.2,
+      "color": "#FFFFFF",
+      "location": [2.6, -2.6, 1.0],
+      "rotation_deg": [60.0, 0.0, 35.0]
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 10.0,
+      "size": 5.0,
+      "color": "#90A6C6",
+      "location": [-2.3, -2.0, 0.6],
+      "rotation_deg": [66.0, 0.0, -126.0]
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 26.0,
+      "size": 3.2,
+      "color": "#B4D7FF",
+      "location": [0.0, 3.1, 1.5],
+      "rotation_deg": [124.0, 0.0, 0.0]
+    }
+  ],
+  "color_follow": {
+    "enabled": false,
+    "mode": "auto",
+    "mix": 0.76,
+    "saturation_boost": 0.12,
+    "value_boost": 0.08
+  },
+  "materials": {
+    "polymer_main": {
+      "base_color": "#7F91FF",
+      "shadow_color": "#5A6BC8",
+      "highlight_color": "#A6B4FF",
+      "roughness": 0.44,
+      "specular": 0.32,
+      "alpha": 0.98,
+      "ao_strength": 0.20,
+      "rim_strength": 0.16,
+      "emission_color": "#A9B8FF",
+      "emission_strength": 0.05
+    },
+    "nucleic_main": {
+      "base_color": "#5FD4E9",
+      "shadow_color": "#419FB2",
+      "highlight_color": "#97E9F7",
+      "roughness": 0.40,
+      "specular": 0.35,
+      "alpha": 0.98,
+      "ao_strength": 0.16,
+      "rim_strength": 0.12
+    },
+    "ligand_main": {
+      "base_color": "#FF9587",
+      "shadow_color": "#D66D61",
+      "highlight_color": "#FFC0B7",
+      "roughness": 0.35,
+      "specular": 0.40,
+      "alpha": 1.0,
+      "ao_strength": 0.10,
+      "rim_strength": 0.20
+    }
+  },
+  "styles": [
+    {
+      "name": "polymer_cartoon",
+      "style": "cartoon",
+      "material": "polymer_main",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "fallback_selection": {
+        "query": "polymer"
+      },
+      "thickness": 0.29,
+      "width": 0.84,
+      "loop_radius": 0.17,
+      "quality": 4,
+      "shade_smooth": true
+    },
+    {
+      "name": "nucleic_cartoon",
+      "style": "cartoon",
+      "material": "nucleic_main",
+      "selection": {
+        "nucleic": true
+      },
+      "fallback_selection": {
+        "query": "nucleic"
+      },
+      "thickness": 0.18,
+      "width": 0.55,
+      "loop_radius": 0.11,
+      "quality": 4,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_ballstick",
+      "style": "ball_and_stick",
+      "material": "ligand_main",
+      "selection": {
+        "ligand": true
+      },
+      "fallback_selection": {
+        "query": "ligand"
+      },
+      "radius": 0.24,
+      "quality": 4,
+      "shade_smooth": true
+    }
+  ]
+}

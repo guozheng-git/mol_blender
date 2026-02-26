@@ -1,0 +1,142 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%labels
+    Author PyMOLBlenderBridge
+    Description "PyMOL -> Blender GPU/SLURM bridge runtime"
+
+%files
+    . /opt/pymol_plugin_bridge
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        python3-venv \
+        ca-certificates \
+        wget \
+        xz-utils \
+        git \
+        slurm-client \
+        libx11-6 \
+        libxi6 \
+        libxxf86vm1 \
+        libxfixes3 \
+        libxrender1 \
+        libxcursor1 \
+        libxext6 \
+        libxkbcommon0 \
+        libdbus-1-3 \
+        libegl1 \
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libice6 \
+        libfontconfig1 \
+        libfreetype6 \
+        libwayland-client0 \
+        libopengl0 \
+        libpulse0 \
+        libxrandr2 \
+        libxinerama1 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxshmfence1
+    rm -rf /var/lib/apt/lists/*
+
+    # Install official Blender build (bundled Python runtime, compatible with Molecular Nodes).
+    BLENDER_VERSION=4.2.5
+    BLENDER_SERIES=4.2
+    BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+    BLENDER_URL="https://download.blender.org/release/Blender${BLENDER_SERIES}/${BLENDER_TAR}"
+    wget -q -O "/tmp/${BLENDER_TAR}" "${BLENDER_URL}"
+    tar -xJf "/tmp/${BLENDER_TAR}" -C /opt
+    ln -sf "/opt/blender-${BLENDER_VERSION}-linux-x64/blender" /usr/local/bin/blender
+    rm -f "/tmp/${BLENDER_TAR}"
+    blender --version
+
+    # System Python is used by bridge_runner.py and helper tooling.
+    # Do not install bpy here: Linux wheels are not available for generic CPython.
+    python3 -m pip install --break-system-packages --no-cache-dir \
+        jsonschema
+
+    # Install Molecular Nodes into Blender's bundled Python runtime.
+cat > /tmp/install_molecularnodes.py <<'PY'
+import ensurepip
+import importlib
+from pathlib import Path
+import subprocess
+import sys
+import bpy
+
+print("Blender Python executable:", sys.executable)
+print("Blender Python version:", sys.version)
+
+ensurepip.bootstrap(upgrade=True)
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "pip", "setuptools", "wheel"])
+# For Blender 4.2.x (Python 3.11), install a Molecular Nodes line with native sticks style.
+# Install dependencies explicitly while skipping pip's bpy requirement.
+subprocess.check_call(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-cache-dir",
+        "numpy<2",
+        "MDAnalysis>=2.7.0",
+        "biotite~=0.40",
+        "mrcfile",
+        "starfile",
+        "https://github.com/BradyAJohnston/databpy/archive/refs/tags/v0.6.0.zip",
+    ]
+)
+subprocess.check_call(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-cache-dir",
+        "--no-deps",
+        "molecularnodes==4.2.12",
+    ]
+)
+import databpy
+# Persist compatibility alias for MN releases importing databpy.Domains.
+databpy_init = Path(databpy.__file__)
+databpy_src = databpy_init.read_text()
+if "Domains = AttributeDomains" not in databpy_src:
+    databpy_src += "\nif 'Domains' not in globals() and 'AttributeDomains' in globals():\n    Domains = AttributeDomains\n"
+    databpy_init.write_text(databpy_src)
+# Also set alias in the current interpreter before importing MN.
+if not hasattr(databpy, "Domains") and hasattr(databpy, "AttributeDomains"):
+    setattr(databpy, "Domains", databpy.AttributeDomains)
+mn = importlib.import_module("molecularnodes")
+print("molecularnodes version:", getattr(mn, "__version__", "unknown"))
+print("bpy version:", bpy.app.version_string)
+PY
+
+    blender --background --factory-startup --python-exit-code 1 --python /tmp/install_molecularnodes.py
+    rm -f /tmp/install_molecularnodes.py
+
+%environment
+    export BRIDGE_ROOT=/opt/pymol_plugin_bridge
+    export PATH=/usr/bin:$PATH
+    export PYTHONPATH=/opt/pymol_plugin_bridge:$PYTHONPATH
+
+%runscript
+    exec python3 /opt/pymol_plugin_bridge/bridge_runner.py "$@"
+
+%help
+    Build:
+      apptainer build blender_bridge.sif blender_bridge.def
+
+    Run local render from payload JSON:
+      apptainer exec --nv blender_bridge.sif \
+        python3 /opt/pymol_plugin_bridge/bridge_runner.py local ...
