@@ -216,45 +216,48 @@ python blender_render/bridge_runner.py slurm \
 - Temporary payload files: `/tmp/pymol_bridge/<run_id>/...`
 - Interactive sessions: `$HOME/.pymol_bridge/sessions/<session_id>/...`
 
-## macOS install (Blender + Molecular Nodes)
+## Platform quick setup
 
-1. Install Blender
+### Linux cluster (Apptainer workflow)
 
-```bash
-# Install Blender.app in /Applications (default expected path)
-ls -l /Applications/Blender.app/Contents/MacOS/Blender
-```
+On the cluster, rendering dependencies are inside the bridge Apptainer image, so setup is just wiring the plugin into PyMOL.
 
-- Download Blender from blender.org and drag `Blender.app` into `/Applications`.
-- Launch Blender once, then quit, so user folders are created under `~/Library/Application Support/Blender/`.
-
-2. Install Molecular Nodes extension
-
-- Open Blender.
-- Go to `Edit -> Preferences -> Extensions`.
-- Search for `Molecular Nodes` and install/enable it.
-- Restart Blender once after installation.
-
-3. Verify Molecular Nodes files exist
-
-```bash
-find ~/Library/Application\ Support/Blender -path "*/extensions/blender_org/molecularnodes" -maxdepth 8 -type d
-```
-
-4. Test from PyMOL
+1. Add this line to `~/.pymolrc`:
 
 ```python
-run /Users/mb/git/blender_render/blender_render/pymol_bridge_plugin.py
-blender_render
+run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
 ```
 
-If Blender is not installed at `/Applications/Blender.app/Contents/MacOS/Blender`, pass an explicit path:
+2. Start PyMOL and run:
+
+```python
+fetch 1qys
+blender_render selection='(all)', preset='preset_1_interface', mode='local', rough=1
+```
+
+### macOS (local host Blender workflow)
+
+1. Clone this repo on your Mac.
+2. Find your local plugin file path:
+   `<your_clone>/blender_render/pymol_bridge_plugin.py`
+3. Add it to `~/.pymolrc`:
+
+```python
+run /absolute/path/to/your/clone/blender_render/pymol_bridge_plugin.py
+```
+
+4. Start PyMOL and run:
+
+```python
+fetch 1qys
+blender_render selection='(all)', preset='preset_1_interface', mode='local', rough=1
+```
+
+If Blender is not at `/Applications/Blender.app/Contents/MacOS/Blender`, pass it explicitly:
 
 ```python
 blender_render blender_exe='/absolute/path/to/blender'
 ```
-
-If you see Molecular Nodes/CCD errors, reinstall the Molecular Nodes extension and run `blender_render` again.
 
 ## Notes for macOS
 
