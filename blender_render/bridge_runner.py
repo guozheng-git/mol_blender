@@ -22,7 +22,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-DEFAULT_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
+MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
+DEFAULT_BLENDER_EXE = MACOS_STANDARD_BLENDER_EXE
 DEFAULT_APPTAINER_BLENDER_EXE = "/usr/local/bin/blender"
 DEFAULT_INTERACTIVE_LAUNCHER = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4"
 
@@ -757,12 +758,17 @@ def _is_macos() -> bool:
 
 
 def _detect_host_blender_executable() -> str:
-    candidates = [
-        shutil.which("blender"),
-        "/usr/bin/blender",
-        "/usr/local/bin/blender",
-        "/opt/blender/blender",
-    ]
+    candidates: list[str | None] = []
+    if _is_macos():
+        candidates.append(MACOS_STANDARD_BLENDER_EXE)
+    candidates.extend(
+        [
+            shutil.which("blender"),
+            "/usr/bin/blender",
+            "/usr/local/bin/blender",
+            "/opt/blender/blender",
+        ]
+    )
     for candidate in candidates:
         if not candidate:
             continue

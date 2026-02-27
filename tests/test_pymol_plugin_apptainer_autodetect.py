@@ -82,6 +82,45 @@ def test_local_mode_does_not_force_apptainer_when_blender_missing(monkeypatch, t
     assert "--apptainer-image" not in command
 
 
+def test_local_mode_on_macos_uses_standard_blender_path(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    fake_runner = tmp_path / "bridge_runner.py"
+    fake_runner.write_text("# runner", encoding="utf-8")
+    payload_path = tmp_path / "payload.json"
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: fake_runner, raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda _payload: payload_path, raising=False)
+    monkeypatch.setattr(plugin, "_default_apptainer_image", lambda: tmp_path / "missing_bridge.sif", raising=False)
+    monkeypatch.setattr(plugin.sys, "platform", "darwin", raising=False)
+    monkeypatch.setattr(
+        plugin.Path,
+        "is_file",
+        lambda self: str(self) == plugin.MACOS_STANDARD_BLENDER_EXE,
+        raising=False,
+    )
+
+    def fake_run_runner(command):
+        calls.append(command)
+        return {"status": "completed", "output_png": ""}
+
+    monkeypatch.setattr(plugin, "_run_runner", fake_run_runner, raising=False)
+
+    result = plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="local",
+        blender_exe="/missing/blender",
+    )
+
+    assert result["status"] == "completed"
+    assert calls
+    command = calls[0]
+    assert "--blender-exe" in command
+    assert command[command.index("--blender-exe") + 1] == plugin.MACOS_STANDARD_BLENDER_EXE
+
+
 def test_local_mode_auto_uses_apptainer_for_preset1_style_json(monkeypatch, tmp_path: Path):
     fake = FakeCmd()
     fake_runner = tmp_path / "bridge_runner.py"

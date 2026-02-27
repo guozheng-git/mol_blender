@@ -16,10 +16,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
+
 
 def _detect_default_blender_exe() -> str:
     if sys.platform == "darwin":
-        return "/Applications/Blender.app/Contents/MacOS/Blender"
+        return MACOS_STANDARD_BLENDER_EXE
     candidates = [
         shutil.which("blender"),
         "/usr/bin/blender",
@@ -32,7 +34,7 @@ def _detect_default_blender_exe() -> str:
         path = Path(candidate).expanduser()
         if path.is_file():
             return str(path)
-    return "/Applications/Blender.app/Contents/MacOS/Blender"
+    return MACOS_STANDARD_BLENDER_EXE
 
 
 DEFAULT_BLENDER_EXE = _detect_default_blender_exe()
@@ -545,6 +547,17 @@ def _blender_executable_exists(blender_exe: str) -> bool:
     return False
 
 
+def _resolve_host_blender_executable(blender_exe: str) -> str:
+    resolved = _normalize_cli_string(blender_exe)
+    if _blender_executable_exists(resolved):
+        return resolved
+    if sys.platform == "darwin":
+        default_path = Path(MACOS_STANDARD_BLENDER_EXE)
+        if default_path.is_file():
+            return str(default_path)
+    return resolved
+
+
 def _is_preset_1_style_json_path(style_path: Path) -> bool:
     if style_path.name in PRESET_1_STYLE_JSON_FILENAMES:
         return True
@@ -909,6 +922,11 @@ def bridge_render(
         print("blender_render: apptainer is unavailable on macOS; using host Blender execution.")
         use_apptainer_flag = False
         apptainer_image = ""
+    if render_mode in {"local", "interactive"} and not use_apptainer_flag:
+        original_blender_exe = blender_exe
+        blender_exe = _resolve_host_blender_executable(blender_exe)
+        if blender_exe != original_blender_exe:
+            print(f"blender_render: using detected host Blender executable: {blender_exe}")
 
     payload = build_render_payload(
         _PYMOL_CMD,

@@ -124,6 +124,20 @@ def test_local_preset_mode_emits_expected_blender_command(monkeypatch, payload_f
     assert Path(command[command.index("--structure") + 1]).name == "structure.cif"
 
 
+def test_detect_host_blender_executable_prefers_standard_macos_path(monkeypatch):
+    monkeypatch.setattr(bridge_runner, "_is_macos", lambda: True)
+    monkeypatch.setattr(bridge_runner.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        bridge_runner,
+        "_blender_executable_exists",
+        lambda candidate: candidate == bridge_runner.MACOS_STANDARD_BLENDER_EXE,
+    )
+
+    detected = bridge_runner._detect_host_blender_executable()
+
+    assert detected == bridge_runner.MACOS_STANDARD_BLENDER_EXE
+
+
 def test_local_manifest_contains_required_runtime_guard_fields(monkeypatch, payload_file: Path, tmp_path: Path):
     args = _base_args(payload_file, tmp_path)
     args.output_name = "manifest.png"

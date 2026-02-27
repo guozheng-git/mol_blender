@@ -216,6 +216,46 @@ python blender_render/bridge_runner.py slurm \
 - Temporary payload files: `/tmp/pymol_bridge/<run_id>/...`
 - Interactive sessions: `$HOME/.pymol_bridge/sessions/<session_id>/...`
 
+## macOS install (Blender + Molecular Nodes)
+
+1. Install Blender
+
+```bash
+# Install Blender.app in /Applications (default expected path)
+ls -l /Applications/Blender.app/Contents/MacOS/Blender
+```
+
+- Download Blender from blender.org and drag `Blender.app` into `/Applications`.
+- Launch Blender once, then quit, so user folders are created under `~/Library/Application Support/Blender/`.
+
+2. Install Molecular Nodes extension
+
+- Open Blender.
+- Go to `Edit -> Preferences -> Extensions`.
+- Search for `Molecular Nodes` and install/enable it.
+- Restart Blender once after installation.
+
+3. Verify Molecular Nodes files exist
+
+```bash
+find ~/Library/Application\ Support/Blender -path "*/extensions/blender_org/molecularnodes" -maxdepth 8 -type d
+```
+
+4. Test from PyMOL
+
+```python
+run /Users/mb/git/blender_render/blender_render/pymol_bridge_plugin.py
+blender_render
+```
+
+If Blender is not installed at `/Applications/Blender.app/Contents/MacOS/Blender`, pass an explicit path:
+
+```python
+blender_render blender_exe='/absolute/path/to/blender'
+```
+
+If you see Molecular Nodes/CCD errors, reinstall the Molecular Nodes extension and run `blender_render` again.
+
 ## Notes for macOS
 
 - Local rendering is Blender-native (`--blender-exe`) and does not require Apptainer.
