@@ -1382,11 +1382,32 @@ def _biotite_ccd_target_paths() -> list[Path]:
 
         raw_path = getattr(ccd_module, "_CCD_FILE", None)
         if raw_path:
-            targets.append(Path(raw_path))
+            canonical = Path(raw_path)
+            targets.append(canonical)
+            if canonical.name == "components.bcif":
+                # Support both layouts seen in Biotite/MN combinations:
+                #   .../structure/info/components.bcif
+                #   .../structure/info/ccd/components.bcif
+                if canonical.parent.name == "ccd":
+                    targets.append(canonical.parent.parent / "components.bcif")
+                else:
+                    targets.append(canonical.parent / "ccd" / "components.bcif")
+    except Exception:
+        pass
+
+    # Fallback targets even when _CCD_FILE is unavailable.
+    try:
+        import biotite.structure.info as info_module  # type: ignore
+
+        info_dir = Path(getattr(info_module, "__file__", "")).expanduser().resolve().parent
+        if info_dir.is_dir():
+            targets.append(info_dir / "components.bcif")
+            targets.append(info_dir / "ccd" / "components.bcif")
     except Exception:
         pass
 
     targets.append(Path.home() / ".cache" / "pymol_bridge" / "components.bcif")
+    targets.append(Path.home() / ".cache" / "pymol_bridge" / "ccd" / "components.bcif")
 
     seen: set[str] = set()
     unique: list[Path] = []
@@ -1406,19 +1427,25 @@ def _read_packaged_biotite_ccd_bytes() -> tuple[bytes | None, str]:
     except Exception as exc:
         return (None, f"biotite.structure.info resources unavailable: {type(exc).__name__}: {exc}")
 
-    resource = package_root.joinpath("components.bcif")
-    try:
-        with importlib.resources.as_file(resource) as local_path:
-            path = Path(local_path)
-            if path.is_file():
-                return (path.read_bytes(), f"resource:{path}")
-    except Exception:
-        pass
-
-    try:
-        return (resource.read_bytes(), "resource:biotite.structure.info/components.bcif")
-    except Exception as exc:
-        return (None, f"biotite packaged components.bcif unreadable: {type(exc).__name__}: {exc}")
+    resource_candidates = [
+        ("components.bcif", package_root.joinpath("components.bcif")),
+        ("ccd/components.bcif", package_root.joinpath("ccd").joinpath("components.bcif")),
+    ]
+    errors: list[str] = []
+    for label, resource in resource_candidates:
+        try:
+            with importlib.resources.as_file(resource) as local_path:
+                path = Path(local_path)
+                if path.is_file():
+                    return (path.read_bytes(), f"resource:{path}")
+        except Exception:
+            pass
+        try:
+            return (resource.read_bytes(), f"resource:biotite.structure.info/{label}")
+        except Exception as exc:
+            errors.append(f"{label}: {type(exc).__name__}: {exc}")
+            continue
+    return (None, "biotite packaged CCD unreadable: " + " | ".join(errors))
 
 
 def _biotite_wheel_candidates() -> list[Path]:
@@ -1468,47 +1495,63 @@ def _biotite_wheel_candidates() -> list[Path]:
 
 
 def _read_biotite_ccd_bytes_from_wheels() -> tuple[bytes | None, str]:
-    member = "biotite/structure/info/components.bcif"
+    members = [
+        "biotite/structure/info/components.bcif",
+        "biotite/structure/info/ccd/components.bcif",
+    ]
     wheel_errors: list[str] = []
     for wheel in _biotite_wheel_candidates():
         try:
             with zipfile.ZipFile(wheel) as archive:
-                try:
-                    data = archive.read(member)
-                except KeyError:
-                    continue
-                return (data, f"wheel:{wheel}::{member}")
+                for member in members:
+                    try:
+                        data = archive.read(member)
+                    except KeyError:
+                        continue
+                    return (data, f"wheel:{wheel}::{member}")
         except Exception as exc:
             wheel_errors.append(f"{wheel}: {type(exc).__name__}: {exc}")
             continue
     if wheel_errors:
         return (None, "wheel lookup failed: " + " | ".join(wheel_errors[:4]))
-    return (None, "no Molecular Nodes biotite wheel with components.bcif found")
+    return (None, "no Molecular Nodes biotite wheel with CCD payload found")
 
 
 def _write_ccd_bytes(ccd_bytes: bytes, target_paths: list[Path], source_label: str) -> Path | None:
     if not ccd_bytes:
         return None
+    written_path: Path | None = None
     for target in target_paths:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(ccd_bytes)
             if target.is_file():
-                _activate_biotite_ccd_path(target)
+                if written_path is None:
+                    written_path = target
                 if _env_bool("PRESS_DEBUG_LOADER", False):
                     print(f"Bridge Custom loader: restored CCD from {source_label} -> {target}")
-                return target
         except Exception:
             continue
-    return None
+    if written_path is not None:
+        _activate_biotite_ccd_path(written_path)
+    return written_path
 
 
 def _ensure_biotite_ccd_database() -> None:
     target_paths = _biotite_ccd_target_paths()
+    existing_path: Path | None = None
     for path in target_paths:
         if path.is_file():
-            _activate_biotite_ccd_path(path)
-            return
+            existing_path = path
+            break
+    if existing_path is not None:
+        try:
+            # Mirror an existing CCD to all known paths so both legacy and
+            # current Biotite/MN loaders succeed.
+            _write_ccd_bytes(existing_path.read_bytes(), target_paths, f"existing:{existing_path}")
+        except Exception:
+            _activate_biotite_ccd_path(existing_path)
+        return
 
     debug_notes: list[str] = []
 
