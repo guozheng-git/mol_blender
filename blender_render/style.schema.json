@@ -60,6 +60,9 @@
         "blend_filename": {
           "type": "string",
           "minLength": 1
+        },
+        "raw_view": {
+          "type": "boolean"
         }
       }
     },

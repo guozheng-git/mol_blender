@@ -59,6 +59,8 @@ def test_pse_cli_builds_runner_command(monkeypatch, tmp_path: Path):
         "local",
         "--rough",
         "1",
+        "--raw-view",
+        "1",
     ])
 
     assert result["status"] == "completed"
@@ -68,4 +70,4 @@ def test_pse_cli_builds_runner_command(monkeypatch, tmp_path: Path):
     assert "--payload-json" in command
     assert "--preset" in command
     assert "--rough" in command
-
+    assert "--raw-view" in command

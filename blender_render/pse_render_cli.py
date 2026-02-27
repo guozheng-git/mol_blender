@@ -37,6 +37,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--preset", default="preset_1_interface", choices=sorted(SUPPORTED_PRESETS))
     parser.add_argument("--style-json", default="")
     parser.add_argument("--rough", type=_parse_bool, default=False)
+    parser.add_argument("--raw-view", type=_parse_bool, default=False)
     parser.add_argument("--color-follow", type=_parse_bool, default=False)
     parser.add_argument("--save-blend", type=_parse_bool, default=False)
     parser.add_argument("--blend-output", default="")
@@ -115,6 +116,8 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         str(args.blender_exe),
         "--rough",
         "1" if bool(args.rough) else "0",
+        "--raw-view",
+        "1" if bool(args.raw_view) else "0",
         "--color-follow",
         "1" if bool(args.color_follow) else "0",
         "--save-blend",

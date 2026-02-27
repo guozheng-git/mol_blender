@@ -55,6 +55,7 @@ def test_sbatch_flags_and_embedded_payload_roundtrip():
         use_apptainer=False,
         apptainer_image="",
         rough=False,
+        raw_view=False,
         color_follow=False,
         save_blend=False,
         blend_output="",
@@ -99,6 +100,7 @@ def test_sbatch_embeds_style_when_custom_mode():
         use_apptainer=False,
         apptainer_image="",
         rough=False,
+        raw_view=False,
         color_follow=False,
         save_blend=False,
         blend_output="",
@@ -126,6 +128,7 @@ def test_sbatch_includes_rough_flag_for_local_replay():
         use_apptainer=False,
         apptainer_image="",
         rough=True,
+        raw_view=True,
         color_follow=False,
         save_blend=False,
         blend_output="",
@@ -136,3 +139,4 @@ def test_sbatch_includes_rough_flag_for_local_replay():
     )
 
     assert "  --rough 1" in script
+    assert "  --raw-view 1" in script

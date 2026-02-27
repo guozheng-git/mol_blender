@@ -129,6 +129,26 @@ def test_bridge_render_forwards_rough_flag(monkeypatch, tmp_path: Path):
     assert command[command.index("--rough") + 1] == "1"
 
 
+def test_bridge_render_forwards_raw_view_flag(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = []
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
+    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda command: calls.append(command) or {"status": "completed", "output_png": ""},
+        raising=False,
+    )
+
+    plugin.bridge_render(selection="(all)", preset="preset_1_interface", mode="local", raw_view=1)
+    command = calls[0]
+    assert "--raw-view" in command
+    assert command[command.index("--raw-view") + 1] == "1"
+
+
 def test_bridge_render_forwards_color_follow_flag(monkeypatch, tmp_path: Path):
     fake = FakeCmd()
     calls = []

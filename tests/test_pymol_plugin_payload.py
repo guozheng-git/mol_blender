@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+import blender_render.pymol_bridge_plugin as plugin
 from blender_render.pymol_bridge_plugin import build_render_payload
 
 
@@ -129,3 +132,14 @@ def test_build_render_payload_fails_when_dss_assignment_fails():
         assert "dss failed" in message
     else:  # pragma: no cover - defensive branch
         raise AssertionError("Expected RuntimeError when dss fails")
+
+
+def test_write_payload_uses_configured_tmp_root(monkeypatch, tmp_path):
+    tmp_root = tmp_path / "pymol_bridge"
+    monkeypatch.setattr(plugin, "TMP_BRIDGE_ROOT", tmp_root, raising=False)
+
+    payload_path = plugin._write_payload({"run_id": "permtest", "hello": "world"})
+
+    assert payload_path == tmp_root / "permtest" / "payload.json"
+    assert json.loads(payload_path.read_text(encoding="utf-8"))["hello"] == "world"
+    assert payload_path.parent.exists()

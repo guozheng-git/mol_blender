@@ -1834,6 +1834,53 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
         _configure_cycles_gpu_for_custom(scene, renderer)
 
 
+def _configure_raw_viewport_mode(scene: bpy.types.Scene) -> None:
+    # Emulate Blender's live viewport appearance instead of Cycles/EEVEE ray tracing.
+    scene.render.engine = "BLENDER_WORKBENCH"
+    display = getattr(scene, "display", None)
+    shading = getattr(display, "shading", None) if display is not None else None
+    if shading is None:
+        return
+    try:
+        shading.type = "SOLID"
+    except Exception:
+        pass
+    try:
+        shading.light = "STUDIO"
+    except Exception:
+        pass
+    try:
+        shading.color_type = "MATERIAL"
+    except Exception:
+        pass
+    try:
+        shading.show_cavity = True
+    except Exception:
+        pass
+    try:
+        shading.show_object_outline = False
+    except Exception:
+        pass
+
+
+def _render_raw_view(scene: bpy.types.Scene) -> None:
+    _configure_raw_viewport_mode(scene)
+    try:
+        bpy.ops.render.opengl(animation=False, write_still=True, view_context=False)
+        return
+    except TypeError:
+        # Blender API signatures vary slightly by release.
+        try:
+            bpy.ops.render.opengl(write_still=True)
+            return
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Fallback: still non-raytraced output via Workbench render pipeline.
+    bpy.ops.render.render(animation=False, write_still=True)
+
+
 def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
     if scene.world is None:
         scene.world = bpy.data.worlds.new("World")
@@ -3484,7 +3531,12 @@ def _render(args: argparse.Namespace) -> None:
     output_png.parent.mkdir(parents=True, exist_ok=True)
     scene.render.filepath = str(output_png)
 
-    bpy.ops.render.render(animation=False, write_still=True)
+    output_cfg = style_doc.get("output")
+    raw_view = bool(isinstance(output_cfg, dict) and output_cfg.get("raw_view", False))
+    if raw_view:
+        _render_raw_view(scene)
+    else:
+        bpy.ops.render.render(animation=False, write_still=True)
     blend_output = _resolve_blend_output_path(style_doc, output_png)
     if blend_output is not None:
         blend_output.parent.mkdir(parents=True, exist_ok=True)

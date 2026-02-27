@@ -61,6 +61,7 @@ def _base_args(payload_path: Path, tmp_path: Path) -> argparse.Namespace:
         preset="preset_1_interface",
         style_json="",
         rough=False,
+        raw_view=False,
         color_follow=False,
         save_blend=False,
         blend_output="",
@@ -92,6 +93,17 @@ def _base_args(payload_path: Path, tmp_path: Path) -> argparse.Namespace:
         poll_interval=1,
         dry_run=False,
     )
+
+
+def test_tmp_run_dir_uses_configured_root(monkeypatch, tmp_path: Path):
+    tmp_root = tmp_path / "pymol_bridge"
+    monkeypatch.setattr(bridge_runner, "TMP_BRIDGE_ROOT", tmp_root, raising=False)
+
+    run_dir = bridge_runner._ensure_tmp_run_dir("permtest")
+
+    assert run_dir == tmp_root / "permtest"
+    assert tmp_root.exists()
+    assert run_dir.exists()
 
 
 def test_local_preset_mode_emits_expected_blender_command(monkeypatch, payload_file: Path, tmp_path: Path):
@@ -189,7 +201,7 @@ def test_local_preset_1_gate_fails_when_manifest_reports_non_cif(monkeypatch, pa
 
     with pytest.raises(bridge_runner.RunnerError, match="Preset gate failure for preset_1_interface"):
         bridge_runner.run_local(args)
-    shutil.rmtree(Path("/tmp/pymol_bridge/testrun"), ignore_errors=True)
+    shutil.rmtree(bridge_runner.TMP_BRIDGE_ROOT / "testrun", ignore_errors=True)
 
 
 def test_local_mode_retries_with_pdb_after_cif_failure(monkeypatch, tmp_path: Path):
@@ -535,6 +547,56 @@ def test_local_custom_rough_mode_rewrites_style_doc(monkeypatch, payload_file: P
     assert seen_style.get("width") == 600
     assert seen_style.get("height") == 400
     assert seen_style.get("samples") == 32
+
+
+def test_local_raw_view_mode_sets_style_output_flag(monkeypatch, payload_file: Path, tmp_path: Path):
+    style_path = tmp_path / "style_raw.json"
+    style_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "output": {"format": "PNG", "width": 800, "height": 600, "samples": 64},
+                "renderer": {"engine": "CYCLES"},
+                "camera": {},
+                "world": {},
+                "lights": [{"type": "AREA", "energy": 1.0, "location": [0, 0, 1]}],
+                "materials": {"mat": {"base_color": "#FFFFFF"}},
+                "styles": [
+                    {
+                        "name": "surface",
+                        "style": "surface",
+                        "selection": {"polymer": True},
+                        "material": "mat",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = _base_args(payload_file, tmp_path)
+    args.preset = None
+    args.style_json = str(style_path)
+    args.raw_view = True
+    args.output_name = "raw_view.png"
+
+    seen_output_cfg = {}
+
+    def fake_run(command, *, env=None):
+        style_arg = Path(command[command.index("--style-json") + 1])
+        staged = json.loads(style_arg.read_text(encoding="utf-8"))
+        seen_output_cfg.update(staged.get("output", {}))
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    result = bridge_runner.run_local(args)
+
+    assert result["status"] == "completed"
+    assert seen_output_cfg.get("raw_view") is True
 
 
 def test_local_mode_detects_host_blender_when_argument_missing(monkeypatch, payload_file: Path, tmp_path: Path):

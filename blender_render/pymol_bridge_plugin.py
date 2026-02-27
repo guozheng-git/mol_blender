@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -58,6 +59,22 @@ _PREVIOUS_SIGNAL_HANDLERS: dict[int, Any] = {}
 _AUTO_CLOSE_WATCHDOGS: dict[str, subprocess.Popen[str]] = {}
 NUCLEIC_RES_NAMES = {"DA", "DT", "DG", "DC", "A", "U", "G", "C"}
 
+
+def _default_tmp_bridge_root() -> Path:
+    override = os.environ.get("PYMOL_BRIDGE_TMP_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser().absolute()
+    user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").strip()
+    if not user:
+        try:
+            user = f"uid_{os.getuid()}"
+        except Exception:
+            user = "default"
+    return Path(tempfile.gettempdir()) / "pymol_bridge" / user
+
+
+TMP_BRIDGE_ROOT = _default_tmp_bridge_root()
+
 try:
     from pymol import cmd as _PYMOL_CMD
 except Exception:  # pragma: no cover - import guarded for unit tests
@@ -69,6 +86,14 @@ def _normalize_cli_string(value: Any) -> str:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         text = text[1:-1].strip()
     return text
+
+
+def _ensure_tmp_run_dir(run_id: str) -> Path:
+    root = TMP_BRIDGE_ROOT
+    root.mkdir(parents=True, exist_ok=True)
+    run_dir = root / str(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
 
 
 def _parse_bool(value: Any) -> bool:
@@ -576,8 +601,7 @@ def _is_preset_1_style_json_path(style_path: Path) -> bool:
 
 def _write_payload(payload: dict[str, Any]) -> Path:
     run_id = payload.get("run_id") or uuid.uuid4().hex[:12]
-    run_dir = Path("/tmp/pymol_bridge") / str(run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = _ensure_tmp_run_dir(str(run_id))
     payload_path = run_dir / "payload.json"
     payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload_path
@@ -816,6 +840,7 @@ def bridge_render(
     attach: int | str = 0,
     attach_only: int | str = 0,
     rough: int | str = 0,
+    raw_view: int | str = 0,
     color_follow: int | str = 0,
     output_dir: str = "",
     output_name: str = "",
@@ -849,6 +874,7 @@ def bridge_render(
     if auto_close_interactive_session_raw:
         _set_auto_close_interactive_session(_parse_bool(auto_close_interactive_session_raw))
     rough_flag = _parse_bool(rough)
+    raw_view_flag = _parse_bool(raw_view)
     color_follow_flag = _parse_bool(color_follow)
     output_dir = _normalize_cli_string(output_dir)
     output_name = _normalize_cli_string(output_name)
@@ -967,6 +993,7 @@ def bridge_render(
     else:
         command.extend(["--preset", preset])
     command.extend(["--rough", "1" if rough_flag else "0"])
+    command.extend(["--raw-view", "1" if raw_view_flag else "0"])
     command.extend(["--color-follow", "1" if color_follow_flag else "0"])
     command.extend(["--save-blend", "1" if save_blend_flag else "0"])
     command.extend(["--keep-temp", "1" if keep_temp_flag else "0"])
@@ -1089,6 +1116,7 @@ def bridge_render_interactive(
     attach: int | str = 0,
     attach_only: int | str = 0,
     rough: int | str = 0,
+    raw_view: int | str = 0,
     color_follow: int | str = 0,
     output_dir: str = "",
     output_name: str = "",
@@ -1111,6 +1139,7 @@ def bridge_render_interactive(
         attach=attach,
         attach_only=attach_only,
         rough=rough,
+        raw_view=raw_view,
         color_follow=color_follow,
         output_dir=output_dir,
         output_name=output_name,

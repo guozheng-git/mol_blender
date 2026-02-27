@@ -16,6 +16,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import uuid
@@ -36,7 +37,21 @@ def _default_session_root() -> Path:
     return (Path.home() / ".pymol_bridge" / "sessions").absolute()
 
 
+def _default_tmp_bridge_root() -> Path:
+    override = os.environ.get("PYMOL_BRIDGE_TMP_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser().absolute()
+    user = (os.environ.get("USER") or os.environ.get("LOGNAME") or "").strip()
+    if not user:
+        try:
+            user = f"uid_{os.getuid()}"
+        except Exception:
+            user = "default"
+    return Path(tempfile.gettempdir()) / "pymol_bridge" / user
+
+
 SESSION_ROOT = _default_session_root()
+TMP_BRIDGE_ROOT = _default_tmp_bridge_root()
 
 PRESET_OUTPUT_FILENAMES: dict[str, str] = {
     "preset_1_interface": "01_opaque_pastel_ses_interface.png",
@@ -66,7 +81,7 @@ SUPPORTED_STYLE_KINDS = {
 SELECTION_DSL_KEYS = {"polymer", "nucleic", "ligand", "chain", "residue_range", "query"}
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
 STYLE_TOP_LEVEL_OPTIONAL_KEYS = {"color_follow"}
-OUTPUT_KEYS = {"format", "width", "height", "samples", "filename", "save_blend", "blend_filename"}
+OUTPUT_KEYS = {"format", "width", "height", "samples", "filename", "save_blend", "blend_filename", "raw_view"}
 RENDERER_KEYS = {
     "engine",
     "device",
@@ -242,6 +257,13 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     temp_path.replace(path)
+
+
+def _ensure_tmp_run_dir(run_id: str) -> Path:
+    TMP_BRIDGE_ROOT.mkdir(parents=True, exist_ok=True)
+    run_dir = TMP_BRIDGE_ROOT / str(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
 
 
 def _utc_now_iso() -> str:
@@ -435,6 +457,8 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             blend_filename = output.get("blend_filename")
             if not isinstance(blend_filename, str) or not blend_filename.strip():
                 errors.append("'output.blend_filename' must be a non-empty string when provided.")
+        if "raw_view" in output and not isinstance(output.get("raw_view"), bool):
+            errors.append("'output.raw_view' must be boolean when provided.")
 
     renderer = style_doc.get("renderer")
     if not isinstance(renderer, dict):
@@ -647,7 +671,7 @@ def _resolve_output_png(
 
 
 def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[Path, Path, Path, Path | None, Path]:
-    temp_root = Path("/tmp/pymol_bridge") / run_id
+    temp_root = _ensure_tmp_run_dir(run_id)
     bundle_dir = temp_root / "bundle"
     structures_dir = bundle_dir / "structures"
     structures_dir.mkdir(parents=True, exist_ok=True)
@@ -947,6 +971,18 @@ def _apply_color_follow_override(style_doc: dict[str, Any], enabled: bool) -> di
     return styled
 
 
+def _apply_raw_view_override(style_doc: dict[str, Any], enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        return style_doc
+    styled = json.loads(json.dumps(style_doc))
+    output = styled.get("output")
+    if not isinstance(output, dict):
+        output = {}
+    output["raw_view"] = True
+    styled["output"] = output
+    return styled
+
+
 def _apply_save_blend_override(style_doc: dict[str, Any], enabled: bool, blend_output: str) -> dict[str, Any]:
     if not enabled and not str(blend_output or "").strip():
         return style_doc
@@ -1148,6 +1184,7 @@ def _build_local_runner_cli(
     use_apptainer: bool,
     apptainer_image: str,
     rough: bool,
+    raw_view: bool,
     color_follow: bool,
     save_blend: bool,
     blend_output: str,
@@ -1165,6 +1202,8 @@ def _build_local_runner_cli(
         custom_script,
         "--rough",
         "1" if rough else "0",
+        "--raw-view",
+        "1" if raw_view else "0",
         "--color-follow",
         "1" if color_follow else "0",
         "--save-blend",
@@ -1387,6 +1426,7 @@ def _log_tail(path: Path, max_lines: int = 40) -> str:
 
 def run_local(args: argparse.Namespace) -> dict[str, Any]:
     rough = bool(getattr(args, "rough", False))
+    raw_view = bool(getattr(args, "raw_view", False))
     color_follow = bool(getattr(args, "color_follow", False))
     save_blend = bool(getattr(args, "save_blend", False))
     keep_temp = bool(getattr(args, "keep_temp", False))
@@ -1405,6 +1445,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
     if rough:
         style_doc = _apply_rough_style_overrides(style_doc)
     style_doc = _apply_color_follow_override(style_doc, color_follow)
+    style_doc = _apply_raw_view_override(style_doc, enabled=raw_view)
     style_doc = _apply_save_blend_override(style_doc, enabled=save_blend, blend_output=blend_output)
 
     run_id = payload.get("run_id") if isinstance(payload.get("run_id"), str) else _new_run_id()
@@ -1526,7 +1567,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
                     command, result, runtime_seconds = retry_command, retry_result, retry_runtime
 
             if args.use_apptainer and not final_output.exists():
-                fallback_out = Path("/tmp/pymol_bridge_apptainer_output") / run_id / final_output.name
+                fallback_out = TMP_BRIDGE_ROOT / "_apptainer_output" / run_id / final_output.name
                 fallback_out.parent.mkdir(parents=True, exist_ok=True)
                 fallback_command, fallback_result, fallback_runtime_seconds = _run_for_structure(
                     used_structure, fallback_out
@@ -1591,6 +1632,7 @@ def run_local(args: argparse.Namespace) -> dict[str, Any]:
 
 def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
     rough = bool(getattr(args, "rough", False))
+    raw_view = bool(getattr(args, "raw_view", False))
     color_follow = bool(getattr(args, "color_follow", False))
     save_blend = bool(getattr(args, "save_blend", False))
     blend_output = str(getattr(args, "blend_output", "") or "").strip()
@@ -1605,7 +1647,7 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
 
     run_id = payload.get("run_id") if isinstance(payload.get("run_id"), str) else _new_run_id()
 
-    interactive_output_dir = args.output_dir if args.output_dir else str(Path("/tmp/pymol_bridge_renders") / _now_stamp())
+    interactive_output_dir = args.output_dir if args.output_dir else str(TMP_BRIDGE_ROOT / "renders" / _now_stamp())
     output_png = _resolve_output_png(
         output_dir=interactive_output_dir,
         output_name=args.output_name,
@@ -1628,6 +1670,7 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
         use_apptainer=args.use_apptainer,
         apptainer_image=args.apptainer_image,
         rough=rough,
+        raw_view=raw_view,
         color_follow=color_follow,
         save_blend=save_blend,
         blend_output=blend_output,
@@ -1637,12 +1680,15 @@ def run_interactive(args: argparse.Namespace) -> dict[str, Any]:
         f'"{item}"' if item.startswith("$RUN_DIR/") else shlex.quote(item)
         for item in local_runner_command
     )
+    tmp_root_q = shlex.quote(str(TMP_BRIDGE_ROOT))
 
     script_lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         f"RUN_ID={shlex.quote(run_id)}",
-        'RUN_DIR=/tmp/pymol_bridge/${SLURM_JOB_ID:-$RUN_ID}',
+        f"TMP_ROOT={tmp_root_q}",
+        'mkdir -p "$TMP_ROOT"',
+        'RUN_DIR="$TMP_ROOT/${SLURM_JOB_ID:-$RUN_ID}"',
         'mkdir -p "$RUN_DIR"',
         "cat <<'PAYLOAD_B64' > \"$RUN_DIR/payload.json.b64\"",
         payload_b64,
@@ -1790,7 +1836,7 @@ def _build_interactive_request(
     elif session_output_dir:
         output_dir = session_output_dir
     else:
-        output_dir = str(Path("/tmp/pymol_bridge_renders") / _now_stamp())
+        output_dir = str(TMP_BRIDGE_ROOT / "renders" / _now_stamp())
 
     request_id = f"{time.time_ns():020d}_{_new_run_id()}"
     queue_position = _queue_position_for_new_request(session_id)
@@ -1811,6 +1857,7 @@ def _build_interactive_request(
         "use_apptainer": bool(args.use_apptainer),
         "apptainer_image": args.apptainer_image,
         "rough": bool(getattr(args, "rough", False)),
+        "raw_view": bool(getattr(args, "raw_view", False)),
         "color_follow": bool(getattr(args, "color_follow", False)),
         "save_blend": bool(getattr(args, "save_blend", False)),
         "blend_output": str(getattr(args, "blend_output", "") or ""),
@@ -2050,6 +2097,7 @@ def _execute_session_request(*, session_id: str, request_doc: dict[str, Any]) ->
             preset=request_doc.get("preset"),
             style_json=style_json_path,
             rough=bool(request_doc.get("rough", False)),
+            raw_view=bool(request_doc.get("raw_view", False)),
             output_dir=str(request_doc.get("output_dir", "") or ""),
             output_name=str(request_doc.get("output_name", "") or ""),
             blender_exe=str(request_doc.get("blender_exe", DEFAULT_BLENDER_EXE) or DEFAULT_BLENDER_EXE),
@@ -2697,6 +2745,7 @@ def build_sbatch_script(
     use_apptainer: bool,
     apptainer_image: str,
     rough: bool,
+    raw_view: bool,
     color_follow: bool,
     save_blend: bool,
     blend_output: str,
@@ -2712,13 +2761,14 @@ def build_sbatch_script(
     python_exec = shlex.quote(_default_remote_python_executable())
     runner_path = shlex.quote(str(Path(__file__).resolve()))
     custom_script_q = shlex.quote(str(custom_script))
+    slurm_log_dir = TMP_BRIDGE_ROOT / run_id
 
     sbatch_lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         f"#SBATCH --job-name=pymol_bridge_{run_id}",
-        f"#SBATCH --output=/tmp/pymol_bridge/{run_id}/slurm-%j.out",
-        f"#SBATCH --error=/tmp/pymol_bridge/{run_id}/slurm-%j.err",
+        f"#SBATCH --output={slurm_log_dir}/slurm-%j.out",
+        f"#SBATCH --error={slurm_log_dir}/slurm-%j.err",
         f"#SBATCH --gres={slurm_gres}",
         f"#SBATCH --time={slurm_time}",
     ]
@@ -2727,10 +2777,13 @@ def build_sbatch_script(
     if slurm_account:
         sbatch_lines.append(f"#SBATCH --account={slurm_account}")
 
+    tmp_root_q = shlex.quote(str(TMP_BRIDGE_ROOT))
     script_lines = sbatch_lines + [
         "",
         f"RUN_ID={shlex.quote(run_id)}",
-        "RUN_DIR=/tmp/pymol_bridge/${SLURM_JOB_ID:-$RUN_ID}",
+        f"TMP_ROOT={tmp_root_q}",
+        "mkdir -p \"$TMP_ROOT\"",
+        "RUN_DIR=\"$TMP_ROOT/${SLURM_JOB_ID:-$RUN_ID}\"",
         "mkdir -p \"$RUN_DIR\"",
         "",
         "cat <<'PAYLOAD_B64' > \"$RUN_DIR/payload.json.b64\"",
@@ -2773,6 +2826,8 @@ def build_sbatch_script(
         local_command_lines.append(f"  --apptainer-image {shlex.quote(apptainer_image)}")
     if rough:
         local_command_lines.append("  --rough 1")
+    if raw_view:
+        local_command_lines.append("  --raw-view 1")
     if color_follow:
         local_command_lines.append("  --color-follow 1")
     if blend_output:
@@ -2820,6 +2875,7 @@ def _poll_until_complete(job_id: str, poll_interval: int, max_polls: int = 720) 
 
 def run_slurm(args: argparse.Namespace) -> dict[str, Any]:
     rough = bool(getattr(args, "rough", False))
+    raw_view = bool(getattr(args, "raw_view", False))
     payload_path = Path(args.payload_json).expanduser().resolve()
     payload = validate_payload_document(_load_json(payload_path))
 
@@ -2848,6 +2904,7 @@ def run_slurm(args: argparse.Namespace) -> dict[str, Any]:
         use_apptainer=args.use_apptainer,
         apptainer_image=args.apptainer_image,
         rough=rough,
+        raw_view=raw_view,
         color_follow=bool(getattr(args, "color_follow", False)),
         save_blend=bool(getattr(args, "save_blend", False)),
         blend_output=str(getattr(args, "blend_output", "") or ""),
@@ -2858,8 +2915,7 @@ def run_slurm(args: argparse.Namespace) -> dict[str, Any]:
         slurm_time=args.slurm_time,
     )
 
-    submit_dir = Path("/tmp/pymol_bridge") / run_id
-    submit_dir.mkdir(parents=True, exist_ok=True)
+    submit_dir = _ensure_tmp_run_dir(run_id)
     script_path = submit_dir / "submit.sbatch"
     script_path.write_text(script, encoding="utf-8")
 
@@ -2924,6 +2980,7 @@ def _build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--use-apptainer", type=_parse_bool, default=False)
         sp.add_argument("--apptainer-image", default="")
         sp.add_argument("--rough", type=_parse_bool, default=False)
+        sp.add_argument("--raw-view", type=_parse_bool, default=False)
         sp.add_argument("--color-follow", type=_parse_bool, default=False)
         sp.add_argument("--save-blend", type=_parse_bool, default=False)
         sp.add_argument("--blend-output", default="")

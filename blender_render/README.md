@@ -6,7 +6,7 @@ Preset names (`preset_1_interface` ... `preset_5_black_interface`) are shortcuts
 ## Load in PyMOL
 
 ```python
-run /home/magnusb/blender_bridge/blender_render/pymol_bridge_plugin.py
+run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
 ```
 
 ## Main PyMOL command
@@ -19,6 +19,7 @@ blender_render selection='(all)', preset='preset_1_interface', mode='local'
 
 Useful flags:
 - `rough=1` for fast trial renders.
+- `raw_view=1` to capture a non-raytraced Blender viewport-style image.
 - `style_json='/abs/path/style.json'` to bypass preset shortcuts.
 - `color_follow=1` to adapt Blender materials from current PyMOL colors.
 - `save_blend=1, blend_output='scene.blend'` to export a Blender session file.
@@ -142,7 +143,7 @@ Rule of thumb:
 All presets include broad selections for polymers, nucleic acids, ligands, ions, and waters.
 
 `preset_1_interface` mirrors the design constants from
-`/home/magnusb/blender_bridge/render_cd3_single_frame_standalone.py`
+`/net/scratch/magnusb/git/blender_bridge/render_cd3_single_frame_standalone.py`
 in JSON form:
 - same chain A/B inner materials, PTR ligand material, and cartoon dimensions
 - same world/background and key/fill/rim light vectors
@@ -161,9 +162,10 @@ Run with PyMOL's Python interpreter:
 
 ```bash
 /opt/pymol/bin/python blender_render/pse_render_cli.py \
-  --pse /home/magnusb/blender_bridge/CD3.pse \
+  --pse /net/scratch/magnusb/git/blender_bridge/CD3.pse \
   --preset preset_1_interface \
   --mode local \
+  --raw-view 1 \
   --rough 1 \
   --save-blend 1 \
   --blend-output render_session.blend
@@ -173,8 +175,8 @@ Custom JSON style example:
 
 ```bash
 /opt/pymol/bin/python blender_render/pse_render_cli.py \
-  --pse /home/magnusb/blender_bridge/CD3.pse \
-  --style-json /home/magnusb/blender_bridge/blender_render/style_preset_1_opaque_pastel.json \
+  --pse /net/scratch/magnusb/git/blender_bridge/CD3.pse \
+  --style-json /net/scratch/magnusb/git/blender_bridge/blender_render/style_preset_1_opaque_pastel.json \
   --mode local \
   --color-follow 1
 ```
@@ -183,7 +185,7 @@ Interactive submit from `.pse` (session must already exist):
 
 ```bash
 /opt/pymol/bin/python blender_render/pse_render_cli.py \
-  --pse /home/magnusb/blender_bridge/CD3.pse \
+  --pse /net/scratch/magnusb/git/blender_bridge/CD3.pse \
   --preset preset_1_interface \
   --mode interactive \
   --interactive-session <session_id>
@@ -193,7 +195,7 @@ Interactive submit from `.pse` (session must already exist):
 
 ```bash
 python blender_render/bridge_runner.py local \
-  --payload-json /tmp/pymol_bridge/<run_id>/payload.json \
+  --payload-json /tmp/pymol_bridge/<user>/<run_id>/payload.json \
   --preset preset_1_interface
 ```
 
@@ -204,7 +206,7 @@ python blender_render/bridge_runner.py interactive-open \
 
 ```bash
 python blender_render/bridge_runner.py slurm \
-  --payload-json /tmp/pymol_bridge/<run_id>/payload.json \
+  --payload-json /tmp/pymol_bridge/<user>/<run_id>/payload.json \
   --preset preset_1_interface \
   --slurm-partition gpu \
   --slurm-account my_account
@@ -213,7 +215,7 @@ python blender_render/bridge_runner.py slurm \
 ## Paths
 
 - Final outputs default: `<cwd>/renders/<timestamp>/...`
-- Temporary payload files: `/tmp/pymol_bridge/<run_id>/...`
+- Temporary payload files: `/tmp/pymol_bridge/<user>/<run_id>/...`
 - Interactive sessions: `$HOME/.pymol_bridge/sessions/<session_id>/...`
 
 ## Platform quick setup

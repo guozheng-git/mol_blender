@@ -6,7 +6,7 @@ This document defines how to reproduce the validated `.pse -> .png` rendering be
 
 Use this file as the visual/technical reference for preset-1 style behavior:
 
-- `/Users/mb/Documents/blender_bridge/scripts/pse_to_png_onefile_standalone.py`
+- `/net/scratch/magnusb/git/blender_bridge/scripts/pse_to_png_onefile_standalone.py`
 
 Core pipeline in the reference script:
 
@@ -55,7 +55,7 @@ These are hard requirements because they directly map to the current failure ima
 ### User-facing command
 
 - Expose `blender_render` in PyMOL after:
-  - `run /home/magnusb/blender_bridge/blender_render/pymol_bridge_plugin.py`
+  - `run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py`
 - `blender_render` with no arguments must run local render using default preset 1.
 
 ### Modes
@@ -133,7 +133,7 @@ Required behavior:
 Keep support for the existing CLI invocation style used in tests, including explicit args:
 
 ```bash
-pymol -cq ./CD3.pse -d "run /home/magnusb/blender_bridge/blender_render/pymol_bridge_plugin.py; blender_render selection='(all)', style_json='/home/magnusb/blender_bridge/blender_render/style_preset_1_opaque_pastel.json',mode='local', use_apptainer=1, apptainer_image='/home/magnusb/blender_bridge/blender_render/blender_bridge.sif',output_dir='.', output_name='render_exact5.png', rough=0; quit"
+pymol -cq ./CD3.pse -d "run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py; blender_render selection='(all)', style_json='/net/scratch/magnusb/git/blender_bridge/blender_render/style_preset_1_opaque_pastel.json',mode='local', use_apptainer=1, apptainer_image='/net/scratch/magnusb/git/blender_bridge/blender_render/blender_bridge.sif',output_dir='.', output_name='render_exact5.png', rough=0; quit"
 ```
 
 ## Implementation Rules
@@ -160,5 +160,4 @@ pymol -cq ./CD3.pse -d "run /home/magnusb/blender_bridge/blender_render/pymol_br
 9. For the CD3 test case, PTR has clean sticks without ball-joint artifacts.
 10. For the CD3 test case, protein shows cartoon secondary structure (not tube/trace fallback).
 11. Preset 1 is invalid unless (CIF-first + cartoon backend + non-legacy sticks + no ligand spheres).
-
 

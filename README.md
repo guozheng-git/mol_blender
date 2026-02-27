@@ -24,6 +24,6 @@ Core runtime files:
 Quick start in PyMOL:
 
 ```python
-run /home/magnusb/blender_bridge/blender_render/pymol_bridge_plugin.py
+run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
 blender_render selection='(all)', preset='preset_1_interface', mode='local',rough=1
 ```
