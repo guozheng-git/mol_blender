@@ -3614,7 +3614,7 @@ def _apply_surface_ligand_cutout(
 
     def _add_cut_cap(center: Vector, side_sign: float) -> bool:
         try:
-            bpy.ops.mesh.primitive_cube_add(size=2.0, location=center + (axis_y * (-0.003 * side_sign)))
+            bpy.ops.mesh.primitive_cube_add(size=2.0, location=center)
         except Exception as exc:
             if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
                 print(f"Bridge Custom cutout cap: cube_add failed: {exc}")
@@ -3627,9 +3627,9 @@ def _apply_surface_ligand_cutout(
         panel.name = f"BridgeCutoutCap_{uuid.uuid4().hex[:8]}"
         try:
             panel.scale = (
-                max(0.006, cut_half_width * 1.18),
-                max(0.003, min(cut_half_depth * 0.12, 0.025)),
-                max(0.006, cut_half_height * 1.18),
+                max(0.006, cut_half_width * 1.08),
+                max(0.0015, min(cut_half_depth * 0.035, 0.008)),
+                max(0.006, cut_half_height * 1.08),
             )
         except Exception:
             pass
@@ -3651,6 +3651,24 @@ def _apply_surface_ligand_cutout(
             if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
                 print(f"Bridge Custom cutout cap: material assignment failed: {exc}")
             pass
+        # Trim the cap to the actual protein volume so we avoid detached rectangular slabs.
+        try:
+            trim_modifier = panel.modifiers.new(
+                name=f"BridgeCutoutCapTrim_{uuid.uuid4().hex[:6]}",
+                type="BOOLEAN",
+            )
+            trim_modifier.operation = "INTERSECT"
+            trim_modifier.object = target_obj
+            if hasattr(trim_modifier, "solver"):
+                trim_modifier.solver = "EXACT"
+            if hasattr(trim_modifier, "use_hole_tolerant"):
+                try:
+                    trim_modifier.use_hole_tolerant = True
+                except Exception:
+                    pass
+        except Exception as exc:
+            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+                print(f"Bridge Custom cutout cap: trim modifier failed: {exc}")
         if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
             print(
                 "Bridge Custom cutout cap created: "
@@ -3683,7 +3701,11 @@ def _apply_surface_ligand_cutout(
         return False
     cap_mode_norm = str(cap_mode or "panel").strip().lower()
     if abs(offset_world) > 1e-6 and cap_mode_norm != "none":
-        cap_center = cut_center.copy()
+        # Cap should sit on the kept-side cut boundary, which depends on one-sided shift.
+        if one_sided:
+            cap_center = clip_center - (axis_y * (clip_half_depth * side_sign))
+        else:
+            cap_center = cut_center.copy()
         cap_added = _add_cut_cap(cap_center, side_sign)
         if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
             print(f"Bridge Custom cutout cap added={int(bool(cap_added))}")
