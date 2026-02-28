@@ -3149,13 +3149,12 @@ def _ligand_cutout_axis(
         except Exception:
             camera_norm = None
 
-    if ligand_axis is not None:
-        axis = ligand_axis
-    elif camera_norm is not None:
+    # Prefer camera-forward for stable rectangular cutout walls in the final frame.
+    # Fallback to ligand->interface direction when camera axis is unavailable.
+    if camera_norm is not None:
         axis = camera_norm
-    flat_axis = Vector((axis.x, axis.y, 0.0))
-    if flat_axis.length > 1e-8:
-        axis = flat_axis.normalized()
+    elif ligand_axis is not None:
+        axis = ligand_axis
     return axis
 
 
@@ -3184,6 +3183,149 @@ def _indices_centroid_vector(load_result: Any, indices: list[int] | None) -> Vec
     return Vector((float(center[0]), float(center[1]), float(center[2])))
 
 
+def _map_atom_point_to_object_bounds(
+    load_result: Any,
+    target_obj: bpy.types.Object | None,
+    point: Vector,
+) -> Vector:
+    if target_obj is None:
+        return point.copy()
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return point.copy()
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None or coords.size == 0:
+        return point.copy()
+    finite_rows = np.isfinite(coords).all(axis=1)
+    if not bool(np.any(finite_rows)):
+        return point.copy()
+    finite_coords = coords[finite_rows]
+    atom_min = finite_coords.min(axis=0)
+    atom_max = finite_coords.max(axis=0)
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = target_obj.evaluated_get(depsgraph)
+    except Exception:
+        eval_obj = target_obj
+    try:
+        bbox_corners = list(getattr(eval_obj, "bound_box", []) or [])
+    except Exception:
+        bbox_corners = []
+    if not bbox_corners:
+        return point.copy()
+    try:
+        world_corners = [eval_obj.matrix_world @ Vector(corner) for corner in bbox_corners]
+    except Exception:
+        world_corners = []
+    if not world_corners:
+        return point.copy()
+
+    obj_min = np.array(
+        [
+            float(min(c.x for c in world_corners)),
+            float(min(c.y for c in world_corners)),
+            float(min(c.z for c in world_corners)),
+        ],
+        dtype=float,
+    )
+    obj_max = np.array(
+        [
+            float(max(c.x for c in world_corners)),
+            float(max(c.y for c in world_corners)),
+            float(max(c.z for c in world_corners)),
+        ],
+        dtype=float,
+    )
+
+    p = np.array([float(point.x), float(point.y), float(point.z)], dtype=float)
+    mapped_np = np.zeros(3, dtype=float)
+    for axis in range(3):
+        atom_span = float(atom_max[axis] - atom_min[axis])
+        obj_span = float(obj_max[axis] - obj_min[axis])
+        if abs(atom_span) <= 1e-8:
+            mapped_np[axis] = float(obj_min[axis])
+        else:
+            scale = obj_span / atom_span
+            mapped_np[axis] = float(obj_min[axis]) + ((float(p[axis]) - float(atom_min[axis])) * scale)
+    mapped = Vector((float(mapped_np[0]), float(mapped_np[1]), float(mapped_np[2])))
+    if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+        print(
+            "Bridge Custom atom->object map: "
+            f"target={getattr(target_obj, 'name', '<unknown>')} "
+            f"atom_min=({atom_min[0]:.3f},{atom_min[1]:.3f},{atom_min[2]:.3f}) "
+            f"atom_max=({atom_max[0]:.3f},{atom_max[1]:.3f},{atom_max[2]:.3f}) "
+            f"obj_min=({obj_min[0]:.3f},{obj_min[1]:.3f},{obj_min[2]:.3f}) "
+            f"obj_max=({obj_max[0]:.3f},{obj_max[1]:.3f},{obj_max[2]:.3f}) "
+            f"point=({p[0]:.3f},{p[1]:.3f},{p[2]:.3f}) "
+            f"mapped=({mapped_np[0]:.3f},{mapped_np[1]:.3f},{mapped_np[2]:.3f})"
+        )
+    return mapped
+
+
+def _estimate_atom_to_object_scale(load_result: Any, target_obj: bpy.types.Object | None) -> float:
+    if target_obj is None:
+        return 1.0
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return 1.0
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None or coords.size == 0:
+        return 1.0
+    finite_rows = np.isfinite(coords).all(axis=1)
+    if not bool(np.any(finite_rows)):
+        return 1.0
+    finite_coords = coords[finite_rows]
+    atom_min = finite_coords.min(axis=0)
+    atom_max = finite_coords.max(axis=0)
+
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = target_obj.evaluated_get(depsgraph)
+    except Exception:
+        eval_obj = target_obj
+    try:
+        bbox_corners = list(getattr(eval_obj, "bound_box", []) or [])
+    except Exception:
+        bbox_corners = []
+    if not bbox_corners:
+        return 1.0
+    try:
+        world_corners = [eval_obj.matrix_world @ Vector(corner) for corner in bbox_corners]
+    except Exception:
+        return 1.0
+    if not world_corners:
+        return 1.0
+
+    obj_min = np.array(
+        [
+            float(min(c.x for c in world_corners)),
+            float(min(c.y for c in world_corners)),
+            float(min(c.z for c in world_corners)),
+        ],
+        dtype=float,
+    )
+    obj_max = np.array(
+        [
+            float(max(c.x for c in world_corners)),
+            float(max(c.y for c in world_corners)),
+            float(max(c.z for c in world_corners)),
+        ],
+        dtype=float,
+    )
+
+    scales: list[float] = []
+    for axis in range(3):
+        atom_span = float(atom_max[axis] - atom_min[axis])
+        obj_span = float(obj_max[axis] - obj_min[axis])
+        if abs(atom_span) <= 1e-8:
+            continue
+        scales.append(obj_span / atom_span)
+    if not scales:
+        return 1.0
+    scales_sorted = sorted(scales)
+    return float(scales_sorted[len(scales_sorted) // 2])
+
+
 def _ligand_cutout_box_params(
     *,
     ligand_anchor: Vector,
@@ -3209,14 +3351,17 @@ def _ligand_cutout_box_params(
         return None
     axis_z.normalize()
 
-    # Rectangular clip window around ligand; y-axis is the clip-depth direction.
-    # Keep width/height moderate so the cavity stays localized around the pocket.
-    cut_half_width = max(0.2, float(radius) * 1.15)
-    cut_half_depth = max(0.2, float(radius) * 0.45)
-    cut_half_height = max(0.2, float(radius) * 1.15)
+    # Rectangular clip window around ligand; y-axis is cut depth.
+    # Keep the footprint compact and avoid punching through the far side.
+    cut_half_width = max(0.01, float(radius) * 0.90)
+    cut_half_depth = max(0.01, float(radius) * 0.95)
+    cut_half_height = max(0.01, float(radius) * 0.70)
     cut_center = ligand_anchor.copy()
     if abs(float(offset)) > 1e-6:
         cut_center += axis_y * float(offset)
+    # Bias the cutter downward so top surface stays mostly intact while the
+    # side walls and floor are sharply clipped.
+    cut_center -= axis_z * (cut_half_height * 0.55)
 
     return (cut_center, axis_x, axis_y, axis_z, cut_half_width, cut_half_depth, cut_half_height)
 
@@ -3285,7 +3430,12 @@ def _selection_indices_with_ligand_box_cutout(
 
 def _apply_surface_ligand_cutout(
     *,
+    load_result: Any,
     target_obj: bpy.types.Object | None,
+    cap_material: bpy.types.Material | None = None,
+    cap_material_cfg: dict[str, Any] | None = None,
+    anchor_load_result: Any | None = None,
+    anchor_object: bpy.types.Object | None = None,
     ligand_anchor: Vector,
     radius: float,
     offset: float,
@@ -3298,10 +3448,22 @@ def _apply_surface_ligand_cutout(
     if float(radius) <= 1e-6:
         return False
 
+    anchor_result = anchor_load_result if anchor_load_result is not None else load_result
+    anchor_target = anchor_object if anchor_object is not None else target_obj
+
+    ligand_anchor_world = _map_atom_point_to_object_bounds(
+        anchor_result,
+        anchor_target,
+        ligand_anchor,
+    )
+    scale = _estimate_atom_to_object_scale(anchor_result, anchor_target)
+    radius_world = max(0.02, float(radius) * max(scale, 1e-6))
+    offset_world = float(offset) * max(scale, 1e-6)
+
     box = _ligand_cutout_box_params(
-        ligand_anchor=ligand_anchor,
-        radius=radius,
-        offset=offset,
+        ligand_anchor=ligand_anchor_world,
+        radius=radius_world,
+        offset=offset_world,
         interface_center=interface_center,
         camera_axis=camera_axis,
     )
@@ -3309,7 +3471,34 @@ def _apply_surface_ligand_cutout(
         return False
     cut_center, _, axis_y, _, cut_half_width, cut_half_depth, cut_half_height = box
 
-    def _add_box_cut(center: Vector) -> bool:
+    def _ensure_cutout_cap_material(cfg: dict[str, Any] | None = None) -> bpy.types.Material:
+        cfg_dict = cfg if isinstance(cfg, dict) else {}
+        base_hex = str(cfg_dict.get("base_color", "#AAB6C2"))
+        roughness = float(cfg_dict.get("roughness", 0.62))
+        specular = float(cfg_dict.get("specular", 0.11))
+        name = f"BridgeCutoutCap_{base_hex.replace('#', '').upper()}"
+        existing = bpy.data.materials.get(name)
+        if existing is not None:
+            return existing
+        material = bpy.data.materials.new(name)
+        material.use_nodes = True
+        nt = material.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        out.location = (280, 0)
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.location = (40, 0)
+        _set_bsdf_input(bsdf, ("Base Color",), _hex_to_rgba(base_hex, alpha=1.0))
+        _set_bsdf_input(bsdf, ("Roughness",), roughness)
+        _set_bsdf_input(bsdf, ("Specular IOR Level", "Specular"), specular)
+        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        if hasattr(material, "blend_method"):
+            material.blend_method = "OPAQUE"
+        if hasattr(material, "shadow_method"):
+            material.shadow_method = "OPAQUE"
+        return material
+
+    def _add_box_cut(center: Vector, half_depth: float) -> bool:
         try:
             bpy.ops.mesh.primitive_cube_add(
                 size=2.0,
@@ -3324,7 +3513,7 @@ def _apply_surface_ligand_cutout(
 
         cutter.name = f"BridgeLigandCutout_{uuid.uuid4().hex[:8]}"
         try:
-            cutter.scale = (cut_half_width, cut_half_depth, cut_half_height)
+            cutter.scale = (cut_half_width, half_depth, cut_half_height)
         except Exception:
             pass
         if axis_y.length > 1e-8:
@@ -3351,31 +3540,112 @@ def _apply_surface_ligand_cutout(
             modifier.object = cutter
             if hasattr(modifier, "solver"):
                 modifier.solver = "EXACT"
+            if hasattr(modifier, "use_hole_tolerant"):
+                try:
+                    modifier.use_hole_tolerant = True
+                except Exception:
+                    pass
+            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+                try:
+                    stack = [str(mod.name) for mod in list(target_obj.modifiers)]
+                except Exception:
+                    stack = []
+                print(
+                    "Bridge Custom cutout modifier attached: "
+                    f"target={getattr(target_obj, 'name', '<unknown>')} "
+                    f"modifier={getattr(modifier, 'name', '<unknown>')} "
+                    f"stack={stack}"
+                )
             return True
         except Exception:
             return False
+
+    def _add_cut_cap(center: Vector, side_sign: float) -> bool:
+        try:
+            bpy.ops.mesh.primitive_cube_add(size=2.0, location=center + (axis_y * (-0.003 * side_sign)))
+        except Exception as exc:
+            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+                print(f"Bridge Custom cutout cap: cube_add failed: {exc}")
+            return False
+        panel = bpy.context.active_object
+        if panel is None or str(getattr(panel, "type", "")).upper() != "MESH":
+            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+                print("Bridge Custom cutout cap: active object missing/non-mesh")
+            return False
+        panel.name = f"BridgeCutoutCap_{uuid.uuid4().hex[:8]}"
+        try:
+            panel.scale = (
+                max(0.006, cut_half_width * 1.18),
+                max(0.003, min(cut_half_depth * 0.12, 0.025)),
+                max(0.006, cut_half_height * 1.18),
+            )
+        except Exception:
+            pass
+        if axis_y.length > 1e-8:
+            try:
+                panel.rotation_euler = axis_y.to_track_quat("Y", "Z").to_euler()
+            except Exception:
+                pass
+        try:
+            mat = cap_material
+            if mat is None:
+                mat = _ensure_cutout_cap_material(cap_material_cfg)
+            data = getattr(panel, "data", None)
+            materials = getattr(data, "materials", None) if data is not None else None
+            if materials is not None:
+                materials.clear()
+                materials.append(mat)
+        except Exception as exc:
+            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+                print(f"Bridge Custom cutout cap: material assignment failed: {exc}")
+            pass
+        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+            print(
+                "Bridge Custom cutout cap created: "
+                f"name={getattr(panel, 'name', '<unknown>')} "
+                f"center=({center.x:.3f},{center.y:.3f},{center.z:.3f})"
+            )
+        return True
+
 
     if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
         print(
             "Bridge Custom cutout box: "
             f"center=({cut_center.x:.3f},{cut_center.y:.3f},{cut_center.z:.3f}) "
             f"axis=({axis_y.x:.3f},{axis_y.y:.3f},{axis_y.z:.3f}) "
-            f"half=({cut_half_width:.3f},{cut_half_depth:.3f},{cut_half_height:.3f})"
+            f"half=({cut_half_width:.3f},{cut_half_depth:.3f},{cut_half_height:.3f}) "
+            f"scale={scale:.6f} radius_world={radius_world:.3f} offset_world={offset_world:.3f}"
         )
 
-    applied_primary = _add_box_cut(cut_center)
+    # Directional clip: keep a modest forward push so walls stay planar without
+    # drifting far away from the ligand center.
+    clip_center = cut_center.copy()
+    clip_half_depth = cut_half_depth
+    side_sign = 1.0
+    if abs(offset_world) > 1e-6:
+        side_sign = 1.0 if offset_world >= 0.0 else -1.0
+        clip_half_depth = max(cut_half_depth * 1.05, radius_world * 1.00)
+        clip_center = ligand_anchor_world + (
+            axis_y * (float(offset_world) + (side_sign * clip_half_depth * 0.45))
+        )
+    applied_primary = _add_box_cut(clip_center, clip_half_depth)
     if not applied_primary:
         return False
+    if abs(offset_world) > 1e-6:
+        cap_center = ligand_anchor_world + (axis_y * float(offset_world))
+        cap_added = _add_cut_cap(cap_center, side_sign)
+        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+            print(f"Bridge Custom cutout cap added={int(bool(cap_added))}")
 
     if mirror and abs(float(offset)) > 1e-6:
         mirrored = Vector(
             (
-                (ligand_anchor.x * 2.0) - cut_center.x,
-                (ligand_anchor.y * 2.0) - cut_center.y,
-                (ligand_anchor.z * 2.0) - cut_center.z,
+                (ligand_anchor_world.x * 2.0) - clip_center.x,
+                (ligand_anchor_world.y * 2.0) - clip_center.y,
+                (ligand_anchor_world.z * 2.0) - clip_center.z,
             )
         )
-        _add_box_cut(mirrored)
+        _add_box_cut(mirrored, clip_half_depth)
 
     return True
 
@@ -3657,6 +3927,16 @@ def _render(args: argparse.Namespace) -> None:
     runtime_ligand_atom_spheres = False
     styled_geometry_applied = False
     global_interface_center = _scene_bounds([base_obj] if base_obj is not None else [])[0]
+    if debug_styles and base_obj is not None:
+        try:
+            base_center_dbg, base_radius_dbg = _scene_bounds([base_obj])
+            print(
+                "Bridge Custom base bounds: "
+                f"center=({base_center_dbg.x:.3f},{base_center_dbg.y:.3f},{base_center_dbg.z:.3f}) "
+                f"radius={base_radius_dbg:.3f}"
+            )
+        except Exception:
+            pass
     cutout_camera_axis = None
     try:
         candidate = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
@@ -3711,12 +3991,18 @@ def _render(args: argparse.Namespace) -> None:
             style_name=style_name,
         )
         effective_cutout_offset = cutout_offset
-        if style_kind_lower == "surface" and cutout_radius > 0 and ligand_anchor is not None and abs(cutout_offset) > 1e-6:
+        if (
+            style_kind_lower == "surface"
+            and cutout_radius > 0
+            and ligand_anchor is not None
+            and abs(cutout_offset) > 1e-6
+            and bool(style_cfg.get("ligand_cutout_auto_side", False))
+        ):
             style_center_for_cutout = _indices_centroid_vector(style_load_result, selection_indices)
             cutout_axis_ref = _ligand_cutout_axis(
                 ligand_anchor,
                 global_interface_center,
-                camera_axis=cutout_camera_axis,
+                camera_axis=None,
             )
             if style_center_for_cutout is not None and cutout_axis_ref.length > 1e-8:
                 try:
@@ -3748,6 +4034,9 @@ def _render(args: argparse.Namespace) -> None:
 
         material_name = style_cfg["material"]
         material = materials[material_name]
+        material_cfg_for_cutout = material_config.get(material_name)
+        if not isinstance(material_cfg_for_cutout, dict):
+            material_cfg_for_cutout = None
         style_result, new_modifier_names, style_tree_changed = _add_style_with_tracking(
             load_result=style_load_result,
             style_cfg=style_cfg,
@@ -3822,21 +4111,36 @@ def _render(args: argparse.Namespace) -> None:
                         target_obj = style_obj
                     elif style_base_obj is not None and str(getattr(style_base_obj, "type", "")).upper() == "MESH":
                         target_obj = style_base_obj
+                    cutout_targets: list[bpy.types.Object] = []
+                    if target_obj is not None:
+                        cutout_targets.append(target_obj)
                     cutout_center_ref = global_interface_center
-                    cutout_applied = _apply_surface_ligand_cutout(
-                        target_obj=target_obj,
-                        ligand_anchor=ligand_anchor,
-                        radius=cutout_radius,
-                        offset=effective_cutout_offset,
-                        mirror=cutout_mirror,
-                        interface_center=cutout_center_ref,
-                        camera_axis=cutout_camera_axis,
-                    )
+                    cutout_applied = False
+                    for cut_target in cutout_targets:
+                        try:
+                            applied = _apply_surface_ligand_cutout(
+                                load_result=style_load_result,
+                                target_obj=cut_target,
+                                cap_material_cfg=material_cfg_for_cutout,
+                                anchor_load_result=load_result,
+                                anchor_object=base_obj,
+                                ligand_anchor=ligand_anchor,
+                                radius=cutout_radius,
+                                offset=effective_cutout_offset,
+                                mirror=cutout_mirror,
+                                interface_center=cutout_center_ref,
+                                camera_axis=cutout_camera_axis,
+                            )
+                            cutout_applied = cutout_applied or bool(applied)
+                        except Exception:
+                            continue
                     if debug_styles:
+                        target_names = [str(getattr(obj, "name", "")) for obj in cutout_targets]
                         print(
                             "Bridge Custom: ligand cutout selection+boolean "
                             f"style={style_name} "
                             f"boolean_applied={int(bool(cutout_applied))} "
+                            f"targets={target_names} "
                             f"radius={cutout_radius:.3f} offset={effective_cutout_offset:.3f} "
                             f"mirror={int(cutout_mirror)}"
                         )
@@ -3988,6 +4292,19 @@ def _render(args: argparse.Namespace) -> None:
                     print("Bridge Custom: styles produced no visible geometry, added fallback spheres.")
             except Exception as exc:
                 print(f"Bridge Custom: fallback geometry failed: {exc}")
+
+    if debug_styles:
+        for obj in created_objects:
+            try:
+                modifier_names = [str(mod.name) for mod in list(obj.modifiers)]
+            except Exception:
+                modifier_names = []
+            print(
+                "Bridge Custom created object: "
+                f"name={getattr(obj, 'name', '<unknown>')} "
+                f"type={getattr(obj, 'type', '<unknown>')} "
+                f"modifiers={modifier_names}"
+            )
 
     camera_cfg = style_doc.get("camera", {})
     if isinstance(camera_cfg, dict) and str(camera_cfg.get("mode", "pymol")).strip().lower() == "override":
