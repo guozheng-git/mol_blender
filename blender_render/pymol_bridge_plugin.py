@@ -17,6 +17,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_THIS_FILE = Path(__file__).resolve()
+_THIS_DIR = _THIS_FILE.parent
+_REPO_ROOT = _THIS_DIR.parent
+for _import_root in (str(_THIS_DIR), str(_REPO_ROOT)):
+    if _import_root not in sys.path:
+        sys.path.insert(0, _import_root)
+
 try:
     from remote_client import RemoteRenderError, ensure_png_suffix, submit_render, write_png_response
 except Exception:  # pragma: no cover - package import fallback
