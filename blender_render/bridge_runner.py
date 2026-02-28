@@ -187,8 +187,16 @@ STYLE_KEYS = {
     "sticks_shade_smooth",
     "ligand_cutout_radius",
     "ligand_cutout_offset",
+    "ligand_cutout_auto_side",
+    "ligand_cutout_axis_mode",
+    "ligand_cutout_flatten_z",
+    "ligand_cutout_width_scale",
+    "ligand_cutout_depth_scale",
+    "ligand_cutout_height_scale",
+    "ligand_cutout_one_sided",
     "ligand_cutout_selection",
     "ligand_cutout_mirror",
+    "ligand_cutout_isolate",
     "del_solvent",
 }
 COLOR_FOLLOW_KEYS = {"enabled", "mode", "mix", "saturation_boost", "value_boost"}
@@ -625,6 +633,31 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                     float(style["ligand_cutout_offset"])
                 except Exception:
                     errors.append(f"'{field_base}.ligand_cutout_offset' must be numeric.")
+            if "ligand_cutout_auto_side" in style and not isinstance(style.get("ligand_cutout_auto_side"), bool):
+                errors.append(f"'{field_base}.ligand_cutout_auto_side' must be boolean.")
+            if "ligand_cutout_one_sided" in style and not isinstance(style.get("ligand_cutout_one_sided"), bool):
+                errors.append(f"'{field_base}.ligand_cutout_one_sided' must be boolean.")
+            if "ligand_cutout_flatten_z" in style and not isinstance(style.get("ligand_cutout_flatten_z"), bool):
+                errors.append(f"'{field_base}.ligand_cutout_flatten_z' must be boolean.")
+            if "ligand_cutout_isolate" in style and not isinstance(style.get("ligand_cutout_isolate"), bool):
+                errors.append(f"'{field_base}.ligand_cutout_isolate' must be boolean.")
+            if "ligand_cutout_axis_mode" in style:
+                axis_mode = str(style.get("ligand_cutout_axis_mode", "")).strip().lower()
+                if axis_mode not in {"interface", "camera"}:
+                    errors.append(
+                        f"'{field_base}.ligand_cutout_axis_mode' must be one of: interface, camera."
+                    )
+            for key in (
+                "ligand_cutout_width_scale",
+                "ligand_cutout_depth_scale",
+                "ligand_cutout_height_scale",
+            ):
+                if key in style:
+                    try:
+                        if float(style[key]) <= 0:
+                            errors.append(f"'{field_base}.{key}' must be > 0.")
+                    except Exception:
+                        errors.append(f"'{field_base}.{key}' must be numeric.")
 
     color_follow = style_doc.get("color_follow")
     if color_follow is not None:

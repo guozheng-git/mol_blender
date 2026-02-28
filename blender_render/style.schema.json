@@ -494,10 +494,41 @@
           "ligand_cutout_offset": {
             "type": "number"
           },
+          "ligand_cutout_auto_side": {
+            "type": "boolean"
+          },
+          "ligand_cutout_axis_mode": {
+            "type": "string",
+            "enum": [
+              "interface",
+              "camera"
+            ]
+          },
+          "ligand_cutout_flatten_z": {
+            "type": "boolean"
+          },
+          "ligand_cutout_width_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "ligand_cutout_depth_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "ligand_cutout_height_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "ligand_cutout_one_sided": {
+            "type": "boolean"
+          },
           "ligand_cutout_selection": {
             "type": "boolean"
           },
           "ligand_cutout_mirror": {
+            "type": "boolean"
+          },
+          "ligand_cutout_isolate": {
             "type": "boolean"
           },
           "del_solvent": {

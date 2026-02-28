@@ -239,6 +239,16 @@ New style keys:
 - Surface style keys:
   - `ligand_cutout_radius` (Angstrom, `>= 0`)
   - `ligand_cutout_offset` (numeric, optional)
+  - `ligand_cutout_auto_side` (`true/false`, optional)
+  - `ligand_cutout_axis_mode` (`interface` or `camera`)
+  - `ligand_cutout_flatten_z` (`true/false`)
+  - `ligand_cutout_width_scale` (`> 0`)
+  - `ligand_cutout_depth_scale` (`> 0`)
+  - `ligand_cutout_height_scale` (`> 0`)
+  - `ligand_cutout_one_sided` (`true/false`)
+  - `ligand_cutout_selection` (`true/false`)
+  - `ligand_cutout_mirror` (`true/false`)
+  - `ligand_cutout_isolate` (`true/false`)
 
 Example local render with target style JSON:
 

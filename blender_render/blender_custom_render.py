@@ -3132,6 +3132,9 @@ def _ligand_cutout_axis(
     ligand_anchor: Vector,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    *,
+    prefer_camera: bool = False,
+    flatten_z: bool = True,
 ) -> Vector:
     axis = Vector((0.0, 1.0, 0.0))
     ligand_axis = None
@@ -3149,17 +3152,24 @@ def _ligand_cutout_axis(
         except Exception:
             camera_norm = None
 
-    # Prefer interface-driven axis so cut direction tracks pocket geometry.
-    # Camera-forward fallback can flip to an exterior-facing carve.
-    if ligand_axis is not None:
-        axis = ligand_axis
-    elif camera_norm is not None:
-        axis = camera_norm
+    if prefer_camera:
+        if camera_norm is not None:
+            axis = camera_norm
+        elif ligand_axis is not None:
+            axis = ligand_axis
+    else:
+        # Prefer interface-driven axis so cut direction tracks pocket geometry.
+        # Camera-forward fallback can flip to an exterior-facing carve.
+        if ligand_axis is not None:
+            axis = ligand_axis
+        elif camera_norm is not None:
+            axis = camera_norm
 
-    # Keep cut direction mostly in the horizontal plane to avoid front/back punches.
-    flat_axis = Vector((axis.x, axis.y, 0.0))
-    if flat_axis.length > 1e-8:
-        axis = flat_axis.normalized()
+    # Optional planar locking avoids front/back punches on near-front camera setups.
+    if flatten_z:
+        flat_axis = Vector((axis.x, axis.y, 0.0))
+        if flat_axis.length > 1e-8:
+            axis = flat_axis.normalized()
     return axis
 
 
@@ -3338,11 +3348,18 @@ def _ligand_cutout_box_params(
     offset: float,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    width_scale: float = 1.15,
+    depth_scale: float = 0.45,
+    height_scale: float = 1.15,
+    prefer_camera: bool = False,
+    flatten_z: bool = True,
 ) -> tuple[Vector, Vector, Vector, Vector, float, float, float] | None:
     axis_y = _ligand_cutout_axis(
         ligand_anchor,
         interface_center,
         camera_axis=camera_axis,
+        prefer_camera=prefer_camera,
+        flatten_z=flatten_z,
     )
     up_hint = Vector((0.0, 0.0, 1.0))
     if abs(axis_y.dot(up_hint)) > 0.95:
@@ -3356,11 +3373,13 @@ def _ligand_cutout_box_params(
         return None
     axis_z.normalize()
 
+    width_scale = max(0.05, float(width_scale))
+    depth_scale = max(0.05, float(depth_scale))
+    height_scale = max(0.05, float(height_scale))
     # Rectangular clip window around ligand; y-axis is the clip-depth direction.
-    # Use a broader footprint so the cavity reads as an intentional cutaway.
-    cut_half_width = max(0.01, float(radius) * 1.15)
-    cut_half_depth = max(0.01, float(radius) * 0.45)
-    cut_half_height = max(0.01, float(radius) * 1.15)
+    cut_half_width = max(0.01, float(radius) * width_scale)
+    cut_half_depth = max(0.01, float(radius) * depth_scale)
+    cut_half_height = max(0.01, float(radius) * height_scale)
     cut_center = ligand_anchor.copy()
     if abs(float(offset)) > 1e-6:
         cut_center += axis_y * float(offset)
@@ -3377,6 +3396,12 @@ def _selection_indices_with_ligand_box_cutout(
     offset: float,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    width_scale: float = 1.15,
+    depth_scale: float = 0.45,
+    height_scale: float = 1.15,
+    one_sided: bool = False,
+    prefer_camera: bool = False,
+    flatten_z: bool = True,
 ) -> list[int] | None:
     atom_array = _get_atom_array(load_result)
     if atom_array is None:
@@ -3396,6 +3421,11 @@ def _selection_indices_with_ligand_box_cutout(
         offset=offset,
         interface_center=interface_center,
         camera_axis=camera_axis,
+        width_scale=width_scale,
+        depth_scale=depth_scale,
+        height_scale=height_scale,
+        prefer_camera=prefer_camera,
+        flatten_z=flatten_z,
     )
     if box is None:
         return base_indices
@@ -3415,7 +3445,14 @@ def _selection_indices_with_ligand_box_cutout(
     )
     # Full prism removal gives a stronger rectangular cut than a shallow cavity.
     clip_depth = max(float(radius) * 6.0, cut_half_depth * 10.0)
-    depth_mask = np.abs(local_y) <= clip_depth
+    if one_sided:
+        side_sign = 1.0 if float(offset) >= 0.0 else -1.0
+        if side_sign >= 0.0:
+            depth_mask = (local_y >= -1e-6) & (local_y <= clip_depth)
+        else:
+            depth_mask = (local_y <= 1e-6) & (local_y >= (-clip_depth))
+    else:
+        depth_mask = np.abs(local_y) <= clip_depth
     box_mask = window_mask & depth_mask
 
     if base_indices is None:
@@ -3444,6 +3481,12 @@ def _apply_surface_ligand_cutout(
     mirror: bool,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    width_scale: float = 1.15,
+    depth_scale: float = 0.45,
+    height_scale: float = 1.15,
+    one_sided: bool = True,
+    prefer_camera: bool = False,
+    flatten_z: bool = True,
 ) -> bool:
     if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
         return False
@@ -3468,6 +3511,11 @@ def _apply_surface_ligand_cutout(
         offset=offset_world,
         interface_center=interface_center,
         camera_axis=camera_axis,
+        width_scale=width_scale,
+        depth_scale=depth_scale,
+        height_scale=height_scale,
+        prefer_camera=prefer_camera,
+        flatten_z=flatten_z,
     )
     if box is None:
         return False
@@ -3619,18 +3667,19 @@ def _apply_surface_ligand_cutout(
             f"scale={scale:.6f} radius_world={radius_world:.3f} offset_world={offset_world:.3f}"
         )
 
-    # Keep clip centered on the configured offset; extra directional push tends
-    # to punch through the wrong/exterior side on asymmetric interfaces.
+    # Default to one-sided clipping so the far/exterior side stays intact.
     clip_center = cut_center.copy()
     clip_half_depth = cut_half_depth
     side_sign = 1.0
     if abs(offset_world) > 1e-6:
         side_sign = 1.0 if offset_world >= 0.0 else -1.0
+    if one_sided:
+        clip_center = cut_center + (axis_y * (clip_half_depth * side_sign))
     applied_primary = _add_box_cut(clip_center, clip_half_depth)
     if not applied_primary:
         return False
     if abs(offset_world) > 1e-6:
-        cap_center = ligand_anchor_world + (axis_y * float(offset_world))
+        cap_center = cut_center.copy()
         cap_added = _add_cut_cap(cap_center, side_sign)
         if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
             print(f"Bridge Custom cutout cap added={int(bool(cap_added))}")
@@ -3951,6 +4000,15 @@ def _render(args: argparse.Namespace) -> None:
         cutout_radius = 0.0
         cutout_offset = 0.0
         cutout_mirror = False
+        cutout_isolate = True
+        cutout_auto_side = False
+        cutout_width_scale = 1.15
+        cutout_depth_scale = 0.45
+        cutout_height_scale = 1.15
+        cutout_one_sided = True
+        cutout_axis_mode = "interface"
+        cutout_flatten_z = True
+        cutout_prefer_camera = False
         if style_kind_lower == "surface":
             try:
                 cutout_radius = float(style_cfg.get("ligand_cutout_radius", 0.0) or 0.0)
@@ -3961,9 +4019,29 @@ def _render(args: argparse.Namespace) -> None:
             except Exception:
                 cutout_offset = 0.0
             cutout_mirror = bool(style_cfg.get("ligand_cutout_mirror", False))
+            cutout_isolate = bool(style_cfg.get("ligand_cutout_isolate", True))
+            cutout_auto_side = bool(style_cfg.get("ligand_cutout_auto_side", False))
+            cutout_one_sided = bool(style_cfg.get("ligand_cutout_one_sided", True))
+            cutout_flatten_z = bool(style_cfg.get("ligand_cutout_flatten_z", True))
+            try:
+                cutout_width_scale = float(style_cfg.get("ligand_cutout_width_scale", 1.15) or 1.15)
+            except Exception:
+                cutout_width_scale = 1.15
+            try:
+                cutout_depth_scale = float(style_cfg.get("ligand_cutout_depth_scale", 0.45) or 0.45)
+            except Exception:
+                cutout_depth_scale = 0.45
+            try:
+                cutout_height_scale = float(style_cfg.get("ligand_cutout_height_scale", 1.15) or 1.15)
+            except Exception:
+                cutout_height_scale = 1.15
+            axis_mode_value = str(style_cfg.get("ligand_cutout_axis_mode", "interface")).strip().lower()
+            if axis_mode_value in {"interface", "camera"}:
+                cutout_axis_mode = axis_mode_value
+            cutout_prefer_camera = cutout_axis_mode == "camera"
 
         isolate_surface_cutout = (
-            bool(style_cfg.get("ligand_cutout_isolate", True))
+            cutout_isolate
             and not parser_mode
             and style_kind_lower == "surface"
             and cutout_radius > 0
@@ -3994,13 +4072,15 @@ def _render(args: argparse.Namespace) -> None:
             and cutout_radius > 0
             and ligand_anchor is not None
             and abs(cutout_offset) > 1e-6
-            and bool(style_cfg.get("ligand_cutout_auto_side", True))
+            and cutout_auto_side
         ):
             style_center_for_cutout = _indices_centroid_vector(style_load_result, selection_indices)
             cutout_axis_ref = _ligand_cutout_axis(
                 ligand_anchor,
                 global_interface_center,
-                camera_axis=None,
+                camera_axis=cutout_camera_axis,
+                prefer_camera=cutout_prefer_camera,
+                flatten_z=cutout_flatten_z,
             )
             if style_center_for_cutout is not None and cutout_axis_ref.length > 1e-8:
                 try:
@@ -4023,6 +4103,12 @@ def _render(args: argparse.Namespace) -> None:
                     offset=effective_cutout_offset,
                     interface_center=cutout_center_ref,
                     camera_axis=cutout_camera_axis,
+                    width_scale=cutout_width_scale,
+                    depth_scale=cutout_depth_scale,
+                    height_scale=cutout_height_scale,
+                    one_sided=cutout_one_sided,
+                    prefer_camera=cutout_prefer_camera,
+                    flatten_z=cutout_flatten_z,
                 )
                 selection = _selection_to_named_attribute(
                     style_load_result,
@@ -4128,6 +4214,12 @@ def _render(args: argparse.Namespace) -> None:
                                 mirror=cutout_mirror,
                                 interface_center=cutout_center_ref,
                                 camera_axis=cutout_camera_axis,
+                                width_scale=cutout_width_scale,
+                                depth_scale=cutout_depth_scale,
+                                height_scale=cutout_height_scale,
+                                one_sided=cutout_one_sided,
+                                prefer_camera=cutout_prefer_camera,
+                                flatten_z=cutout_flatten_z,
                             )
                             cutout_applied = cutout_applied or bool(applied)
                         except Exception:
