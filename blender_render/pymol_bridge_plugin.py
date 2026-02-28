@@ -17,6 +17,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from remote_client import RemoteRenderError, ensure_png_suffix, submit_render, write_png_response
+except Exception:  # pragma: no cover - package import fallback
+    from blender_render.remote_client import (
+        RemoteRenderError,
+        ensure_png_suffix,
+        submit_render,
+        write_png_response,
+    )
+
 MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 
 
@@ -39,6 +49,8 @@ def _detect_default_blender_exe() -> str:
 
 
 DEFAULT_BLENDER_EXE = _detect_default_blender_exe()
+DEFAULT_REMOTE_SERVER_HOST = "172.16.30.206"
+DEFAULT_REMOTE_SERVER_PORT = 8765
 SUPPORTED_PRESETS = {
     "preset_1_interface",
     "preset_2_frosted_blue",
@@ -607,6 +619,42 @@ def _write_payload(payload: dict[str, Any]) -> Path:
     return payload_path
 
 
+def _default_output_png_path(
+    *,
+    output_dir: str,
+    output_name: str,
+    preset: str,
+    suggested_name: str = "",
+) -> Path:
+    if output_dir:
+        out_dir = Path(output_dir).expanduser()
+    else:
+        out_dir = Path.cwd() / "renders" / datetime.now().strftime("%Y%m%d_%H%M%S")
+    if not out_dir.is_absolute():
+        out_dir = (Path.cwd() / out_dir).absolute()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if output_name:
+        filename = ensure_png_suffix(output_name)
+    elif suggested_name:
+        filename = ensure_png_suffix(suggested_name)
+    elif preset == "preset_1_interface":
+        filename = "01_opaque_pastel_ses_interface.png"
+    else:
+        filename = "custom_render.png"
+    return out_dir / filename
+
+
+def _load_style_doc(style_path: Path) -> dict[str, Any]:
+    try:
+        style_doc = json.loads(style_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Could not parse style_json file {style_path}: {exc}") from exc
+    if not isinstance(style_doc, dict):
+        raise RuntimeError(f"style_json file must contain a JSON object: {style_path}")
+    return style_doc
+
+
 def _get_active_interactive_session_id() -> str:
     global _ACTIVE_INTERACTIVE_SESSION_ID
     return str(_ACTIVE_INTERACTIVE_SESSION_ID or "").strip()
@@ -833,7 +881,10 @@ def bridge_render(
     selection: str = "(all)",
     preset: str = "preset_1_interface",
     style_json: str = "",
-    mode: str = "local",
+    mode: str = "remote",
+    server_host: str = "",
+    server_port: int | str = DEFAULT_REMOTE_SERVER_PORT,
+    server_timeout: float | str = 1800,
     auto_close_interactive_session: int | str = "",
     interactive_session: str = "",
     interactive_launcher: str = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4",
@@ -864,6 +915,11 @@ def bridge_render(
     preset = _normalize_cli_string(preset)
     style_json = _normalize_cli_string(style_json)
     render_mode = _normalize_cli_string(mode).lower()
+    server_host = _normalize_cli_string(server_host)
+    server_port = _parse_int(server_port, DEFAULT_REMOTE_SERVER_PORT)
+    server_timeout_value = _parse_float(server_timeout)
+    if server_timeout_value is None:
+        server_timeout_value = 1800.0
     auto_close_interactive_session_raw = _normalize_cli_string(auto_close_interactive_session)
     interactive_session = _normalize_cli_string(interactive_session)
     interactive_launcher = _normalize_cli_string(interactive_launcher)
@@ -888,9 +944,9 @@ def bridge_render(
     keep_temp_flag = _parse_bool(keep_temp)
     blend_output = _normalize_cli_string(blend_output)
 
-    if render_mode not in {"local", "interactive", "slurm", "interactive_open", "interactive_status", "interactive_close"}:
+    if render_mode not in {"local", "remote", "interactive", "slurm", "interactive_open", "interactive_status", "interactive_close"}:
         raise RuntimeError(
-            "mode must be 'local', 'interactive', 'slurm', "
+            "mode must be 'local', 'remote', 'interactive', 'slurm', "
             "'interactive_open', 'interactive_status', or 'interactive_close'."
         )
 
@@ -973,90 +1029,132 @@ def bridge_render(
                 "blender_render: payload "
                 f"atoms={atom_count} residues={residue_count} chains={chain_label}"
             )
-    payload_path = _write_payload(payload)
-
-    runner_subcommand = "interactive-submit" if render_mode == "interactive" else render_mode
-    command = [
-        sys.executable,
-        str(_runner_path()),
-        runner_subcommand,
-        "--payload-json",
-        str(payload_path),
-        "--blender-exe",
-        str(blender_exe),
-    ]
-
-    if style_json:
-        if style_path is None:
-            raise RuntimeError("Internal error: style_json path was not resolved.")
-        command.extend(["--style-json", str(style_path)])
-    else:
-        command.extend(["--preset", preset])
-    command.extend(["--rough", "1" if rough_flag else "0"])
-    command.extend(["--raw-view", "1" if raw_view_flag else "0"])
-    command.extend(["--color-follow", "1" if color_follow_flag else "0"])
-    command.extend(["--save-blend", "1" if save_blend_flag else "0"])
-    command.extend(["--keep-temp", "1" if keep_temp_flag else "0"])
-    if blend_output:
-        command.extend(["--blend-output", str(Path(blend_output).expanduser())])
-
-    if output_dir:
-        command.extend(["--output-dir", str(Path(output_dir).expanduser())])
-    if output_name:
-        command.extend(["--output-name", str(output_name)])
-
-    if use_apptainer_flag:
-        command.extend(["--use-apptainer", "1"])
-        if apptainer_image:
-            command.extend(["--apptainer-image", str(Path(apptainer_image).expanduser())])
-
-    if render_mode == "slurm":
-        command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
-        command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
-        command.extend(["--slurm-gres", slurm_gres])
-        command.extend(["--slurm-time", slurm_time])
-        if slurm_partition:
-            command.extend(["--slurm-partition", slurm_partition])
-        if slurm_account:
-            command.extend(["--slurm-account", slurm_account])
-    elif render_mode == "interactive":
-        active_session = interactive_session or _get_active_interactive_session_id()
-        should_open_session = bool(attach_flag or not active_session)
-        # If caller explicitly requested a session id, probe readiness and
-        # auto-open/restart when the session is missing or unhealthy.
-        if not should_open_session and interactive_session:
-            try:
-                status_doc = bridge_render_interactive_status(session_id=active_session)
-            except Exception:
-                should_open_session = True
-            else:
-                session_status = _normalize_cli_string(status_doc.get("status", "")).lower()
-                if session_status not in {"ready", "running"}:
-                    should_open_session = True
-        if should_open_session:
-            opened = bridge_render_interactive_open(
-                backend="qlogin",
-                interactive_launcher=interactive_launcher,
-                poll_interval=2,
-                session_id=active_session,
-                attach=1 if attach_flag else 0,
-                attach_only=1 if attach_only_flag else 0,
+    remote_mode = render_mode == "remote" or bool(server_host)
+    if remote_mode:
+        target_host = server_host or DEFAULT_REMOTE_SERVER_HOST
+        target_port = server_port
+        if target_port <= 0:
+            target_port = DEFAULT_REMOTE_SERVER_PORT
+        style_doc: dict[str, Any] | None = None
+        if style_json:
+            if style_path is None:
+                raise RuntimeError("Internal error: style_json path was not resolved.")
+            style_doc = _load_style_doc(style_path)
+        try:
+            remote_result = submit_render(
+                host=target_host,
+                port=target_port,
+                payload=payload,
+                preset="" if style_doc is not None else preset,
+                style_doc=style_doc,
+                rough=rough_flag,
+                raw_view=raw_view_flag,
+                color_follow=color_follow_flag,
+                save_blend=save_blend_flag,
+                blend_output=blend_output,
+                keep_temp=keep_temp_flag,
+                output_name=output_name,
+                timeout=server_timeout_value,
             )
-            active_session = str(opened.get("session_id", "")).strip()
-            ready_message = _normalize_cli_string(opened.get("message", ""))
-            if ready_message:
-                print(ready_message)
-            if not active_session:
-                raise RuntimeError(
-                    "Interactive mode could not open a session automatically. "
-                    "Use mode='interactive_open' or pass interactive_session='...'."
-                )
-        _set_active_interactive_session_id(active_session)
-        command.extend(["--session-id", active_session])
-        command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
-        command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
+        except RemoteRenderError as exc:
+            raise RuntimeError(str(exc)) from exc
 
-    result = _run_runner(command)
+        output_path = _default_output_png_path(
+            output_dir=output_dir,
+            output_name=output_name,
+            preset=preset,
+            suggested_name=str(remote_result.get("output_name", "")),
+        )
+        write_png_response(response_doc=remote_result, output_png=output_path)
+        result = dict(remote_result)
+        result["mode"] = "remote"
+        result["output_png"] = str(output_path)
+        result["output_dir"] = str(output_path.parent)
+    else:
+        payload_path = _write_payload(payload)
+
+        runner_subcommand = "interactive-submit" if render_mode == "interactive" else render_mode
+        command = [
+            sys.executable,
+            str(_runner_path()),
+            runner_subcommand,
+            "--payload-json",
+            str(payload_path),
+            "--blender-exe",
+            str(blender_exe),
+        ]
+
+        if style_json:
+            if style_path is None:
+                raise RuntimeError("Internal error: style_json path was not resolved.")
+            command.extend(["--style-json", str(style_path)])
+        else:
+            command.extend(["--preset", preset])
+        command.extend(["--rough", "1" if rough_flag else "0"])
+        command.extend(["--raw-view", "1" if raw_view_flag else "0"])
+        command.extend(["--color-follow", "1" if color_follow_flag else "0"])
+        command.extend(["--save-blend", "1" if save_blend_flag else "0"])
+        command.extend(["--keep-temp", "1" if keep_temp_flag else "0"])
+        if blend_output:
+            command.extend(["--blend-output", str(Path(blend_output).expanduser())])
+
+        if output_dir:
+            command.extend(["--output-dir", str(Path(output_dir).expanduser())])
+        if output_name:
+            command.extend(["--output-name", str(output_name)])
+
+        if use_apptainer_flag:
+            command.extend(["--use-apptainer", "1"])
+            if apptainer_image:
+                command.extend(["--apptainer-image", str(Path(apptainer_image).expanduser())])
+
+        if render_mode == "slurm":
+            command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
+            command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
+            command.extend(["--slurm-gres", slurm_gres])
+            command.extend(["--slurm-time", slurm_time])
+            if slurm_partition:
+                command.extend(["--slurm-partition", slurm_partition])
+            if slurm_account:
+                command.extend(["--slurm-account", slurm_account])
+        elif render_mode == "interactive":
+            active_session = interactive_session or _get_active_interactive_session_id()
+            should_open_session = bool(attach_flag or not active_session)
+            # If caller explicitly requested a session id, probe readiness and
+            # auto-open/restart when the session is missing or unhealthy.
+            if not should_open_session and interactive_session:
+                try:
+                    status_doc = bridge_render_interactive_status(session_id=active_session)
+                except Exception:
+                    should_open_session = True
+                else:
+                    session_status = _normalize_cli_string(status_doc.get("status", "")).lower()
+                    if session_status not in {"ready", "running"}:
+                        should_open_session = True
+            if should_open_session:
+                opened = bridge_render_interactive_open(
+                    backend="qlogin",
+                    interactive_launcher=interactive_launcher,
+                    poll_interval=2,
+                    session_id=active_session,
+                    attach=1 if attach_flag else 0,
+                    attach_only=1 if attach_only_flag else 0,
+                )
+                active_session = str(opened.get("session_id", "")).strip()
+                ready_message = _normalize_cli_string(opened.get("message", ""))
+                if ready_message:
+                    print(ready_message)
+                if not active_session:
+                    raise RuntimeError(
+                        "Interactive mode could not open a session automatically. "
+                        "Use mode='interactive_open' or pass interactive_session='...'."
+                    )
+            _set_active_interactive_session_id(active_session)
+            command.extend(["--session-id", active_session])
+            command.extend(["--poll", "1" if _parse_bool(poll) else "0"])
+            command.extend(["--poll-interval", str(max(1, _parse_int(poll_interval, 5)))])
+
+        result = _run_runner(command)
 
     output_png = result.get("output_png")
     status = str(result.get("status", "")).lower()

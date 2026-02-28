@@ -21,8 +21,11 @@ from blender_render.pymol_bridge_plugin import (
     _run_runner,
     _runner_path,
     _write_payload,
+    _default_output_png_path,
+    _load_style_doc,
     build_render_payload,
 )
+from blender_render.remote_client import RemoteRenderError, submit_render, write_png_response
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -33,7 +36,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pse", required=True, help="Path to .pse file")
     parser.add_argument("--selection", default="(all)")
     parser.add_argument("--state", type=int, default=-1)
-    parser.add_argument("--mode", default="local", choices=["local", "interactive", "slurm"])
+    parser.add_argument("--mode", default="local", choices=["local", "remote", "interactive", "slurm"])
     parser.add_argument("--preset", default="preset_1_interface", choices=sorted(SUPPORTED_PRESETS))
     parser.add_argument("--style-json", default="")
     parser.add_argument("--rough", type=_parse_bool, default=False)
@@ -54,6 +57,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--slurm-time", default="00:30:00")
     parser.add_argument("--poll", type=_parse_bool, default=True)
     parser.add_argument("--poll-interval", type=int, default=5)
+    parser.add_argument("--server-host", default="")
+    parser.add_argument("--server-port", type=int, default=8765)
+    parser.add_argument("--server-timeout", type=float, default=1800.0)
     return parser.parse_args(argv)
 
 
@@ -103,6 +109,44 @@ def run(argv: list[str] | None = None) -> dict[str, Any]:
         state=int(args.state),
         include_color_hints=bool(args.color_follow),
     )
+    if args.mode == "remote" or str(args.server_host or "").strip():
+        style_doc: dict[str, Any] | None = None
+        if style_path is not None:
+            style_doc = _load_style_doc(style_path)
+        host = str(args.server_host or "").strip() or "127.0.0.1"
+        port = int(args.server_port or 8765)
+        try:
+            remote_result = submit_render(
+                host=host,
+                port=port,
+                payload=payload,
+                preset="" if style_doc is not None else str(args.preset),
+                style_doc=style_doc,
+                rough=bool(args.rough),
+                raw_view=bool(args.raw_view),
+                color_follow=bool(args.color_follow),
+                save_blend=bool(args.save_blend),
+                blend_output=str(args.blend_output or ""),
+                keep_temp=bool(args.keep_temp),
+                output_name=str(args.output_name or ""),
+                timeout=float(args.server_timeout or 1800.0),
+            )
+        except RemoteRenderError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        output_path = _default_output_png_path(
+            output_dir=str(args.output_dir or ""),
+            output_name=str(args.output_name or ""),
+            preset=str(args.preset),
+            suggested_name=str(remote_result.get("output_name", "")),
+        )
+        write_png_response(response_doc=remote_result, output_png=output_path)
+        result = dict(remote_result)
+        result["mode"] = "remote"
+        result["output_png"] = str(output_path)
+        result["output_dir"] = str(output_path.parent)
+        return result
+
     payload_path = _write_payload(payload)
 
     runner_subcommand = "interactive-submit" if args.mode == "interactive" else args.mode

@@ -19,7 +19,7 @@ Core pipeline in the reference script:
 7. Reconstruct camera direction/up from PyMOL view matrix.
 8. Render PNG and write metadata JSON.
 
-Detailed implementation paragraph for `blender_render` (must match the reference script behavior exactly): when the user runs `blender_render` from inside PyMOL, the plugin should create one temporary run directory, pick the requested object/selection (default first visible object and `selection='(all)'`), export structure in CIF as `<tmp>/structure.cif` (PDB fallback only if CIF export/load fails), export camera with `cmd.get_view()` and also store `field_of_view` + `orthoscopic` into `<tmp>/view.json`, resolve preset JSON to concrete environment/render parameters, then invoke Blender in background with one renderer entrypoint and explicit arguments `-- <structure_path> <view_json> <output_png>`; inside Blender, load structure through Molecular Nodes with CCD fallback (`biotite.setup_ccd.main()` only if CCD is missing), apply the preset-defined styles and materials to all detected content classes (protein, nucleic acid, ligands, ions, waters, chains) without legacy backends, reconstruct camera orientation from the PyMOL 18-float view matrix (world->camera rotation transpose, axis-map/sign correction, forward/up vectors, lens/FOV transfer), place normalized soft lights, render one PNG, optionally save `.blend` when requested, return the final PNG path to PyMOL, and display that image in the PyMOL session; this exact flow should be shared by local/apptainer/interactive modes so style output is identical across modes and platforms.
+Detailed implementation paragraph for `blender_render` (must match the reference script behavior exactly): when the user runs `blender_render` from inside PyMOL, the client should create one temporary run directory, pick the requested object/selection (default first visible object and `selection='(all)'`), export structure in CIF as `<tmp>/structure.cif` (PDB fallback only if CIF export/load fails), export camera with `cmd.get_view()` and also store `field_of_view` + `orthoscopic` into `<tmp>/view.json`, resolve preset JSON to concrete environment/render parameters, then submit one request payload to the render server; on the server side, Blender runs through one renderer entrypoint with explicit arguments `-- <structure_path> <view_json> <output_png>`; inside Blender, load structure through Molecular Nodes with CCD fallback (`biotite.setup_ccd.main()` only if CCD is missing), apply the preset-defined styles and materials to all detected content classes (protein, nucleic acid, ligands, ions, waters, chains) without legacy backends, reconstruct camera orientation from the PyMOL 18-float view matrix (world->camera rotation transpose, axis-map/sign correction, forward/up vectors, lens/FOV transfer), place normalized soft lights, render one PNG, optionally save `.blend` when requested, return PNG bytes + metadata to the client, and display that image in the PyMOL session; this exact flow must be identical for host-Blender and Apptainer-backed server workers.
 
 ## Important PTR Notes (Why It Often Looks Wrong)
 
@@ -56,48 +56,42 @@ These are hard requirements because they directly map to the current failure ima
 
 - Expose `blender_render` in PyMOL after:
   - `run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py`
-- `blender_render` with no arguments must run local render using default preset 1.
+- `blender_render` with no arguments must submit a remote render request using default preset 1.
+- Client parameters for execution target are `server_host` and `server_port` (plus optional timeout).
 
-### Modes
+### Operation model (server/client only)
 
-- Keep one command surface for all execution modes:
-  - local
-  - apptainer
-  - interactive GPU session
-- On macOS, local mode must work without Apptainer.
-- Do not create a separate user-facing command for interactive mode.
+- The only supported runtime model is remote server/client.
+- Clients (PyMOL plugin and CLI) do not execute Blender directly.
+- The render server owns execution backend selection:
+  - host Blender worker
+  - Apptainer worker (`apptainer exec --nv ...`) where available
 
-### Interactive GPU Session (SLURM qlogin)
+### Client responsibilities
 
-Use interactive mode through `blender_render` only; no separate user command.
+1. Build payload exactly like the validated flow:
+   - run `dss`
+   - CIF-first export (+ PDB fallback payload)
+   - `cmd.get_view()` + `field_of_view` + `orthoscopic`
+2. Send one request to server (`POST /render`) with:
+   - payload (same JSON structure as current local pipeline)
+   - preset/style configuration
+   - render flags (`rough`, `raw_view`, `color_follow`, `save_blend`, `blend_output`)
+3. Receive PNG bytes response, write to requested `output_dir/output_name`, return path to caller, and display in PyMOL.
+4. Do not add/keep separate client-side execution modes (`local`, `interactive`, `slurm`) as primary paths.
 
-Required behavior:
+### Server responsibilities
 
-1. Session bootstrap:
-   - On first `blender_render(..., mode='interactive')`, if no active GPU session exists, launch a background allocator using:
-     - `qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4`
-   - Once the interactive allocation is active and worker is listening, return a clear readiness message to PyMOL:
-     - `Interactive GPU session ready`
-2. Shared spool directory (must be on filesystem visible to both login node and GPU node):
-   - `<shared_spool>/requests/<request_id>/` for staged input bundle + request JSON
-   - `<shared_spool>/responses/<request_id>/` for output PNG + status JSON + logs
-   - `<shared_spool>/session/` for `session.json`, `ready.flag`, `heartbeat.json`
-3. Worker loop:
-   - Run inside the interactive allocation and keep alive until idle-timeout or explicit stop.
-   - Poll `requests/` for pending work, execute exactly one render transaction at a time, write `responses/`.
-   - Reuse the same renderer path used by local/apptainer modes (no style divergence).
-   - Prefer implementing worker mode inside existing bridge code (`bridge_runner.py --worker-loop`) rather than adding a separate extra script.
-4. Render transaction protocol:
-   - PyMOL side stages structure/view/style payload exactly as local mode does.
-   - For execution, worker runs Apptainer with GPU passthrough (`apptainer exec --nv ...`) and produces PNG.
-   - PyMOL side waits for response file, retrieves PNG, copies/links to requested `output_dir/output_name`, and displays it in PyMOL.
-5. Robustness:
-   - If session is starting, emit progress status and keep polling up to timeout.
-   - If heartbeat is stale or worker died, auto-restart allocation and worker.
-   - If interactive mode cannot start, fail with explicit message and fallback option (`mode='local'`).
-6. Cleanup:
-   - Keep interactive session alive between renders (warm GPU path).
-   - Support explicit stop command/flag and cleanup stale request directories by retention policy.
+1. Run as a persistent service that listens for incoming render jobs.
+2. Keep one FIFO queue and process exactly one render transaction at a time.
+3. Keep one warm worker process and auto-restart it if stale/dead.
+4. Reuse one renderer code path for both host and Apptainer backends (no style divergence).
+5. Stage per-request temp bundle, produce run manifest, and clean up unless `keep_temp` is requested.
+6. Expose service endpoints:
+   - `GET /healthz`
+   - `GET /status`
+   - `POST /render`
+   - `POST /shutdown` (optional operational endpoint)
 
 ### Preset system
 
@@ -123,17 +117,19 @@ Required behavior:
 ## Cross-Platform Constraints
 
 - Linux:
-  - local and apptainer modes supported
+  - client mode: remote
+  - server backend: host Blender and Apptainer supported
 - macOS:
-  - local mode mandatory
-  - apptainer path may be absent and must not block local render
+  - client mode: remote
+  - server backend: host Blender mandatory
+  - Apptainer may be absent and must not block host-worker server operation
 
 ## Command-Line Compatibility
 
 Keep support for the existing CLI invocation style used in tests, including explicit args:
 
 ```bash
-pymol -cq ./CD3.pse -d "run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py; blender_render selection='(all)', style_json='/net/scratch/magnusb/git/blender_bridge/blender_render/style_preset_1_opaque_pastel.json',mode='local', use_apptainer=1, apptainer_image='/net/scratch/magnusb/git/blender_bridge/blender_render/blender_bridge.sif',output_dir='.', output_name='render_exact5.png', rough=0; quit"
+pymol -cq ./CD3.pse -d "run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py; blender_render selection='(all)', style_json='/net/scratch/magnusb/git/blender_bridge/blender_render/style_preset_1_opaque_pastel.json', mode='remote', server_host='127.0.0.1', server_port=8765, output_dir='.', output_name='render_exact5.png', rough=0; quit"
 ```
 
 ## Implementation Rules
@@ -142,22 +138,24 @@ pymol -cq ./CD3.pse -d "run /net/scratch/magnusb/git/blender_bridge/blender_rend
 2. Remove legacy sticks code paths and fallback tuning.
 3. Keep camera transfer exact (`cmd.get_view()` -> Blender camera transform).
 4. Ensure rough-mode only affects performance knobs, not style semantics.
-5. Ensure local mode and interactive mode share the same rendering code path.
+5. Ensure host-worker and Apptainer-worker server backends share the same rendering code path.
 6. Keep plugin install simple via `.pymolrc` `run .../pymol_bridge_plugin.py`.
-7. Create one temporary run/session directory per render invocation and delete it on success/failure by default; only keep it when an explicit debug/keep-temp option is set.
-8. Commit only when a coherent project milestone is complete (not per minor loop).
+7. Create one temporary run directory per server render invocation and delete it on success/failure by default; only keep it when an explicit debug/keep-temp option is set.
+8. Client execution targeting must be host/port only.
+9. Commit only when a coherent project milestone is complete (not per minor loop).
 
 ## Acceptance Criteria
 
-1. `blender_render` with no args renders preset 1 locally.
-2. Same command with mode switch works for local/apptainer/interactive paths.
-3. macOS local render works without Apptainer.
-4. JSON preset keys are all wired and verified by test.
-5. Legacy style/sticks code removed.
-6. `color_follow` mode works and produces styled color-consistent output.
-7. Optional `.blend` save works.
-8. Test command above renders a PNG successfully.
-9. For the CD3 test case, PTR has clean sticks without ball-joint artifacts.
-10. For the CD3 test case, protein shows cartoon secondary structure (not tube/trace fallback).
-11. Preset 1 is invalid unless (CIF-first + cartoon backend + non-legacy sticks + no ligand spheres).
-
+1. `blender_render` with no args submits preset-1 render through server/client flow.
+2. PyMOL plugin and CLI both submit the same payload schema to server and receive PNG bytes.
+3. Server processes incoming jobs FIFO with a persistent warm worker.
+4. Server can run with host Blender or Apptainer backend without style divergence.
+5. macOS remote client flow works with host-worker server (no Apptainer dependency).
+6. JSON preset keys are all wired and verified by test.
+7. Legacy style/sticks code removed.
+8. `color_follow` mode works and produces styled color-consistent output.
+9. Optional `.blend` save works.
+10. Updated remote command example renders a PNG successfully.
+11. For the CD3 test case, PTR has clean sticks without ball-joint artifacts.
+12. For the CD3 test case, protein shows cartoon secondary structure (not tube/trace fallback).
+13. Preset 1 is invalid unless (CIF-first + cartoon backend + non-legacy sticks + no ligand spheres).

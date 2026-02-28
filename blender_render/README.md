@@ -9,6 +9,12 @@ Preset names (`preset_1_interface` ... `preset_5_black_interface`) are shortcuts
 run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
 ```
 
+Absolute path using `realpath` from shell:
+
+```bash
+realpath /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
+```
+
 ## Main PyMOL command
 
 ```python
@@ -24,7 +30,72 @@ Useful flags:
 - `color_follow=1` to adapt Blender materials from current PyMOL colors.
 - `save_blend=1, blend_output='scene.blend'` to export a Blender session file.
 - interactive sessions auto-close when this PyMOL process exits; use `auto_close_interactive_session=0` to disable.
-- `mode='local' | 'interactive' | 'slurm' | 'interactive_open' | 'interactive_status' | 'interactive_close'`.
+- `mode='local' | 'remote' | 'interactive' | 'slurm' | 'interactive_open' | 'interactive_status' | 'interactive_close'`.
+
+## Remote server mode (FIFO + persistent Blender worker)
+
+Start server (host worker):
+
+```bash
+pixi run render-server
+```
+
+Server helper script (same defaults + optional exposure tunnel):
+
+```bash
+./scripts/start_render_server_exposed.sh
+```
+
+Server helper with reverse tunnel:
+
+```bash
+./scripts/start_render_server_exposed.sh --relay-target user@public-host --relay-port 8765
+```
+
+Verbose server logs:
+
+```bash
+pixi run render-server-verbose
+```
+
+Host worker with explicit Blender path:
+
+```bash
+pixi run python -m blender_render.render_server \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --blender-exe "$(realpath /usr/bin/blender)"
+```
+
+Start server in Apptainer mode:
+
+```bash
+pixi run python -m blender_render.render_server \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --use-apptainer 1 \
+  --apptainer-image "$(realpath /net/scratch/magnusb/git/blender_bridge/blender_render/blender_bridge.sif)"
+```
+
+PyMOL client call:
+
+```python
+blender_render selection='(all)', preset='preset_1_interface', mode='remote', server_host='127.0.0.1', server_port=8765
+```
+
+CLI client call:
+
+```bash
+/opt/pymol/bin/python /net/scratch/magnusb/git/blender_bridge/blender_render/pse_render_cli.py \
+  --pse "$(realpath /net/scratch/magnusb/git/blender_bridge/CD3.pse)" \
+  --preset preset_1_interface \
+  --mode remote \
+  --server-host 127.0.0.1 \
+  --server-port 8765
+```
+
+Remote mode sends the same payload (`cif_text`/`pdb_text` + `view`) and receives PNG bytes back.
+Server processes jobs FIFO through one persistent Blender worker.
 
 ## Interactive SLURM guide inside PyMOL
 

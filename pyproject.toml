@@ -16,6 +16,7 @@ dev = ["pytest>=7.0", "jsonschema>=4.0"]
 
 [project.scripts]
 bridge_runner = "blender_render.bridge_runner:main"
+render_server = "blender_render.render_server:main"
 
 [tool.setuptools]
 packages = ["blender_render"]

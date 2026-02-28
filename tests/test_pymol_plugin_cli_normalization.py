@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import subprocess
 from pathlib import Path
 
@@ -85,28 +86,115 @@ def test_bridge_render_accepts_quoted_mode_and_preset(monkeypatch, tmp_path: Pat
     assert result["status"] == "completed"
 
 
-def test_bridge_render_no_args_uses_local_preset_1(monkeypatch, tmp_path: Path):
+def test_bridge_render_no_args_uses_remote_preset_1(monkeypatch, tmp_path: Path):
     fake = FakeCmd()
-    calls = []
+    calls = {}
 
     monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
-    monkeypatch.setattr(plugin, "_runner_path", lambda: tmp_path / "bridge_runner.py", raising=False)
-    monkeypatch.setattr(plugin, "_write_payload", lambda payload: tmp_path / "payload.json", raising=False)
     monkeypatch.setattr(
         plugin,
         "_run_runner",
-        lambda command: calls.append(command) or {"status": "completed", "output_png": ""},
+        lambda _command: (_ for _ in ()).throw(AssertionError("_run_runner should not be called in remote default mode")),
         raising=False,
     )
+
+    def fake_submit_render(**kwargs):
+        calls.update(kwargs)
+        return {
+            "status": "completed",
+            "output_name": "from_server.png",
+            "png_base64": base64.b64encode(b"png").decode("ascii"),
+        }
+
+    monkeypatch.setattr(plugin, "submit_render", fake_submit_render, raising=False)
 
     result = plugin.bridge_render()
 
     assert result["status"] == "completed"
-    assert calls
-    command = calls[0]
-    assert command[2] == "local"
-    assert "--preset" in command
-    assert command[command.index("--preset") + 1] == "preset_1_interface"
+    assert result["mode"] == "remote"
+    assert calls["host"] == "172.16.30.206"
+    assert calls["port"] == 8765
+    assert calls["preset"] == "preset_1_interface"
+
+
+def test_bridge_render_remote_mode_submits_to_server(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = {}
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda _command: (_ for _ in ()).throw(AssertionError("_run_runner should not be called in remote mode")),
+        raising=False,
+    )
+
+    def fake_submit_render(**kwargs):
+        calls.update(kwargs)
+        return {
+            "status": "completed",
+            "output_name": "from_server.png",
+            "png_base64": base64.b64encode(b"png").decode("ascii"),
+        }
+
+    monkeypatch.setattr(plugin, "submit_render", fake_submit_render, raising=False)
+
+    result = plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="remote",
+        server_host="127.0.0.1",
+        server_port=9999,
+        output_dir=str(tmp_path),
+        output_name="remote_result.png",
+    )
+
+    assert result["status"] == "completed"
+    assert result["mode"] == "remote"
+    assert calls["host"] == "127.0.0.1"
+    assert calls["port"] == 9999
+    output_png = Path(result["output_png"])
+    assert output_png.is_file()
+    assert output_png.read_bytes() == b"png"
+
+
+def test_bridge_render_remote_mode_uses_default_server_when_host_omitted(monkeypatch, tmp_path: Path):
+    fake = FakeCmd()
+    calls = {}
+
+    monkeypatch.setattr(plugin, "_PYMOL_CMD", fake, raising=False)
+    monkeypatch.setattr(
+        plugin,
+        "_run_runner",
+        lambda _command: (_ for _ in ()).throw(AssertionError("_run_runner should not be called in remote mode")),
+        raising=False,
+    )
+
+    def fake_submit_render(**kwargs):
+        calls.update(kwargs)
+        return {
+            "status": "completed",
+            "output_name": "from_server.png",
+            "png_base64": base64.b64encode(b"png").decode("ascii"),
+        }
+
+    monkeypatch.setattr(plugin, "submit_render", fake_submit_render, raising=False)
+
+    result = plugin.bridge_render(
+        selection="(all)",
+        preset="preset_1_interface",
+        mode="remote",
+        output_dir=str(tmp_path),
+        output_name="remote_default_host.png",
+    )
+
+    assert result["status"] == "completed"
+    assert result["mode"] == "remote"
+    assert calls["host"] == "172.16.30.206"
+    assert calls["port"] == 8765
+    output_png = Path(result["output_png"])
+    assert output_png.is_file()
+    assert output_png.read_bytes() == b"png"
 
 
 def test_bridge_render_forwards_rough_flag(monkeypatch, tmp_path: Path):
