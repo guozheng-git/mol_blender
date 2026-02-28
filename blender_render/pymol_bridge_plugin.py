@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import importlib.util
+import inspect
 import json
 import os
 import signal
@@ -18,7 +19,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_THIS_FILE = Path(__file__).resolve()
+
+def _resolve_this_file() -> Path:
+    raw_file = globals().get("__file__", "")
+    if isinstance(raw_file, str):
+        text = raw_file.strip().strip("\"'")
+        if text:
+            candidate = Path(text).expanduser()
+            if candidate.exists():
+                return candidate.resolve()
+    frame = inspect.currentframe()
+    if frame is not None and frame.f_code.co_filename:
+        return Path(frame.f_code.co_filename).expanduser().resolve()
+    return (Path.cwd() / "pymol_bridge_plugin.py").resolve()
+
+
+_THIS_FILE = _resolve_this_file()
 _THIS_DIR = _THIS_FILE.parent
 _REPO_ROOT = _THIS_DIR.parent
 for _import_root in (str(_THIS_DIR), str(_REPO_ROOT)):
@@ -36,8 +52,15 @@ except Exception:  # pragma: no cover - package import fallback
             write_png_response,
         )
     except Exception:
-        _REMOTE_CLIENT_PATH = _THIS_DIR / "remote_client.py"
-        if not _REMOTE_CLIENT_PATH.is_file():
+        _REMOTE_CLIENT_PATH = None
+        for _candidate in (
+            _THIS_DIR / "remote_client.py",
+            _REPO_ROOT / "blender_render" / "remote_client.py",
+        ):
+            if _candidate.is_file():
+                _REMOTE_CLIENT_PATH = _candidate
+                break
+        if _REMOTE_CLIENT_PATH is None:
             raise
         _REMOTE_CLIENT_SPEC = importlib.util.spec_from_file_location(
             "_pymol_bridge_remote_client",
