@@ -21,59 +21,69 @@ from typing import Any
 
 
 def _resolve_this_file() -> Path:
-    raw_file = globals().get("__file__", "")
-    if isinstance(raw_file, str):
-        text = raw_file.strip().strip("\"'")
-        if text:
-            candidate = Path(text).expanduser()
-            if candidate.exists():
-                return candidate.resolve()
+    def _as_existing_path(value: Any) -> Path | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip().strip("\"'")
+        if not text:
+            return None
+        candidate = Path(text).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+        return None
+
+    # Under `PyMOL run`, globals()['__file__'] can point to a PyMOL internal
+    # module. Prefer this function's own source location first.
+    for probe in (
+        inspect.getsourcefile(_resolve_this_file),
+        inspect.getfile(_resolve_this_file),
+    ):
+        resolved = _as_existing_path(probe)
+        if resolved is not None:
+            return resolved
+
+    script_name = "pymol_bridge_plugin.py"
     frame = inspect.currentframe()
-    if frame is not None and frame.f_code.co_filename:
-        return Path(frame.f_code.co_filename).expanduser().resolve()
-    return (Path.cwd() / "pymol_bridge_plugin.py").resolve()
+    while frame is not None:
+        resolved = _as_existing_path(frame.f_code.co_filename)
+        if resolved is not None and resolved.name == script_name:
+            return resolved
+        frame = frame.f_back
+
+    resolved = _as_existing_path(globals().get("__file__", ""))
+    if resolved is not None:
+        return resolved
+    return (Path.cwd() / script_name).resolve()
 
 
 _THIS_FILE = _resolve_this_file()
 _THIS_DIR = _THIS_FILE.parent
 _REPO_ROOT = _THIS_DIR.parent
-for _import_root in (str(_THIS_DIR), str(_REPO_ROOT)):
-    if _import_root not in sys.path:
-        sys.path.insert(0, _import_root)
 
-try:
-    from remote_client import RemoteRenderError, ensure_png_suffix, submit_render, write_png_response
-except Exception:  # pragma: no cover - package import fallback
-    try:
-        from blender_render.remote_client import (
-            RemoteRenderError,
-            ensure_png_suffix,
-            submit_render,
-            write_png_response,
+def _load_remote_client_symbols() -> tuple[Any, Any, Any, Any]:
+    candidates = (
+        _THIS_DIR / "remote_client.py",
+        _REPO_ROOT / "blender_render" / "remote_client.py",
+    )
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location("_pymol_bridge_remote_client", str(candidate))
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return (
+            module.RemoteRenderError,
+            module.ensure_png_suffix,
+            module.submit_render,
+            module.write_png_response,
         )
-    except Exception:
-        _REMOTE_CLIENT_PATH = None
-        for _candidate in (
-            _THIS_DIR / "remote_client.py",
-            _REPO_ROOT / "blender_render" / "remote_client.py",
-        ):
-            if _candidate.is_file():
-                _REMOTE_CLIENT_PATH = _candidate
-                break
-        if _REMOTE_CLIENT_PATH is None:
-            raise
-        _REMOTE_CLIENT_SPEC = importlib.util.spec_from_file_location(
-            "_pymol_bridge_remote_client",
-            str(_REMOTE_CLIENT_PATH),
-        )
-        if _REMOTE_CLIENT_SPEC is None or _REMOTE_CLIENT_SPEC.loader is None:
-            raise
-        _REMOTE_CLIENT_MODULE = importlib.util.module_from_spec(_REMOTE_CLIENT_SPEC)
-        _REMOTE_CLIENT_SPEC.loader.exec_module(_REMOTE_CLIENT_MODULE)
-        RemoteRenderError = _REMOTE_CLIENT_MODULE.RemoteRenderError
-        ensure_png_suffix = _REMOTE_CLIENT_MODULE.ensure_png_suffix
-        submit_render = _REMOTE_CLIENT_MODULE.submit_render
-        write_png_response = _REMOTE_CLIENT_MODULE.write_png_response
+    looked_up = ", ".join(str(path) for path in candidates)
+    raise ModuleNotFoundError(f"Could not locate remote_client.py. Looked in: {looked_up}")
+
+
+RemoteRenderError, ensure_png_suffix, submit_render, write_png_response = _load_remote_client_symbols()
 
 MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 
