@@ -3487,6 +3487,8 @@ def _apply_surface_ligand_cutout(
     one_sided: bool = True,
     prefer_camera: bool = False,
     flatten_z: bool = True,
+    one_sided_shift_scale: float = 1.0,
+    cap_mode: str = "panel",
 ) -> bool:
     if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
         return False
@@ -3673,12 +3675,14 @@ def _apply_surface_ligand_cutout(
     side_sign = 1.0
     if abs(offset_world) > 1e-6:
         side_sign = 1.0 if offset_world >= 0.0 else -1.0
+    shift_scale = max(0.0, float(one_sided_shift_scale))
     if one_sided:
-        clip_center = cut_center + (axis_y * (clip_half_depth * side_sign))
+        clip_center = cut_center + (axis_y * (clip_half_depth * side_sign * shift_scale))
     applied_primary = _add_box_cut(clip_center, clip_half_depth)
     if not applied_primary:
         return False
-    if abs(offset_world) > 1e-6:
+    cap_mode_norm = str(cap_mode or "panel").strip().lower()
+    if abs(offset_world) > 1e-6 and cap_mode_norm != "none":
         cap_center = cut_center.copy()
         cap_added = _add_cut_cap(cap_center, side_sign)
         if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
@@ -4009,6 +4013,8 @@ def _render(args: argparse.Namespace) -> None:
         cutout_axis_mode = "interface"
         cutout_flatten_z = True
         cutout_prefer_camera = False
+        cutout_one_sided_shift_scale = 1.0
+        cutout_cap_mode = "panel"
         if style_kind_lower == "surface":
             try:
                 cutout_radius = float(style_cfg.get("ligand_cutout_radius", 0.0) or 0.0)
@@ -4039,6 +4045,15 @@ def _render(args: argparse.Namespace) -> None:
             if axis_mode_value in {"interface", "camera"}:
                 cutout_axis_mode = axis_mode_value
             cutout_prefer_camera = cutout_axis_mode == "camera"
+            try:
+                cutout_one_sided_shift_scale = float(
+                    style_cfg.get("ligand_cutout_one_sided_shift_scale", 1.0) or 1.0
+                )
+            except Exception:
+                cutout_one_sided_shift_scale = 1.0
+            cutout_cap_mode_value = str(style_cfg.get("ligand_cutout_cap_mode", "panel")).strip().lower()
+            if cutout_cap_mode_value in {"panel", "none"}:
+                cutout_cap_mode = cutout_cap_mode_value
 
         isolate_surface_cutout = (
             cutout_isolate
@@ -4220,6 +4235,8 @@ def _render(args: argparse.Namespace) -> None:
                                 one_sided=cutout_one_sided,
                                 prefer_camera=cutout_prefer_camera,
                                 flatten_z=cutout_flatten_z,
+                                one_sided_shift_scale=cutout_one_sided_shift_scale,
+                                cap_mode=cutout_cap_mode,
                             )
                             cutout_applied = cutout_applied or bool(applied)
                         except Exception:

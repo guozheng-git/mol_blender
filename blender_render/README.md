@@ -246,6 +246,8 @@ New style keys:
   - `ligand_cutout_depth_scale` (`> 0`)
   - `ligand_cutout_height_scale` (`> 0`)
   - `ligand_cutout_one_sided` (`true/false`)
+  - `ligand_cutout_one_sided_shift_scale` (`>= 0`)
+  - `ligand_cutout_cap_mode` (`panel` or `none`)
   - `ligand_cutout_selection` (`true/false`)
   - `ligand_cutout_mirror` (`true/false`)
   - `ligand_cutout_isolate` (`true/false`)

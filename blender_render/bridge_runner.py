@@ -194,6 +194,8 @@ STYLE_KEYS = {
     "ligand_cutout_depth_scale",
     "ligand_cutout_height_scale",
     "ligand_cutout_one_sided",
+    "ligand_cutout_one_sided_shift_scale",
+    "ligand_cutout_cap_mode",
     "ligand_cutout_selection",
     "ligand_cutout_mirror",
     "ligand_cutout_isolate",
@@ -647,6 +649,12 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                     errors.append(
                         f"'{field_base}.ligand_cutout_axis_mode' must be one of: interface, camera."
                     )
+            if "ligand_cutout_cap_mode" in style:
+                cap_mode = str(style.get("ligand_cutout_cap_mode", "")).strip().lower()
+                if cap_mode not in {"panel", "none"}:
+                    errors.append(
+                        f"'{field_base}.ligand_cutout_cap_mode' must be one of: panel, none."
+                    )
             for key in (
                 "ligand_cutout_width_scale",
                 "ligand_cutout_depth_scale",
@@ -658,6 +666,12 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                             errors.append(f"'{field_base}.{key}' must be > 0.")
                     except Exception:
                         errors.append(f"'{field_base}.{key}' must be numeric.")
+            if "ligand_cutout_one_sided_shift_scale" in style:
+                try:
+                    if float(style["ligand_cutout_one_sided_shift_scale"]) < 0:
+                        errors.append(f"'{field_base}.ligand_cutout_one_sided_shift_scale' must be >= 0.")
+                except Exception:
+                    errors.append(f"'{field_base}.ligand_cutout_one_sided_shift_scale' must be numeric.")
 
     color_follow = style_doc.get("color_follow")
     if color_follow is not None:

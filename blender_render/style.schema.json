@@ -522,6 +522,17 @@
           "ligand_cutout_one_sided": {
             "type": "boolean"
           },
+          "ligand_cutout_one_sided_shift_scale": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ligand_cutout_cap_mode": {
+            "type": "string",
+            "enum": [
+              "panel",
+              "none"
+            ]
+          },
           "ligand_cutout_selection": {
             "type": "boolean"
           },
