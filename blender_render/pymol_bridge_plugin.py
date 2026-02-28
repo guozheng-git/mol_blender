@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import importlib.util
 import json
 import os
 import signal
@@ -27,12 +28,29 @@ for _import_root in (str(_THIS_DIR), str(_REPO_ROOT)):
 try:
     from remote_client import RemoteRenderError, ensure_png_suffix, submit_render, write_png_response
 except Exception:  # pragma: no cover - package import fallback
-    from blender_render.remote_client import (
-        RemoteRenderError,
-        ensure_png_suffix,
-        submit_render,
-        write_png_response,
-    )
+    try:
+        from blender_render.remote_client import (
+            RemoteRenderError,
+            ensure_png_suffix,
+            submit_render,
+            write_png_response,
+        )
+    except Exception:
+        _REMOTE_CLIENT_PATH = _THIS_DIR / "remote_client.py"
+        if not _REMOTE_CLIENT_PATH.is_file():
+            raise
+        _REMOTE_CLIENT_SPEC = importlib.util.spec_from_file_location(
+            "_pymol_bridge_remote_client",
+            str(_REMOTE_CLIENT_PATH),
+        )
+        if _REMOTE_CLIENT_SPEC is None or _REMOTE_CLIENT_SPEC.loader is None:
+            raise
+        _REMOTE_CLIENT_MODULE = importlib.util.module_from_spec(_REMOTE_CLIENT_SPEC)
+        _REMOTE_CLIENT_SPEC.loader.exec_module(_REMOTE_CLIENT_MODULE)
+        RemoteRenderError = _REMOTE_CLIENT_MODULE.RemoteRenderError
+        ensure_png_suffix = _REMOTE_CLIENT_MODULE.ensure_png_suffix
+        submit_render = _REMOTE_CLIENT_MODULE.submit_render
+        write_png_response = _REMOTE_CLIENT_MODULE.write_png_response
 
 MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 
