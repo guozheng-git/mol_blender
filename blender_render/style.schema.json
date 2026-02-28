@@ -487,6 +487,19 @@
           "sticks_shade_smooth": {
             "type": "boolean"
           },
+          "ligand_cutout_radius": {
+            "type": "number",
+            "minimum": 0
+          },
+          "ligand_cutout_offset": {
+            "type": "number"
+          },
+          "ligand_cutout_selection": {
+            "type": "boolean"
+          },
+          "ligand_cutout_mirror": {
+            "type": "boolean"
+          },
           "del_solvent": {
             "type": "boolean"
           }
@@ -566,6 +579,17 @@
         },
         "query": {
           "type": "string"
+        },
+        "within_ligand_radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "exclude_within_ligand_radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "expand_to_residue": {
+          "type": "boolean"
         }
       }
     }

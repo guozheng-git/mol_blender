@@ -227,6 +227,44 @@ How it is applied in Blender:
 - `blender_custom_render.py` loads CIF + PyMOL view, builds styles from JSON, assigns materials to GN style nodes, computes scene bounds, and places lights.
 - For lights with `relative_vector`, `rotate_with_pymol_yaw: true` rotates vectors around the PyMOL up-axis using `camera.yaw_offset_deg`.
 
+## Target Style Workflow (`tests/target_styles`)
+
+Use this when matching a provided goal image (for example `tests/target_styles/5.png`) from a `.pse`.
+
+New style keys:
+- Selection DSL:
+  - `within_ligand_radius` (Angstrom, `>= 0`)
+  - `exclude_within_ligand_radius` (Angstrom, `>= 0`)
+  - `expand_to_residue` (`true/false`)
+- Surface style keys:
+  - `ligand_cutout_radius` (Angstrom, `>= 0`)
+  - `ligand_cutout_offset` (numeric, optional)
+
+Example local render with target style JSON:
+
+```bash
+python -m blender_render.pse_render_cli \
+  --pse tests/target_styles/5_8ea6.pse \
+  --mode local \
+  --style-json tests/target_styles/style_target_5_ligand_cutout.json \
+  --blender-exe /Applications/Blender.app/Contents/MacOS/Blender
+```
+
+Run automated tuning loop (render -> compare -> perturb style):
+
+```bash
+python tests/target_styles/tune_target_style.py \
+  --pse tests/target_styles/5_8ea6.pse \
+  --target tests/target_styles/5.png \
+  --seed-style tests/target_styles/style_target_5_ligand_cutout.json \
+  --threshold 0.92
+```
+
+Notes:
+- First render includes Blender startup + style staging cost.
+- Subsequent iterations reuse the best style parameters and try bounded perturbations.
+- If a render command fails, the tuner records the failure and continues; the seed style is only overwritten after at least one successful render.
+
 ## Command line from `.pse`
 
 Run with PyMOL's Python interpreter:

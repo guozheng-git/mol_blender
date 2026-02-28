@@ -421,6 +421,62 @@ def test_local_custom_mode_emits_expected_blender_command(monkeypatch, payload_f
     assert "--output-png" in command
 
 
+def test_local_custom_mode_accepts_ligand_cutout_selection_keys(monkeypatch, payload_file: Path, tmp_path: Path):
+    style_path = tmp_path / "style_ligand_cutout.json"
+    style_path.write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "output": {"format": "PNG", "width": 220, "height": 140, "samples": 8},
+                "renderer": {"engine": "CYCLES"},
+                "camera": {},
+                "world": {},
+                "lights": [{"type": "AREA", "energy": 1.0, "location": [0, 0, 1]}],
+                "materials": {"mat": {"base_color": "#FFFFFF"}},
+                "styles": [
+                    {
+                        "name": "surface",
+                        "style": "surface",
+                        "selection": {
+                            "polymer": True,
+                            "exclude_within_ligand_radius": 3.0,
+                            "expand_to_residue": True,
+                        },
+                        "material": "mat",
+                        "ligand_cutout_radius": 3.0,
+                        "ligand_cutout_offset": 0.2,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = _base_args(payload_file, tmp_path)
+    args.preset = None
+    args.style_json = str(style_path)
+    args.output_name = "custom_ligand_cutout.png"
+
+    calls = []
+
+    def fake_run(command, *, env=None):
+        calls.append(command)
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    result = bridge_runner.run_local(args)
+
+    assert result["status"] == "completed"
+    assert calls
+    command = calls[0]
+    assert "--style-json" in command
+    assert "--output-png" in command
+
+
 def test_local_apptainer_mode_rewrites_default_blender_path(monkeypatch, payload_file: Path, tmp_path: Path):
     args = _base_args(payload_file, tmp_path)
     args.use_apptainer = True

@@ -127,3 +127,40 @@ def test_invalid_selection_and_style_entries_fail_validation():
     assert "styles[0].selection.chain" in message
     assert "styles[0].material" in message
     assert "styles[0].style" in message
+
+
+def test_ligand_cutout_and_proximity_keys_validate():
+    style = _example_style()
+    style["styles"][0]["selection"]["within_ligand_radius"] = 6.0
+    style["styles"][0]["selection"]["exclude_within_ligand_radius"] = 2.0
+    style["styles"][0]["selection"]["expand_to_residue"] = True
+    style["styles"][0]["ligand_cutout_radius"] = 3.0
+    style["styles"][0]["ligand_cutout_offset"] = 0.15
+
+    validated = validate_style_document(style)
+
+    selection = validated["styles"][0]["selection"]
+    assert selection["within_ligand_radius"] == 6.0
+    assert selection["exclude_within_ligand_radius"] == 2.0
+    assert selection["expand_to_residue"] is True
+    assert validated["styles"][0]["ligand_cutout_radius"] == 3.0
+    assert validated["styles"][0]["ligand_cutout_offset"] == 0.15
+
+
+def test_invalid_ligand_cutout_and_proximity_values_fail_validation():
+    style = _example_style()
+    style["styles"][0]["selection"]["within_ligand_radius"] = -1
+    style["styles"][0]["selection"]["exclude_within_ligand_radius"] = "near"
+    style["styles"][0]["selection"]["expand_to_residue"] = "yes"
+    style["styles"][0]["ligand_cutout_radius"] = -2
+    style["styles"][0]["ligand_cutout_offset"] = "offset"
+
+    with pytest.raises(StyleValidationError) as exc:
+        validate_style_document(style)
+
+    message = str(exc.value)
+    assert "styles[0].selection.within_ligand_radius" in message
+    assert "styles[0].selection.exclude_within_ligand_radius" in message
+    assert "styles[0].selection.expand_to_residue" in message
+    assert "styles[0].ligand_cutout_radius" in message
+    assert "styles[0].ligand_cutout_offset" in message

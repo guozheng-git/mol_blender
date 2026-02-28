@@ -30,6 +30,21 @@ try:
 except Exception:  # pragma: no cover - package import fallback
     from blender_render.chain_palette import expand_polymer_styles_for_multichain_palette
 
+try:
+    from ligand_selection import (
+        coordinates_from_atom_array,
+        expand_mask_to_residues,
+        ligand_reference_mask,
+        proximity_mask_within_radius,
+    )
+except Exception:  # pragma: no cover - package import fallback
+    from blender_render.ligand_selection import (
+        coordinates_from_atom_array,
+        expand_mask_to_residues,
+        ligand_reference_mask,
+        proximity_mask_within_radius,
+    )
+
 
 def _configure_molecularnodes_import_path() -> None:
     raw = str(os.getenv("PRESS_MN_SITE_PACKAGES", "") or "").strip()
@@ -445,6 +460,59 @@ def _chain_upper_for_selection(load_result: Any, atom_array: Any, count: int, st
     return chain_upper
 
 
+def _selection_numeric_radius(selection_cfg: dict[str, Any], key: str) -> float | None:
+    if key not in selection_cfg:
+        return None
+    try:
+        return max(0.0, float(selection_cfg.get(key)))
+    except Exception:
+        return None
+
+
+def _ligand_reference_mask_for_features(
+    *,
+    atom_array: Any,
+    polymer_mask: np.ndarray,
+    semantic_ligand_mask: np.ndarray,
+) -> np.ndarray:
+    strict_mask = ligand_reference_mask(
+        atom_array=atom_array,
+        polymer_mask=polymer_mask,
+        solvent_res_names=SOLVENT_RES_NAMES,
+    )
+    if bool(np.any(strict_mask)):
+        return strict_mask
+    if bool(np.any(semantic_ligand_mask)):
+        return np.asarray(semantic_ligand_mask, dtype=bool)
+    return strict_mask
+
+
+def _ligand_proximity_mask(
+    atom_array: Any,
+    *,
+    polymer_mask: np.ndarray,
+    semantic_ligand_mask: np.ndarray,
+    radius: float,
+    query_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    count = int(polymer_mask.shape[0])
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None or coords.shape[0] != count:
+        return np.zeros(count, dtype=bool)
+    ref_mask = _ligand_reference_mask_for_features(
+        atom_array=atom_array,
+        polymer_mask=polymer_mask,
+        semantic_ligand_mask=semantic_ligand_mask,
+    )
+    return proximity_mask_within_radius(
+        coords,
+        ref_mask,
+        radius=max(0.0, float(radius)),
+        query_mask=query_mask,
+        chunk_size=512,
+    )
+
+
 def _selection_indices_from_cfg(
     load_result: Any,
     selection_cfg: dict[str, Any],
@@ -461,15 +529,22 @@ def _selection_indices_from_cfg(
 
     chain_upper = _chain_upper_for_selection(load_result, atom_array, count, structure_path)
     query_value = selection_cfg.get("query")
+    mask = np.ones(count, dtype=bool)
+    has_filter = False
     if isinstance(query_value, str) and query_value.strip():
-        return _query_to_indices(
+        query_indices = _query_to_indices(
             atom_array,
             query_value,
             chain_upper_override=chain_upper,
         )
+        if query_indices is not None:
+            query_mask = np.zeros(count, dtype=bool)
+            for idx in query_indices:
+                if 0 <= int(idx) < count:
+                    query_mask[int(idx)] = True
+            mask &= query_mask
+            has_filter = True
 
-    mask = np.ones(count, dtype=bool)
-    has_filter = False
     polymer_mask, nucleic_mask, ligand_mask = _semantic_masks(atom_array, count)
     if bool(selection_cfg.get("polymer", False)):
         mask &= polymer_mask
@@ -492,16 +567,40 @@ def _selection_indices_from_cfg(
         has_filter = True
 
     residue_range = selection_cfg.get("residue_range")
+    res_ids = np.asarray(getattr(atom_array, "res_id", np.full(count, -1, dtype=int))).astype(int)
     if isinstance(residue_range, (list, tuple)) and len(residue_range) == 2:
         try:
             start = int(residue_range[0])
             end = int(residue_range[1])
             lo, hi = (start, end) if start <= end else (end, start)
-            res_ids = np.asarray(getattr(atom_array, "res_id", np.full(count, -1, dtype=int))).astype(int)
             mask &= (res_ids >= lo) & (res_ids <= hi)
             has_filter = True
         except Exception:
             pass
+
+    within_ligand_radius = _selection_numeric_radius(selection_cfg, "within_ligand_radius")
+    if within_ligand_radius is not None:
+        mask &= _ligand_proximity_mask(
+            atom_array,
+            polymer_mask=polymer_mask,
+            semantic_ligand_mask=ligand_mask,
+            radius=within_ligand_radius,
+        )
+        has_filter = True
+
+    exclude_within_ligand_radius = _selection_numeric_radius(selection_cfg, "exclude_within_ligand_radius")
+    if exclude_within_ligand_radius is not None:
+        mask &= ~_ligand_proximity_mask(
+            atom_array,
+            polymer_mask=polymer_mask,
+            semantic_ligand_mask=ligand_mask,
+            radius=exclude_within_ligand_radius,
+        )
+        has_filter = True
+
+    if bool(selection_cfg.get("expand_to_residue", False)):
+        mask = expand_mask_to_residues(mask, chain_upper, res_ids)
+        has_filter = True
 
     if not has_filter:
         return None
@@ -2993,6 +3092,294 @@ def _scene_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, float]:
     return center, radius
 
 
+def _ligand_anchor_from_load_result(load_result: Any) -> Vector | None:
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return None
+    count = _atom_array_count(atom_array)
+    if count <= 0:
+        return None
+    polymer_mask, _, semantic_ligand_mask = _semantic_masks(atom_array, count)
+    ligand_mask = _ligand_reference_mask_for_features(
+        atom_array=atom_array,
+        polymer_mask=polymer_mask,
+        semantic_ligand_mask=semantic_ligand_mask,
+    )
+    if not bool(np.any(ligand_mask)):
+        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+            print("Bridge Custom: ligand anchor fallback found no ligand mask entries.")
+        return None
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None or coords.shape[0] != count:
+        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+            raw_coord = getattr(atom_array, "coord", None)
+            raw_shape = getattr(raw_coord, "shape", None)
+            print(
+                "Bridge Custom: ligand anchor missing coordinate array "
+                f"coord_type={type(raw_coord).__name__} "
+                f"coord_shape={raw_shape} count={count}"
+            )
+        return None
+    ligand_coords = coords[ligand_mask]
+    finite = np.isfinite(ligand_coords).all(axis=1)
+    if not bool(np.any(finite)):
+        return None
+    center = ligand_coords[finite].mean(axis=0)
+    return Vector((float(center[0]), float(center[1]), float(center[2])))
+
+
+def _ligand_cutout_axis(
+    ligand_anchor: Vector,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+) -> Vector:
+    axis = Vector((0.0, 1.0, 0.0))
+    ligand_axis = None
+    if interface_center is not None:
+        try:
+            candidate_axis = ligand_anchor - interface_center
+            if candidate_axis.length > 1e-8:
+                ligand_axis = candidate_axis.normalized()
+        except Exception:
+            pass
+    camera_norm = None
+    if camera_axis is not None and camera_axis.length > 1e-8:
+        try:
+            camera_norm = camera_axis.normalized()
+        except Exception:
+            camera_norm = None
+
+    if ligand_axis is not None:
+        axis = ligand_axis
+    elif camera_norm is not None:
+        axis = camera_norm
+    flat_axis = Vector((axis.x, axis.y, 0.0))
+    if flat_axis.length > 1e-8:
+        axis = flat_axis.normalized()
+    return axis
+
+
+def _indices_centroid_vector(load_result: Any, indices: list[int] | None) -> Vector | None:
+    if not indices:
+        return None
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return None
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None:
+        return None
+    valid: list[int] = []
+    count = int(coords.shape[0])
+    for idx in indices:
+        i = int(idx)
+        if 0 <= i < count:
+            valid.append(i)
+    if not valid:
+        return None
+    subset = coords[np.asarray(valid, dtype=int)]
+    finite = np.isfinite(subset).all(axis=1)
+    if not bool(np.any(finite)):
+        return None
+    center = subset[finite].mean(axis=0)
+    return Vector((float(center[0]), float(center[1]), float(center[2])))
+
+
+def _ligand_cutout_box_params(
+    *,
+    ligand_anchor: Vector,
+    radius: float,
+    offset: float,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+) -> tuple[Vector, Vector, Vector, Vector, float, float, float] | None:
+    axis_y = _ligand_cutout_axis(
+        ligand_anchor,
+        interface_center,
+        camera_axis=camera_axis,
+    )
+    up_hint = Vector((0.0, 0.0, 1.0))
+    if abs(axis_y.dot(up_hint)) > 0.95:
+        up_hint = Vector((1.0, 0.0, 0.0))
+    axis_x = up_hint.cross(axis_y)
+    if axis_x.length < 1e-8:
+        return None
+    axis_x.normalize()
+    axis_z = axis_y.cross(axis_x)
+    if axis_z.length < 1e-8:
+        return None
+    axis_z.normalize()
+
+    # Rectangular clip window around ligand; y-axis is the clip-depth direction.
+    # Keep width/height moderate so the cavity stays localized around the pocket.
+    cut_half_width = max(0.2, float(radius) * 1.15)
+    cut_half_depth = max(0.2, float(radius) * 0.45)
+    cut_half_height = max(0.2, float(radius) * 1.15)
+    cut_center = ligand_anchor.copy()
+    if abs(float(offset)) > 1e-6:
+        cut_center += axis_y * float(offset)
+
+    return (cut_center, axis_x, axis_y, axis_z, cut_half_width, cut_half_depth, cut_half_height)
+
+
+def _selection_indices_with_ligand_box_cutout(
+    *,
+    load_result: Any,
+    base_indices: list[int] | None,
+    ligand_anchor: Vector,
+    radius: float,
+    offset: float,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+) -> list[int] | None:
+    atom_array = _get_atom_array(load_result)
+    if atom_array is None:
+        return base_indices
+
+    count = _atom_array_count(atom_array)
+    if count <= 0:
+        return base_indices
+
+    coords = coordinates_from_atom_array(atom_array)
+    if coords is None or coords.shape[0] != count:
+        return base_indices
+
+    box = _ligand_cutout_box_params(
+        ligand_anchor=ligand_anchor,
+        radius=radius,
+        offset=offset,
+        interface_center=interface_center,
+        camera_axis=camera_axis,
+    )
+    if box is None:
+        return base_indices
+    cut_center, axis_x, axis_y, axis_z, cut_half_width, cut_half_depth, cut_half_height = box
+
+    center_np = np.array([cut_center.x, cut_center.y, cut_center.z], dtype=float)
+    axis_x_np = np.array([axis_x.x, axis_x.y, axis_x.z], dtype=float)
+    axis_y_np = np.array([axis_y.x, axis_y.y, axis_y.z], dtype=float)
+    axis_z_np = np.array([axis_z.x, axis_z.y, axis_z.z], dtype=float)
+    deltas = np.asarray(coords, dtype=float) - center_np[None, :]
+    local_x = np.einsum("ij,j->i", deltas, axis_x_np, optimize=True)
+    local_y = np.einsum("ij,j->i", deltas, axis_y_np, optimize=True)
+    local_z = np.einsum("ij,j->i", deltas, axis_z_np, optimize=True)
+    window_mask = (
+        (np.abs(local_x) <= cut_half_width)
+        & (np.abs(local_z) <= cut_half_height)
+    )
+    # Full prism removal gives a stronger rectangular cut than a shallow cavity.
+    clip_depth = max(float(radius) * 6.0, cut_half_depth * 10.0)
+    depth_mask = np.abs(local_y) <= clip_depth
+    box_mask = window_mask & depth_mask
+
+    if base_indices is None:
+        base_mask = np.ones(count, dtype=bool)
+    else:
+        base_mask = np.zeros(count, dtype=bool)
+        for idx in base_indices:
+            if 0 <= int(idx) < count:
+                base_mask[int(idx)] = True
+
+    selected = np.where(base_mask & (~box_mask))[0].astype(int).tolist()
+    return selected
+
+
+def _apply_surface_ligand_cutout(
+    *,
+    target_obj: bpy.types.Object | None,
+    ligand_anchor: Vector,
+    radius: float,
+    offset: float,
+    mirror: bool,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+) -> bool:
+    if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
+        return False
+    if float(radius) <= 1e-6:
+        return False
+
+    box = _ligand_cutout_box_params(
+        ligand_anchor=ligand_anchor,
+        radius=radius,
+        offset=offset,
+        interface_center=interface_center,
+        camera_axis=camera_axis,
+    )
+    if box is None:
+        return False
+    cut_center, _, axis_y, _, cut_half_width, cut_half_depth, cut_half_height = box
+
+    def _add_box_cut(center: Vector) -> bool:
+        try:
+            bpy.ops.mesh.primitive_cube_add(
+                size=2.0,
+                location=center,
+            )
+        except Exception:
+            return False
+
+        cutter = bpy.context.active_object
+        if cutter is None or str(getattr(cutter, "type", "")).upper() != "MESH":
+            return False
+
+        cutter.name = f"BridgeLigandCutout_{uuid.uuid4().hex[:8]}"
+        try:
+            cutter.scale = (cut_half_width, cut_half_depth, cut_half_height)
+        except Exception:
+            pass
+        if axis_y.length > 1e-8:
+            try:
+                cutter.rotation_euler = axis_y.to_track_quat("Y", "Z").to_euler()
+            except Exception:
+                pass
+        try:
+            cutter.hide_render = True
+        except Exception:
+            pass
+        try:
+            cutter.hide_viewport = True
+        except Exception:
+            pass
+        try:
+            cutter.display_type = "WIRE"
+        except Exception:
+            pass
+
+        try:
+            modifier = target_obj.modifiers.new(name=f"BridgeLigandCutout_{uuid.uuid4().hex[:6]}", type="BOOLEAN")
+            modifier.operation = "DIFFERENCE"
+            modifier.object = cutter
+            if hasattr(modifier, "solver"):
+                modifier.solver = "EXACT"
+            return True
+        except Exception:
+            return False
+
+    if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+        print(
+            "Bridge Custom cutout box: "
+            f"center=({cut_center.x:.3f},{cut_center.y:.3f},{cut_center.z:.3f}) "
+            f"axis=({axis_y.x:.3f},{axis_y.y:.3f},{axis_y.z:.3f}) "
+            f"half=({cut_half_width:.3f},{cut_half_depth:.3f},{cut_half_height:.3f})"
+        )
+
+    applied_primary = _add_box_cut(cut_center)
+    if not applied_primary:
+        return False
+
+    if mirror and abs(float(offset)) > 1e-6:
+        mirrored = Vector(
+            (
+                (ligand_anchor.x * 2.0) - cut_center.x,
+                (ligand_anchor.y * 2.0) - cut_center.y,
+                (ligand_anchor.z * 2.0) - cut_center.z,
+            )
+        )
+        _add_box_cut(mirrored)
+
+    return True
+
+
 def _apply_override_camera(
     scene: bpy.types.Scene,
     camera: bpy.types.Object,
@@ -3250,6 +3637,9 @@ def _render(args: argparse.Namespace) -> None:
         print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object=BridgeCustom")
     base_obj = _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
     parser_mode = isinstance(load_result, _ParserMolecule)
+    ligand_anchor = _ligand_anchor_from_load_result(load_result)
+    if ligand_anchor is None and _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
+        print("Bridge Custom: ligand anchor not available; ligand cutout styles will be skipped.")
 
     protein_chain_ids = _protein_chain_ids(load_result)
     material_config = _apply_color_follow_to_materials(style_doc, view_doc)
@@ -3266,13 +3656,45 @@ def _render(args: argparse.Namespace) -> None:
     runtime_ligand_backend = "none"
     runtime_ligand_atom_spheres = False
     styled_geometry_applied = False
+    global_interface_center = _scene_bounds([base_obj] if base_obj is not None else [])[0]
+    cutout_camera_axis = None
+    try:
+        candidate = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
+        if candidate.length > 1e-8:
+            cutout_camera_axis = candidate.normalized()
+    except Exception:
+        cutout_camera_axis = None
     if debug_styles and runtime_chain_colors:
         print(f"Bridge Custom: runtime polymer chain colors {runtime_chain_colors}")
 
     for style_idx, style_cfg in enumerate(runtime_styles):
+        style_name = str(style_cfg.get("name", f"style_{style_idx}"))
+        style_kind_lower = str(style_cfg.get("style", "")).strip().lower()
+        cutout_radius = 0.0
+        cutout_offset = 0.0
+        cutout_mirror = False
+        if style_kind_lower == "surface":
+            try:
+                cutout_radius = float(style_cfg.get("ligand_cutout_radius", 0.0) or 0.0)
+            except Exception:
+                cutout_radius = 0.0
+            try:
+                cutout_offset = float(style_cfg.get("ligand_cutout_offset", 0.0) or 0.0)
+            except Exception:
+                cutout_offset = 0.0
+            cutout_mirror = bool(style_cfg.get("ligand_cutout_mirror", False))
+
+        isolate_surface_cutout = (
+            bool(style_cfg.get("ligand_cutout_isolate", True))
+            and not parser_mode
+            and style_kind_lower == "surface"
+            and cutout_radius > 0
+            and ligand_anchor is not None
+        )
+
         style_load_result = load_result
         style_base_obj = base_obj
-        if parser_mode:
+        if parser_mode or isolate_surface_cutout:
             style_object_name = f"BridgeCustom_{style_idx}"
             style_load_result = _load_with_ccd_retry(structure_path, style_object_name)
             _apply_auth_chain_override(style_load_result, structure_path)
@@ -3281,7 +3703,6 @@ def _render(args: argparse.Namespace) -> None:
                 print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object={style_object_name}")
             style_base_obj = _resolve_loaded_object(style_load_result, style_object_name, allow_missing=True)
 
-        style_name = str(style_cfg.get("name", f"style_{style_idx}"))
         selection_cfg = style_cfg.get("selection", {})
         selection, selection_indices = _build_selection(
             style_load_result,
@@ -3289,6 +3710,41 @@ def _render(args: argparse.Namespace) -> None:
             structure_path=structure_path,
             style_name=style_name,
         )
+        effective_cutout_offset = cutout_offset
+        if style_kind_lower == "surface" and cutout_radius > 0 and ligand_anchor is not None and abs(cutout_offset) > 1e-6:
+            style_center_for_cutout = _indices_centroid_vector(style_load_result, selection_indices)
+            cutout_axis_ref = _ligand_cutout_axis(
+                ligand_anchor,
+                global_interface_center,
+                camera_axis=cutout_camera_axis,
+            )
+            if style_center_for_cutout is not None and cutout_axis_ref.length > 1e-8:
+                try:
+                    rel = style_center_for_cutout - ligand_anchor
+                    projected = float(rel.dot(cutout_axis_ref))
+                    if abs(projected) > 1e-6:
+                        side_sign = 1.0 if projected >= 0.0 else -1.0
+                        effective_cutout_offset = abs(float(cutout_offset)) * side_sign
+                except Exception:
+                    effective_cutout_offset = cutout_offset
+        if style_kind_lower == "surface":
+            cutout_selection = bool(style_cfg.get("ligand_cutout_selection", False))
+            if cutout_selection and cutout_radius > 0 and ligand_anchor is not None:
+                cutout_center_ref = global_interface_center
+                selection_indices = _selection_indices_with_ligand_box_cutout(
+                    load_result=style_load_result,
+                    base_indices=selection_indices,
+                    ligand_anchor=ligand_anchor,
+                    radius=cutout_radius,
+                    offset=effective_cutout_offset,
+                    interface_center=cutout_center_ref,
+                    camera_axis=cutout_camera_axis,
+                )
+                selection = _selection_to_named_attribute(
+                    style_load_result,
+                    selection_indices,
+                    style_name=f"{style_name}_box_cutout",
+                )
 
         material_name = style_cfg["material"]
         material = materials[material_name]
@@ -3350,8 +3806,40 @@ def _render(args: argparse.Namespace) -> None:
                 style_tree_changed = style_tree_changed or auto_tree_changed
                 used_auto_chain_fallback = True
                 style_empty = _style_result_is_empty(style_result) and not new_modifier_names and not style_tree_changed
-        style_kind_lower = str(style_cfg.get("style", "")).strip().lower()
         style_name_lower = str(style_cfg.get("name", "")).strip().lower()
+        style_obj = getattr(style_result, "_object", None)
+        if style_kind_lower == "surface":
+            if cutout_radius > 0:
+                if ligand_anchor is None:
+                    if debug_styles:
+                        print(
+                            "Bridge Custom: skipping ligand cutout due to missing ligand anchor "
+                            f"style={style_name}"
+                        )
+                else:
+                    target_obj = None
+                    if style_obj is not None and str(getattr(style_obj, "type", "")).upper() == "MESH":
+                        target_obj = style_obj
+                    elif style_base_obj is not None and str(getattr(style_base_obj, "type", "")).upper() == "MESH":
+                        target_obj = style_base_obj
+                    cutout_center_ref = global_interface_center
+                    cutout_applied = _apply_surface_ligand_cutout(
+                        target_obj=target_obj,
+                        ligand_anchor=ligand_anchor,
+                        radius=cutout_radius,
+                        offset=effective_cutout_offset,
+                        mirror=cutout_mirror,
+                        interface_center=cutout_center_ref,
+                        camera_axis=cutout_camera_axis,
+                    )
+                    if debug_styles:
+                        print(
+                            "Bridge Custom: ligand cutout selection+boolean "
+                            f"style={style_name} "
+                            f"boolean_applied={int(bool(cutout_applied))} "
+                            f"radius={cutout_radius:.3f} offset={effective_cutout_offset:.3f} "
+                            f"mirror={int(cutout_mirror)}"
+                        )
         if style_kind_lower == "sticks" and _is_ligand_style(style_cfg):
             runtime_ligand_backend = "mn_native_sticks"
         if _is_polymer_cartoon_style(style_cfg):
@@ -3371,7 +3859,6 @@ def _render(args: argparse.Namespace) -> None:
                     f"style={style_cfg.get('name', '<unnamed>')} protein_chains={protein_chain_ids} "
                     "Secondary-structure assignment is required (run dss before export)."
                 )
-        style_obj = getattr(style_result, "_object", None)
         if (
             style_kind_lower == "sticks"
             and _is_ligand_style(style_cfg)

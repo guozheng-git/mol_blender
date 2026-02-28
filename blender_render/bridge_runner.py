@@ -78,7 +78,17 @@ SUPPORTED_STYLE_KINDS = {
     "wire",
 }
 
-SELECTION_DSL_KEYS = {"polymer", "nucleic", "ligand", "chain", "residue_range", "query"}
+SELECTION_DSL_KEYS = {
+    "polymer",
+    "nucleic",
+    "ligand",
+    "chain",
+    "residue_range",
+    "query",
+    "within_ligand_radius",
+    "exclude_within_ligand_radius",
+    "expand_to_residue",
+}
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
 STYLE_TOP_LEVEL_OPTIONAL_KEYS = {"color_follow"}
 OUTPUT_KEYS = {"format", "width", "height", "samples", "filename", "save_blend", "blend_filename", "raw_view"}
@@ -175,6 +185,10 @@ STYLE_KEYS = {
     "sticks_radius",
     "sticks_quality",
     "sticks_shade_smooth",
+    "ligand_cutout_radius",
+    "ligand_cutout_offset",
+    "ligand_cutout_selection",
+    "ligand_cutout_mirror",
     "del_solvent",
 }
 COLOR_FOLLOW_KEYS = {"enabled", "mode", "mix", "saturation_boost", "value_boost"}
@@ -400,6 +414,17 @@ def _validate_selection_dsl(selection: Any, field_path: str, errors: list[str]) 
     if "query" in selection and not isinstance(selection["query"], str):
         errors.append(f"'{field_path}.query' must be a string.")
 
+    for key in ("within_ligand_radius", "exclude_within_ligand_radius"):
+        if key in selection:
+            try:
+                if float(selection[key]) < 0:
+                    errors.append(f"'{field_path}.{key}' must be >= 0.")
+            except Exception:
+                errors.append(f"'{field_path}.{key}' must be numeric.")
+
+    if "expand_to_residue" in selection and not isinstance(selection.get("expand_to_residue"), bool):
+        errors.append(f"'{field_path}.expand_to_residue' must be boolean.")
+
 
 REQUIRED_STYLE_TOP_KEYS = [
     "version",
@@ -588,6 +613,18 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                     )
             elif material_ref is not None and not isinstance(material_ref, str):
                 errors.append(f"'{field_base}.material' must be a string.")
+
+            if "ligand_cutout_radius" in style:
+                try:
+                    if float(style["ligand_cutout_radius"]) < 0:
+                        errors.append(f"'{field_base}.ligand_cutout_radius' must be >= 0.")
+                except Exception:
+                    errors.append(f"'{field_base}.ligand_cutout_radius' must be numeric.")
+            if "ligand_cutout_offset" in style:
+                try:
+                    float(style["ligand_cutout_offset"])
+                except Exception:
+                    errors.append(f"'{field_base}.ligand_cutout_offset' must be numeric.")
 
     color_follow = style_doc.get("color_follow")
     if color_follow is not None:
