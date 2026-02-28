@@ -533,6 +533,119 @@
               "none"
             ]
           },
+          "ligand_cutout_mode": {
+            "type": "string",
+            "enum": [
+              "planes",
+              "box_legacy"
+            ]
+          },
+          "ligand_cutout_frame_mode": {
+            "type": "string",
+            "enum": [
+              "preset",
+              "interface",
+              "camera"
+            ]
+          },
+          "ligand_cutout_frame_axes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "y": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "z": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "z"
+            ]
+          },
+          "ligand_cutout_planes_enabled": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "left": {
+                "type": "boolean"
+              },
+              "right": {
+                "type": "boolean"
+              },
+              "top": {
+                "type": "boolean"
+              },
+              "bottom": {
+                "type": "boolean"
+              },
+              "back": {
+                "type": "boolean"
+              }
+            }
+          },
+          "ligand_cutout_plane_scales": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "left": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "right": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "top": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "bottom": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "back": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          },
+          "ligand_cutout_seal_mode": {
+            "type": "string",
+            "enum": [
+              "boundary_fill",
+              "trimmed_panel",
+              "none"
+            ]
+          },
+          "ligand_cutout_seal_depth_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "ligand_cutout_seal_region_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
           "ligand_cutout_selection": {
             "type": "boolean"
           },

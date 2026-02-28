@@ -179,6 +179,59 @@ def test_local_manifest_contains_required_runtime_guard_fields(monkeypatch, payl
     shutil.rmtree(Path(result["temp_dir"]), ignore_errors=True)
 
 
+def test_local_manifest_preserves_cutout_runtime_fields(monkeypatch, payload_file: Path, tmp_path: Path):
+    args = _base_args(payload_file, tmp_path)
+    args.output_name = "manifest_cutout.png"
+    args.keep_temp = True
+
+    def fake_run(command, *, env=None):
+        output_png = Path(command[command.index("--output-png") + 1])
+        output_png.parent.mkdir(parents=True, exist_ok=True)
+        output_png.write_bytes(b"png")
+        manifest_path = Path(command[command.index("--run-manifest") + 1])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["ligand_cutout_mode"] = "planes"
+        manifest["ligand_cutout_frame_mode"] = "preset"
+        manifest["ligand_cutout_frame_axes"] = {
+            "x": [1.0, 0.0, 0.0],
+            "y": [0.0, 1.0, 0.0],
+            "z": [0.0, 0.0, 1.0],
+        }
+        manifest["ligand_cutout_planes_enabled"] = {
+            "left": True,
+            "right": True,
+            "top": True,
+            "bottom": True,
+            "back": True,
+        }
+        manifest["ligand_cutout_plane_scales"] = {
+            "left": 1.1,
+            "right": 1.1,
+            "top": 1.0,
+            "bottom": 1.0,
+            "back": 0.8,
+        }
+        manifest["ligand_cutout_seal_mode"] = "boundary_fill"
+        manifest["ligand_cutout_seal_depth_scale"] = 0.35
+        manifest["ligand_cutout_boundary_loops_total"] = 2
+        manifest["ligand_cutout_boundary_filled_faces"] = 2
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(bridge_runner, "_run_subprocess", fake_run)
+
+    result = bridge_runner.run_local(args)
+    manifest = result["manifest"]
+
+    assert manifest["ligand_cutout_mode"] == "planes"
+    assert manifest["ligand_cutout_frame_mode"] == "preset"
+    assert manifest["ligand_cutout_planes_enabled"]["left"] is True
+    assert manifest["ligand_cutout_plane_scales"]["back"] == 0.8
+    assert manifest["ligand_cutout_seal_mode"] == "boundary_fill"
+    assert manifest["ligand_cutout_boundary_loops_total"] == 2
+    shutil.rmtree(Path(result["temp_dir"]), ignore_errors=True)
+
+
 def test_local_preset_1_gate_fails_when_manifest_reports_non_cif(monkeypatch, payload_file: Path, tmp_path: Path):
     args = _base_args(payload_file, tmp_path)
     args.keep_temp = True
@@ -481,6 +534,7 @@ def test_local_apptainer_mode_rewrites_default_blender_path(monkeypatch, payload
     args = _base_args(payload_file, tmp_path)
     args.use_apptainer = True
     args.apptainer_image = str(tmp_path / "bridge.sif")
+    monkeypatch.setattr(bridge_runner, "_is_macos", lambda: False)
     monkeypatch.setattr(bridge_runner, "_resolve_apptainer_executable", lambda: "/usr/bin/apptainer")
 
     calls = []
@@ -509,6 +563,7 @@ def test_local_apptainer_mode_rewrites_host_absolute_blender_path(monkeypatch, p
     args.use_apptainer = True
     args.apptainer_image = str(tmp_path / "bridge.sif")
     args.blender_exe = "/usr/bin/blender"
+    monkeypatch.setattr(bridge_runner, "_is_macos", lambda: False)
     monkeypatch.setattr(bridge_runner, "_resolve_apptainer_executable", lambda: "/usr/bin/apptainer")
 
     calls = []

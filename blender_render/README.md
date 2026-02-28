@@ -239,6 +239,14 @@ New style keys:
 - Surface style keys:
   - `ligand_cutout_radius` (Angstrom, `>= 0`)
   - `ligand_cutout_offset` (numeric, optional)
+  - `ligand_cutout_mode` (`planes` default, or `box_legacy`)
+  - `ligand_cutout_frame_mode` (`preset`, `interface`, or `camera`)
+  - `ligand_cutout_frame_axes` (required `x/y/z` numeric triplets when frame mode is explicit `preset`)
+  - `ligand_cutout_planes_enabled` (object booleans: `left`, `right`, `top`, `bottom`, `back`)
+  - `ligand_cutout_plane_scales` (object numeric `> 0`: `left`, `right`, `top`, `bottom`, `back`)
+  - `ligand_cutout_seal_mode` (`boundary_fill` default, `trimmed_panel`, or `none`)
+  - `ligand_cutout_seal_depth_scale` (numeric `> 0`)
+  - `ligand_cutout_seal_region_scale` (numeric `> 0`)
   - `ligand_cutout_auto_side` (`true/false`, optional)
   - `ligand_cutout_axis_mode` (`interface` or `camera`)
   - `ligand_cutout_flatten_z` (`true/false`)
@@ -251,6 +259,11 @@ New style keys:
   - `ligand_cutout_selection` (`true/false`)
   - `ligand_cutout_mirror` (`true/false`)
   - `ligand_cutout_isolate` (`true/false`)
+
+Cutout behavior notes:
+- `planes` mode is deterministic and preset-driven. Default active planes are `left + right + top + bottom + back`.
+- `boundary_fill` sealing derives cap geometry from actual boundary loops (no detached rectangular slab panel).
+- Legacy box behavior remains available with `ligand_cutout_mode: "box_legacy"` for compatibility.
 
 Example local render with target style JSON:
 

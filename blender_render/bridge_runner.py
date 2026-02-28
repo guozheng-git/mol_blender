@@ -23,6 +23,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+try:
+    from cutout_planes import PLANE_NAMES
+except Exception:  # pragma: no cover - package import fallback
+    from blender_render.cutout_planes import PLANE_NAMES
+
 MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 DEFAULT_BLENDER_EXE = MACOS_STANDARD_BLENDER_EXE
 DEFAULT_APPTAINER_BLENDER_EXE = "/usr/local/bin/blender"
@@ -199,9 +204,19 @@ STYLE_KEYS = {
     "ligand_cutout_selection",
     "ligand_cutout_mirror",
     "ligand_cutout_isolate",
+    "ligand_cutout_mode",
+    "ligand_cutout_frame_mode",
+    "ligand_cutout_frame_axes",
+    "ligand_cutout_planes_enabled",
+    "ligand_cutout_plane_scales",
+    "ligand_cutout_seal_mode",
+    "ligand_cutout_seal_depth_scale",
+    "ligand_cutout_seal_region_scale",
     "del_solvent",
 }
 COLOR_FOLLOW_KEYS = {"enabled", "mode", "mix", "saturation_boost", "value_boost"}
+LIGAND_CUTOUT_FRAME_AXIS_KEYS = {"x", "y", "z"}
+LIGAND_CUTOUT_PLANE_KEYS = set(PLANE_NAMES)
 
 try:
     import jsonschema as _jsonschema
@@ -655,6 +670,105 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                     errors.append(
                         f"'{field_base}.ligand_cutout_cap_mode' must be one of: panel, none."
                     )
+            cutout_mode = str(style.get("ligand_cutout_mode", "planes")).strip().lower()
+            if "ligand_cutout_mode" in style and cutout_mode not in {"planes", "box_legacy"}:
+                errors.append(f"'{field_base}.ligand_cutout_mode' must be one of: planes, box_legacy.")
+            frame_mode = str(style.get("ligand_cutout_frame_mode", "preset")).strip().lower()
+            if "ligand_cutout_frame_mode" in style and frame_mode not in {"preset", "interface", "camera"}:
+                errors.append(f"'{field_base}.ligand_cutout_frame_mode' must be one of: preset, interface, camera.")
+            if "ligand_cutout_frame_axes" in style:
+                frame_axes = style.get("ligand_cutout_frame_axes")
+                if not isinstance(frame_axes, dict):
+                    errors.append(f"'{field_base}.ligand_cutout_frame_axes' must be an object.")
+                else:
+                    extra_axis_keys = sorted(set(frame_axes.keys()) - LIGAND_CUTOUT_FRAME_AXIS_KEYS)
+                    if extra_axis_keys:
+                        errors.append(
+                            f"'{field_base}.ligand_cutout_frame_axes' contains unsupported keys: "
+                            f"{', '.join(extra_axis_keys)}. "
+                            "Allowed keys: x, y, z."
+                        )
+                    for axis_key in ("x", "y", "z"):
+                        axis_value = frame_axes.get(axis_key)
+                        if axis_value is None:
+                            errors.append(f"'{field_base}.ligand_cutout_frame_axes.{axis_key}' is required.")
+                            continue
+                        if not isinstance(axis_value, (list, tuple)) or len(axis_value) != 3:
+                            errors.append(
+                                f"'{field_base}.ligand_cutout_frame_axes.{axis_key}' must be a numeric 3-tuple."
+                            )
+                            continue
+                        for idx_axis, entry in enumerate(axis_value):
+                            try:
+                                float(entry)
+                            except Exception:
+                                errors.append(
+                                    f"'{field_base}.ligand_cutout_frame_axes.{axis_key}[{idx_axis}]' must be numeric."
+                                )
+            if (
+                cutout_mode == "planes"
+                and frame_mode == "preset"
+                and "ligand_cutout_frame_mode" in style
+                and "ligand_cutout_frame_axes" not in style
+            ):
+                errors.append(
+                    f"'{field_base}.ligand_cutout_frame_axes' is required when "
+                    f"'{field_base}.ligand_cutout_frame_mode' is 'preset'."
+                )
+            if "ligand_cutout_planes_enabled" in style:
+                planes_enabled = style.get("ligand_cutout_planes_enabled")
+                if not isinstance(planes_enabled, dict):
+                    errors.append(f"'{field_base}.ligand_cutout_planes_enabled' must be an object.")
+                else:
+                    extra_plane_enabled = sorted(set(planes_enabled.keys()) - LIGAND_CUTOUT_PLANE_KEYS)
+                    if extra_plane_enabled:
+                        errors.append(
+                            f"'{field_base}.ligand_cutout_planes_enabled' contains unsupported keys: "
+                            f"{', '.join(extra_plane_enabled)}. "
+                            f"Allowed keys: {', '.join(sorted(LIGAND_CUTOUT_PLANE_KEYS))}."
+                        )
+                    for plane_key in sorted(LIGAND_CUTOUT_PLANE_KEYS):
+                        if plane_key in planes_enabled and not isinstance(planes_enabled.get(plane_key), bool):
+                            errors.append(
+                                f"'{field_base}.ligand_cutout_planes_enabled.{plane_key}' must be boolean."
+                            )
+            if "ligand_cutout_plane_scales" in style:
+                plane_scales = style.get("ligand_cutout_plane_scales")
+                if not isinstance(plane_scales, dict):
+                    errors.append(f"'{field_base}.ligand_cutout_plane_scales' must be an object.")
+                else:
+                    extra_plane_scales = sorted(set(plane_scales.keys()) - LIGAND_CUTOUT_PLANE_KEYS)
+                    if extra_plane_scales:
+                        errors.append(
+                            f"'{field_base}.ligand_cutout_plane_scales' contains unsupported keys: "
+                            f"{', '.join(extra_plane_scales)}. "
+                            f"Allowed keys: {', '.join(sorted(LIGAND_CUTOUT_PLANE_KEYS))}."
+                        )
+                    for plane_key in sorted(LIGAND_CUTOUT_PLANE_KEYS):
+                        if plane_key not in plane_scales:
+                            continue
+                        try:
+                            if float(plane_scales[plane_key]) <= 0:
+                                errors.append(
+                                    f"'{field_base}.ligand_cutout_plane_scales.{plane_key}' must be > 0."
+                                )
+                        except Exception:
+                            errors.append(
+                                f"'{field_base}.ligand_cutout_plane_scales.{plane_key}' must be numeric."
+                            )
+            if "ligand_cutout_seal_mode" in style:
+                seal_mode = str(style.get("ligand_cutout_seal_mode", "")).strip().lower()
+                if seal_mode not in {"boundary_fill", "trimmed_panel", "none"}:
+                    errors.append(
+                        f"'{field_base}.ligand_cutout_seal_mode' must be one of: boundary_fill, trimmed_panel, none."
+                    )
+            for key in ("ligand_cutout_seal_depth_scale", "ligand_cutout_seal_region_scale"):
+                if key in style:
+                    try:
+                        if float(style[key]) <= 0:
+                            errors.append(f"'{field_base}.{key}' must be > 0.")
+                    except Exception:
+                        errors.append(f"'{field_base}.{key}' must be numeric.")
             for key in (
                 "ligand_cutout_width_scale",
                 "ligand_cutout_depth_scale",

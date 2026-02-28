@@ -164,3 +164,68 @@ def test_invalid_ligand_cutout_and_proximity_values_fail_validation():
     assert "styles[0].selection.expand_to_residue" in message
     assert "styles[0].ligand_cutout_radius" in message
     assert "styles[0].ligand_cutout_offset" in message
+
+
+def test_plane_cutout_keys_validate_with_preset_frame():
+    style = _example_style()
+    style["styles"][0]["ligand_cutout_mode"] = "planes"
+    style["styles"][0]["ligand_cutout_frame_mode"] = "preset"
+    style["styles"][0]["ligand_cutout_frame_axes"] = {
+        "x": [1.0, 0.0, 0.0],
+        "y": [0.0, 1.0, 0.0],
+        "z": [0.0, 0.0, 1.0],
+    }
+    style["styles"][0]["ligand_cutout_planes_enabled"] = {
+        "left": True,
+        "right": True,
+        "top": True,
+        "bottom": True,
+        "back": True,
+    }
+    style["styles"][0]["ligand_cutout_plane_scales"] = {
+        "left": 1.2,
+        "right": 1.0,
+        "top": 1.1,
+        "bottom": 0.9,
+        "back": 0.8,
+    }
+    style["styles"][0]["ligand_cutout_seal_mode"] = "boundary_fill"
+    style["styles"][0]["ligand_cutout_seal_depth_scale"] = 0.3
+    style["styles"][0]["ligand_cutout_seal_region_scale"] = 2.5
+
+    validated = validate_style_document(style)
+    cutout = validated["styles"][0]
+    assert cutout["ligand_cutout_mode"] == "planes"
+    assert cutout["ligand_cutout_frame_mode"] == "preset"
+    assert cutout["ligand_cutout_planes_enabled"]["left"] is True
+    assert cutout["ligand_cutout_plane_scales"]["back"] == 0.8
+
+
+def test_plane_cutout_preset_mode_requires_axes():
+    style = _example_style()
+    style["styles"][0]["ligand_cutout_mode"] = "planes"
+    style["styles"][0]["ligand_cutout_frame_mode"] = "preset"
+    style["styles"][0].pop("ligand_cutout_frame_axes", None)
+
+    with pytest.raises(StyleValidationError) as exc:
+        validate_style_document(style)
+
+    assert "ligand_cutout_frame_axes" in str(exc.value)
+
+
+def test_plane_cutout_invalid_plane_keys_and_seal_values_fail_validation():
+    style = _example_style()
+    style["styles"][0]["ligand_cutout_mode"] = "planes"
+    style["styles"][0]["ligand_cutout_planes_enabled"] = {"left": True, "front": True}
+    style["styles"][0]["ligand_cutout_plane_scales"] = {"left": 1.0, "right": -1.0}
+    style["styles"][0]["ligand_cutout_seal_mode"] = "invalid_mode"
+    style["styles"][0]["ligand_cutout_seal_depth_scale"] = 0
+
+    with pytest.raises(StyleValidationError) as exc:
+        validate_style_document(style)
+
+    message = str(exc.value)
+    assert "ligand_cutout_planes_enabled" in message
+    assert "ligand_cutout_plane_scales.right" in message
+    assert "ligand_cutout_seal_mode" in message
+    assert "ligand_cutout_seal_depth_scale" in message

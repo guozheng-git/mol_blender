@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import bmesh
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
@@ -43,6 +44,21 @@ except Exception:  # pragma: no cover - package import fallback
         expand_mask_to_residues,
         ligand_reference_mask,
         proximity_mask_within_radius,
+    )
+
+try:
+    from cutout_planes import (
+        DEFAULT_PLANE_ENABLED,
+        resolve_frame_axes,
+        resolve_plane_enabled,
+        resolve_plane_scales,
+    )
+except Exception:  # pragma: no cover - package import fallback
+    from blender_render.cutout_planes import (
+        DEFAULT_PLANE_ENABLED,
+        resolve_frame_axes,
+        resolve_plane_enabled,
+        resolve_plane_scales,
     )
 
 
@@ -3387,6 +3403,521 @@ def _ligand_cutout_box_params(
     return (cut_center, axis_x, axis_y, axis_z, cut_half_width, cut_half_depth, cut_half_height)
 
 
+def _orthonormal_frame_from_axis_y(axis_y: Vector, *, up_hint: Vector | None = None) -> tuple[Vector, Vector, Vector] | None:
+    if axis_y.length <= 1e-8:
+        return None
+    y_axis = axis_y.normalized()
+    up = up_hint.copy() if up_hint is not None else Vector((0.0, 0.0, 1.0))
+    if up.length <= 1e-8:
+        up = Vector((0.0, 0.0, 1.0))
+    if abs(y_axis.dot(up.normalized())) > 0.95:
+        up = Vector((1.0, 0.0, 0.0))
+    x_axis = up.cross(y_axis)
+    if x_axis.length <= 1e-8:
+        return None
+    x_axis.normalize()
+    z_axis = y_axis.cross(x_axis)
+    if z_axis.length <= 1e-8:
+        return None
+    z_axis.normalize()
+    return (x_axis, y_axis, z_axis)
+
+
+def _resolve_cutout_frame_axes(
+    *,
+    frame_mode: str,
+    frame_axes_cfg: dict[str, Any] | None,
+    ligand_anchor: Vector,
+    interface_center: Vector | None,
+    camera_axis: Vector | None,
+    flatten_z: bool,
+    allow_preset_fallback: bool = True,
+) -> tuple[Vector, Vector, Vector, str]:
+    axis_mode = str(frame_mode or "preset").strip().lower()
+    if axis_mode == "preset" and isinstance(frame_axes_cfg, dict):
+        try:
+            resolved = resolve_frame_axes(frame_axes_cfg)
+            x_axis = Vector(resolved["x"])
+            y_axis = Vector(resolved["y"])
+            z_axis = Vector(resolved["z"])
+            if x_axis.length > 1e-8 and y_axis.length > 1e-8 and z_axis.length > 1e-8:
+                return (x_axis.normalized(), y_axis.normalized(), z_axis.normalized(), "preset")
+        except Exception as exc:
+            if not allow_preset_fallback:
+                raise ValueError(f"Invalid ligand_cutout_frame_axes: {exc}") from exc
+    elif axis_mode == "preset" and not allow_preset_fallback:
+        raise ValueError("ligand_cutout_frame_axes are required when ligand_cutout_frame_mode='preset'.")
+
+    if axis_mode not in {"interface", "camera"}:
+        axis_mode = "interface"
+
+    prefer_camera = axis_mode == "camera"
+    y_axis = _ligand_cutout_axis(
+        ligand_anchor,
+        interface_center,
+        camera_axis=camera_axis,
+        prefer_camera=prefer_camera,
+        flatten_z=flatten_z,
+    )
+    frame = _orthonormal_frame_from_axis_y(y_axis)
+    if frame is not None:
+        return (frame[0], frame[1], frame[2], axis_mode)
+
+    fallback = _orthonormal_frame_from_axis_y(Vector((0.0, 1.0, 0.0)))
+    if fallback is None:
+        return (Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0)), "world_fallback")
+    return (fallback[0], fallback[1], fallback[2], "world_fallback")
+
+
+def _vector_to_triplet(vec: Vector) -> tuple[float, float, float]:
+    return (float(vec.x), float(vec.y), float(vec.z))
+
+
+def _matrix_from_frame_axes(axis_x: Vector, axis_y: Vector, axis_z: Vector) -> Matrix:
+    # Columns are local-frame basis vectors in world space.
+    return Matrix((axis_x, axis_y, axis_z)).transposed()
+
+
+def _delete_object_if_present(obj: bpy.types.Object | None) -> None:
+    if obj is None:
+        return
+    try:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    except Exception:
+        pass
+
+
+def _create_plane_cutout_prism(
+    *,
+    cut_center: Vector,
+    axis_x: Vector,
+    axis_y: Vector,
+    axis_z: Vector,
+    radius_world: float,
+    scene_radius: float,
+    planes_enabled: dict[str, bool],
+    plane_scales: dict[str, float],
+) -> tuple[bpy.types.Object | None, dict[str, float]]:
+    guard = max(0.5, max(float(radius_world), float(scene_radius)) * 8.0)
+    front_extent = max(0.5, max(float(radius_world), float(scene_radius)) * 10.0)
+
+    left = max(0.02, float(plane_scales.get("left", 1.0)) * float(radius_world))
+    right = max(0.02, float(plane_scales.get("right", 1.0)) * float(radius_world))
+    top = max(0.02, float(plane_scales.get("top", 1.0)) * float(radius_world))
+    bottom = max(0.02, float(plane_scales.get("bottom", 1.0)) * float(radius_world))
+    back = max(0.02, float(plane_scales.get("back", 1.0)) * float(radius_world))
+
+    x_min = (-left) if bool(planes_enabled.get("left", True)) else (-guard)
+    x_max = right if bool(planes_enabled.get("right", True)) else guard
+    z_min = (-bottom) if bool(planes_enabled.get("bottom", True)) else (-guard)
+    z_max = top if bool(planes_enabled.get("top", True)) else guard
+    y_min = (-back) if bool(planes_enabled.get("back", True)) else (-guard)
+    y_max = front_extent
+
+    local_center = Vector(
+        (
+            float((x_min + x_max) * 0.5),
+            float((y_min + y_max) * 0.5),
+            float((z_min + z_max) * 0.5),
+        )
+    )
+    half_extents = Vector(
+        (
+            max(0.02, float((x_max - x_min) * 0.5)),
+            max(0.02, float((y_max - y_min) * 0.5)),
+            max(0.02, float((z_max - z_min) * 0.5)),
+        )
+    )
+    world_center = cut_center + (axis_x * local_center.x) + (axis_y * local_center.y) + (axis_z * local_center.z)
+
+    try:
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=world_center)
+    except Exception:
+        return None, {}
+    cutter = bpy.context.active_object
+    if cutter is None or str(getattr(cutter, "type", "")).upper() != "MESH":
+        return None, {}
+
+    cutter.name = f"BridgePlanePrism_{uuid.uuid4().hex[:8]}"
+    rotation = _matrix_from_frame_axes(axis_x, axis_y, axis_z).to_4x4()
+    try:
+        cutter.matrix_world = Matrix.Translation(world_center) @ rotation
+    except Exception:
+        pass
+    try:
+        cutter.scale = (half_extents.x, half_extents.y, half_extents.z)
+    except Exception:
+        pass
+    try:
+        cutter.hide_render = True
+        cutter.hide_viewport = True
+        cutter.display_type = "WIRE"
+    except Exception:
+        pass
+
+    return cutter, {
+        "x_min": float(x_min),
+        "x_max": float(x_max),
+        "y_min": float(y_min),
+        "y_max": float(y_max),
+        "z_min": float(z_min),
+        "z_max": float(z_max),
+        "front_extent": float(front_extent),
+    }
+
+
+def _create_halfspace_cutter_cube(
+    *,
+    center: Vector,
+    remove_dir: Vector,
+    tangent_extent: float,
+    normal_extent: float,
+) -> bpy.types.Object | None:
+    if remove_dir.length <= 1e-8:
+        return None
+    try:
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=center)
+    except Exception:
+        return None
+    cutter = bpy.context.active_object
+    if cutter is None or str(getattr(cutter, "type", "")).upper() != "MESH":
+        return None
+    try:
+        cutter.scale = (
+            max(0.02, float(tangent_extent)),
+            max(0.02, float(normal_extent) * 0.5),
+            max(0.02, float(tangent_extent)),
+        )
+    except Exception:
+        pass
+    try:
+        cutter.rotation_euler = remove_dir.normalized().to_track_quat("Y", "Z").to_euler()
+    except Exception:
+        pass
+    cutter.name = f"BridgePlaneCut_{uuid.uuid4().hex[:8]}"
+    try:
+        cutter.hide_render = True
+        cutter.hide_viewport = True
+        cutter.display_type = "WIRE"
+    except Exception:
+        pass
+    return cutter
+
+
+def _join_objects_as_single_mesh(objects: list[bpy.types.Object]) -> bpy.types.Object | None:
+    valid = [obj for obj in objects if obj is not None and str(getattr(obj, "type", "")).upper() == "MESH"]
+    if not valid:
+        return None
+    if len(valid) == 1:
+        return valid[0]
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+    except Exception:
+        pass
+    for obj in valid:
+        try:
+            obj.select_set(True)
+        except Exception:
+            continue
+    try:
+        bpy.context.view_layer.objects.active = valid[0]
+        bpy.ops.object.join()
+    except Exception:
+        return valid[0]
+    merged = bpy.context.view_layer.objects.active
+    if merged is None:
+        return valid[0]
+    merged.name = f"BridgePlaneCutUnion_{uuid.uuid4().hex[:8]}"
+    return merged
+
+
+def _apply_boolean_difference_and_apply(
+    *,
+    target_obj: bpy.types.Object,
+    cutter_obj: bpy.types.Object,
+) -> bool:
+    if target_obj is None or cutter_obj is None:
+        return False
+    if str(getattr(target_obj, "type", "")).upper() != "MESH":
+        return False
+    if str(getattr(cutter_obj, "type", "")).upper() != "MESH":
+        return False
+
+    modifier = None
+    try:
+        modifier = target_obj.modifiers.new(name=f"BridgePlaneCut_{uuid.uuid4().hex[:6]}", type="BOOLEAN")
+        modifier.operation = "DIFFERENCE"
+        modifier.object = cutter_obj
+        if hasattr(modifier, "solver"):
+            modifier.solver = "EXACT"
+        if hasattr(modifier, "use_hole_tolerant"):
+            try:
+                modifier.use_hole_tolerant = True
+            except Exception:
+                pass
+    except Exception:
+        return False
+
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+    except Exception:
+        pass
+    try:
+        target_obj.select_set(True)
+        bpy.context.view_layer.objects.active = target_obj
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        pass
+    try:
+        bpy.ops.object.modifier_apply(modifier=str(modifier.name))
+    except Exception:
+        return False
+    return True
+
+
+def _collect_boundary_edge_loops(mesh_obj: bpy.types.Object) -> list[list[bmesh.types.BMEdge]]:
+    mesh_data = getattr(mesh_obj, "data", None)
+    if mesh_data is None:
+        return []
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh_data)
+        bm.edges.ensure_lookup_table()
+        boundary_edges = [edge for edge in bm.edges if bool(edge.is_boundary)]
+        if not boundary_edges:
+            return []
+        remaining = set(boundary_edges)
+        loops: list[list[bmesh.types.BMEdge]] = []
+        while remaining:
+            seed = remaining.pop()
+            queue = [seed]
+            component = [seed]
+            while queue:
+                edge = queue.pop()
+                for vert in edge.verts:
+                    for linked in vert.link_edges:
+                        if linked in remaining and bool(linked.is_boundary):
+                            remaining.remove(linked)
+                            queue.append(linked)
+                            component.append(linked)
+            loops.append(component)
+        return loops
+    finally:
+        bm.free()
+
+
+def _ensure_material_slot_index(mesh_obj: bpy.types.Object, material: bpy.types.Material) -> int:
+    data = getattr(mesh_obj, "data", None)
+    if data is None:
+        return 0
+    materials = getattr(data, "materials", None)
+    if materials is None:
+        return 0
+    for idx, mat in enumerate(materials):
+        if mat == material:
+            return int(idx)
+    materials.append(material)
+    return max(0, len(materials) - 1)
+
+
+def _apply_boundary_fill_seal(
+    *,
+    target_obj: bpy.types.Object,
+    ligand_anchor_world: Vector,
+    axis_y_world: Vector,
+    radius_world: float,
+    seal_depth_scale: float,
+    seal_region_scale: float,
+    seal_material: bpy.types.Material,
+) -> dict[str, Any]:
+    info: dict[str, Any] = {
+        "boundary_loops_total": 0,
+        "boundary_loops_near_ligand": 0,
+        "filled_faces": 0,
+    }
+    if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
+        return info
+    mesh_data = getattr(target_obj, "data", None)
+    if mesh_data is None:
+        return info
+
+    material_index = _ensure_material_slot_index(target_obj, seal_material)
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh_data)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        boundary_edges = [edge for edge in bm.edges if bool(edge.is_boundary)]
+        if not boundary_edges:
+            return info
+
+        remaining = set(boundary_edges)
+        components: list[list[bmesh.types.BMEdge]] = []
+        while remaining:
+            seed = remaining.pop()
+            queue = [seed]
+            component = [seed]
+            while queue:
+                edge = queue.pop()
+                for vert in edge.verts:
+                    for linked in vert.link_edges:
+                        if linked in remaining and bool(linked.is_boundary):
+                            remaining.remove(linked)
+                            queue.append(linked)
+                            component.append(linked)
+            components.append(component)
+        info["boundary_loops_total"] = len(components)
+
+        region_radius = max(0.01, float(radius_world) * max(0.1, float(seal_region_scale)))
+        selected_edges: list[bmesh.types.BMEdge] = []
+        for component in components:
+            verts = {vert for edge in component for vert in edge.verts}
+            if not verts:
+                continue
+            center_local = Vector((0.0, 0.0, 0.0))
+            for vert in verts:
+                center_local += vert.co
+            center_local /= max(1, len(verts))
+            center_world = target_obj.matrix_world @ center_local
+            if (center_world - ligand_anchor_world).length <= region_radius:
+                selected_edges.extend(component)
+                info["boundary_loops_near_ligand"] = int(info["boundary_loops_near_ligand"]) + 1
+        if not selected_edges:
+            return info
+
+        fill_res = bmesh.ops.holes_fill(bm, edges=selected_edges, sides=0)
+        new_faces = [face for face in fill_res.get("faces", []) if isinstance(face, bmesh.types.BMFace)]
+        for face in new_faces:
+            face.material_index = int(material_index)
+        info["filled_faces"] = len(new_faces)
+        if new_faces and float(seal_depth_scale) > 0:
+            extrude_res = bmesh.ops.extrude_face_region(bm, geom=new_faces)
+            extruded_faces = [elem for elem in extrude_res.get("geom", []) if isinstance(elem, bmesh.types.BMFace)]
+            extruded_verts = [elem for elem in extrude_res.get("geom", []) if isinstance(elem, bmesh.types.BMVert)]
+            axis_local = target_obj.matrix_world.inverted().to_3x3() @ axis_y_world
+            if axis_local.length > 1e-8:
+                axis_local.normalize()
+                seal_depth = max(0.0005, float(radius_world) * float(seal_depth_scale))
+                bmesh.ops.translate(bm, verts=extruded_verts, vec=(-axis_local * seal_depth))
+            for face in extruded_faces:
+                face.material_index = int(material_index)
+
+        bm.normal_update()
+        bm.to_mesh(mesh_data)
+        mesh_data.update()
+        return info
+    finally:
+        bm.free()
+
+
+def _ensure_cutout_cap_material(
+    *,
+    cap_material: bpy.types.Material | None = None,
+    cap_material_cfg: dict[str, Any] | None = None,
+) -> bpy.types.Material:
+    if cap_material is not None:
+        return cap_material
+    cfg_dict = cap_material_cfg if isinstance(cap_material_cfg, dict) else {}
+    base_hex = str(cfg_dict.get("base_color", "#AAB6C2"))
+    roughness = float(cfg_dict.get("roughness", 0.62))
+    specular = float(cfg_dict.get("specular", 0.11))
+    name = f"BridgeCutoutCap_{base_hex.replace('#', '').upper()}"
+    existing = bpy.data.materials.get(name)
+    if existing is not None:
+        return existing
+    material = bpy.data.materials.new(name)
+    material.use_nodes = True
+    nt = material.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    out.location = (280, 0)
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.location = (40, 0)
+    _set_bsdf_input(bsdf, ("Base Color",), _hex_to_rgba(base_hex, alpha=1.0))
+    _set_bsdf_input(bsdf, ("Roughness",), roughness)
+    _set_bsdf_input(bsdf, ("Specular IOR Level", "Specular"), specular)
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    if hasattr(material, "blend_method"):
+        material.blend_method = "OPAQUE"
+    if hasattr(material, "shadow_method"):
+        material.shadow_method = "OPAQUE"
+    return material
+
+
+def _add_trimmed_cut_panel(
+    *,
+    target_obj: bpy.types.Object,
+    center: Vector,
+    axis_y: Vector,
+    half_width: float,
+    half_height: float,
+    half_depth: float,
+    cap_material: bpy.types.Material | None = None,
+    cap_material_cfg: dict[str, Any] | None = None,
+) -> bool:
+    try:
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=center)
+    except Exception:
+        return False
+    panel = bpy.context.active_object
+    if panel is None or str(getattr(panel, "type", "")).upper() != "MESH":
+        return False
+    panel.name = f"BridgeCutoutCap_{uuid.uuid4().hex[:8]}"
+    try:
+        panel.scale = (
+            max(0.006, float(half_width) * 1.06),
+            max(0.0015, min(float(half_depth) * 0.035, 0.012)),
+            max(0.006, float(half_height) * 1.06),
+        )
+    except Exception:
+        pass
+    if axis_y.length > 1e-8:
+        try:
+            panel.rotation_euler = axis_y.normalized().to_track_quat("Y", "Z").to_euler()
+        except Exception:
+            pass
+    try:
+        mat = _ensure_cutout_cap_material(cap_material=cap_material, cap_material_cfg=cap_material_cfg)
+        data = getattr(panel, "data", None)
+        materials = getattr(data, "materials", None) if data is not None else None
+        if materials is not None:
+            materials.clear()
+            materials.append(mat)
+    except Exception:
+        pass
+    try:
+        trim_modifier = panel.modifiers.new(
+            name=f"BridgeCutoutCapTrim_{uuid.uuid4().hex[:6]}",
+            type="BOOLEAN",
+        )
+        trim_modifier.operation = "INTERSECT"
+        trim_modifier.object = target_obj
+        if hasattr(trim_modifier, "solver"):
+            trim_modifier.solver = "EXACT"
+        if hasattr(trim_modifier, "use_hole_tolerant"):
+            try:
+                trim_modifier.use_hole_tolerant = True
+            except Exception:
+                pass
+        try:
+            bpy.ops.object.select_all(action="DESELECT")
+        except Exception:
+            pass
+        try:
+            panel.select_set(True)
+            bpy.context.view_layer.objects.active = panel
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception:
+            pass
+        try:
+            bpy.ops.object.modifier_apply(modifier=str(trim_modifier.name))
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return True
+
 def _selection_indices_with_ligand_box_cutout(
     *,
     load_result: Any,
@@ -3467,7 +3998,7 @@ def _selection_indices_with_ligand_box_cutout(
     return selected
 
 
-def _apply_surface_ligand_cutout(
+def _apply_surface_ligand_cutout_box_legacy(
     *,
     load_result: Any,
     target_obj: bpy.types.Object | None,
@@ -3489,7 +4020,31 @@ def _apply_surface_ligand_cutout(
     flatten_z: bool = True,
     one_sided_shift_scale: float = 1.0,
     cap_mode: str = "panel",
+    runtime_info: dict[str, Any] | None = None,
 ) -> bool:
+    if runtime_info is not None:
+        runtime_info.update(
+            {
+                "ligand_cutout_mode": "box_legacy",
+                "ligand_cutout_frame_mode": "camera" if bool(prefer_camera) else "interface",
+                "ligand_cutout_frame_axes": None,
+                "ligand_cutout_planes_enabled": dict(DEFAULT_PLANE_ENABLED),
+                "ligand_cutout_plane_scales": {
+                    "left": float(width_scale),
+                    "right": float(width_scale),
+                    "top": float(height_scale),
+                    "bottom": float(height_scale),
+                    "back": float(depth_scale),
+                },
+                "ligand_cutout_seal_mode": "trimmed_panel" if str(cap_mode or "panel").strip().lower() != "none" else "none",
+                "ligand_cutout_seal_depth_scale": None,
+                "ligand_cutout_seal_region_scale": None,
+                "ligand_cutout_boundary_loops_total": 0,
+                "ligand_cutout_boundary_loops_near_ligand": 0,
+                "ligand_cutout_boundary_filled_faces": 0,
+                "applied": False,
+            }
+        )
     if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
         return False
     if float(radius) <= 1e-6:
@@ -3522,33 +4077,6 @@ def _apply_surface_ligand_cutout(
     if box is None:
         return False
     cut_center, _, axis_y, _, cut_half_width, cut_half_depth, cut_half_height = box
-
-    def _ensure_cutout_cap_material(cfg: dict[str, Any] | None = None) -> bpy.types.Material:
-        cfg_dict = cfg if isinstance(cfg, dict) else {}
-        base_hex = str(cfg_dict.get("base_color", "#AAB6C2"))
-        roughness = float(cfg_dict.get("roughness", 0.62))
-        specular = float(cfg_dict.get("specular", 0.11))
-        name = f"BridgeCutoutCap_{base_hex.replace('#', '').upper()}"
-        existing = bpy.data.materials.get(name)
-        if existing is not None:
-            return existing
-        material = bpy.data.materials.new(name)
-        material.use_nodes = True
-        nt = material.node_tree
-        nt.nodes.clear()
-        out = nt.nodes.new("ShaderNodeOutputMaterial")
-        out.location = (280, 0)
-        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
-        bsdf.location = (40, 0)
-        _set_bsdf_input(bsdf, ("Base Color",), _hex_to_rgba(base_hex, alpha=1.0))
-        _set_bsdf_input(bsdf, ("Roughness",), roughness)
-        _set_bsdf_input(bsdf, ("Specular IOR Level", "Specular"), specular)
-        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
-        if hasattr(material, "blend_method"):
-            material.blend_method = "OPAQUE"
-        if hasattr(material, "shadow_method"):
-            material.shadow_method = "OPAQUE"
-        return material
 
     def _add_box_cut(center: Vector, half_depth: float) -> bool:
         try:
@@ -3641,7 +4169,7 @@ def _apply_surface_ligand_cutout(
         try:
             mat = cap_material
             if mat is None:
-                mat = _ensure_cutout_cap_material(cap_material_cfg)
+                mat = _ensure_cutout_cap_material(cap_material_cfg=cap_material_cfg)
             data = getattr(panel, "data", None)
             materials = getattr(data, "materials", None) if data is not None else None
             if materials is not None:
@@ -3720,7 +4248,284 @@ def _apply_surface_ligand_cutout(
         )
         _add_box_cut(mirrored, clip_half_depth)
 
+    if runtime_info is not None:
+        frame_axes = _orthonormal_frame_from_axis_y(axis_y)
+        runtime_info["applied"] = True
+        if frame_axes is not None:
+            runtime_info["ligand_cutout_frame_axes"] = {
+                "x": _vector_to_triplet(frame_axes[0]),
+                "y": _vector_to_triplet(frame_axes[1]),
+                "z": _vector_to_triplet(frame_axes[2]),
+            }
     return True
+
+
+def _apply_surface_ligand_cutout_planes(
+    *,
+    load_result: Any,
+    target_obj: bpy.types.Object | None,
+    cap_material: bpy.types.Material | None = None,
+    cap_material_cfg: dict[str, Any] | None = None,
+    anchor_load_result: Any | None = None,
+    anchor_object: bpy.types.Object | None = None,
+    ligand_anchor: Vector,
+    radius: float,
+    offset: float,
+    mirror: bool,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+    width_scale: float = 1.15,
+    depth_scale: float = 0.45,
+    height_scale: float = 1.15,
+    flatten_z: bool = True,
+    frame_mode: str = "preset",
+    frame_axes_cfg: dict[str, Any] | None = None,
+    planes_enabled_cfg: dict[str, Any] | None = None,
+    plane_scales_cfg: dict[str, Any] | None = None,
+    seal_mode: str = "boundary_fill",
+    seal_depth_scale: float = 0.3,
+    seal_region_scale: float = 2.0,
+    runtime_info: dict[str, Any] | None = None,
+) -> bool:
+    if runtime_info is not None:
+        runtime_info.update(
+            {
+                "ligand_cutout_mode": "planes",
+                "ligand_cutout_frame_mode": None,
+                "ligand_cutout_frame_axes": None,
+                "ligand_cutout_planes_enabled": {},
+                "ligand_cutout_plane_scales": {},
+                "ligand_cutout_seal_mode": str(seal_mode or "boundary_fill").strip().lower(),
+                "ligand_cutout_seal_depth_scale": float(seal_depth_scale),
+                "ligand_cutout_seal_region_scale": float(seal_region_scale),
+                "ligand_cutout_boundary_loops_total": 0,
+                "ligand_cutout_boundary_loops_near_ligand": 0,
+                "ligand_cutout_boundary_filled_faces": 0,
+                "applied": False,
+            }
+        )
+    if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
+        return False
+    if float(radius) <= 1e-6:
+        return False
+
+    anchor_result = anchor_load_result if anchor_load_result is not None else load_result
+    anchor_target = anchor_object if anchor_object is not None else target_obj
+    ligand_anchor_world = _map_atom_point_to_object_bounds(
+        anchor_result,
+        anchor_target,
+        ligand_anchor,
+    )
+    scale = _estimate_atom_to_object_scale(anchor_result, anchor_target)
+    radius_world = max(0.02, float(radius) * max(scale, 1e-6))
+    offset_world = float(offset) * max(scale, 1e-6)
+
+    frame_mode_norm = str(frame_mode or "preset").strip().lower()
+    strict_preset = frame_mode_norm == "preset"
+    axis_x, axis_y, axis_z, resolved_frame_mode = _resolve_cutout_frame_axes(
+        frame_mode=frame_mode_norm,
+        frame_axes_cfg=frame_axes_cfg,
+        ligand_anchor=ligand_anchor_world,
+        interface_center=interface_center,
+        camera_axis=camera_axis,
+        flatten_z=flatten_z,
+        allow_preset_fallback=not strict_preset,
+    )
+    cut_center = ligand_anchor_world.copy()
+    if abs(offset_world) > 1e-6:
+        cut_center += axis_y * float(offset_world)
+
+    planes_enabled = resolve_plane_enabled(planes_enabled_cfg)
+    plane_scales = resolve_plane_scales(
+        plane_scales_cfg,
+        width_scale=float(width_scale),
+        depth_scale=float(depth_scale),
+        height_scale=float(height_scale),
+    )
+    if runtime_info is not None:
+        runtime_info["ligand_cutout_frame_mode"] = str(resolved_frame_mode)
+        runtime_info["ligand_cutout_frame_axes"] = {
+            "x": _vector_to_triplet(axis_x),
+            "y": _vector_to_triplet(axis_y),
+            "z": _vector_to_triplet(axis_z),
+        }
+        runtime_info["ligand_cutout_planes_enabled"] = {key: bool(planes_enabled.get(key, False)) for key in DEFAULT_PLANE_ENABLED}
+        runtime_info["ligand_cutout_plane_scales"] = {key: float(plane_scales.get(key, 1.0)) for key in DEFAULT_PLANE_ENABLED}
+    if not any(bool(planes_enabled.get(name, False)) for name in DEFAULT_PLANE_ENABLED):
+        return False
+
+    _, scene_radius = _scene_bounds([target_obj])
+    cut_centers = [cut_center]
+    if mirror and abs(float(offset_world)) > 1e-6:
+        cut_centers.append(
+            Vector(
+                (
+                    (ligand_anchor_world.x * 2.0) - cut_center.x,
+                    (ligand_anchor_world.y * 2.0) - cut_center.y,
+                    (ligand_anchor_world.z * 2.0) - cut_center.z,
+                )
+            )
+        )
+
+    cutters: list[bpy.types.Object] = []
+    plane_bounds: dict[str, float] = {}
+    for center in cut_centers:
+        cutter, bounds = _create_plane_cutout_prism(
+            cut_center=center,
+            axis_x=axis_x,
+            axis_y=axis_y,
+            axis_z=axis_z,
+            radius_world=radius_world,
+            scene_radius=scene_radius,
+            planes_enabled=planes_enabled,
+            plane_scales=plane_scales,
+        )
+        if cutter is not None:
+            cutters.append(cutter)
+            if not plane_bounds:
+                plane_bounds = dict(bounds)
+    if not cutters:
+        return False
+
+    merged_cutter = _join_objects_as_single_mesh(cutters)
+    if merged_cutter is None:
+        for cutter in cutters:
+            _delete_object_if_present(cutter)
+        return False
+    applied = _apply_boolean_difference_and_apply(target_obj=target_obj, cutter_obj=merged_cutter)
+    _delete_object_if_present(merged_cutter)
+    if not applied:
+        return False
+
+    seal_mode_norm = str(seal_mode or "boundary_fill").strip().lower()
+    if seal_mode_norm not in {"boundary_fill", "trimmed_panel", "none"}:
+        seal_mode_norm = "boundary_fill"
+    seal_info: dict[str, Any] = {}
+    if seal_mode_norm == "boundary_fill":
+        seal_material = _ensure_cutout_cap_material(cap_material=cap_material, cap_material_cfg=cap_material_cfg)
+        seal_info = _apply_boundary_fill_seal(
+            target_obj=target_obj,
+            ligand_anchor_world=ligand_anchor_world,
+            axis_y_world=axis_y,
+            radius_world=radius_world,
+            seal_depth_scale=max(0.01, float(seal_depth_scale)),
+            seal_region_scale=max(0.1, float(seal_region_scale)),
+            seal_material=seal_material,
+        )
+    elif seal_mode_norm == "trimmed_panel":
+        back_depth = max(0.02, float(plane_scales.get("back", 1.0)) * radius_world)
+        panel_center = cut_center - (axis_y * back_depth) if bool(planes_enabled.get("back", True)) else cut_center.copy()
+        _add_trimmed_cut_panel(
+            target_obj=target_obj,
+            center=panel_center,
+            axis_y=axis_y,
+            half_width=max(
+                max(0.02, float(plane_scales.get("left", 1.0)) * radius_world),
+                max(0.02, float(plane_scales.get("right", 1.0)) * radius_world),
+            ),
+            half_height=max(
+                max(0.02, float(plane_scales.get("top", 1.0)) * radius_world),
+                max(0.02, float(plane_scales.get("bottom", 1.0)) * radius_world),
+            ),
+            half_depth=back_depth,
+            cap_material=cap_material,
+            cap_material_cfg=cap_material_cfg,
+        )
+
+    if runtime_info is not None:
+        runtime_info["applied"] = True
+        runtime_info["ligand_cutout_seal_mode"] = seal_mode_norm
+        runtime_info["ligand_cutout_boundary_loops_total"] = int(seal_info.get("boundary_loops_total", 0))
+        runtime_info["ligand_cutout_boundary_loops_near_ligand"] = int(seal_info.get("boundary_loops_near_ligand", 0))
+        runtime_info["ligand_cutout_boundary_filled_faces"] = int(seal_info.get("filled_faces", 0))
+        if plane_bounds:
+            runtime_info["ligand_cutout_plane_bounds_local"] = plane_bounds
+    return True
+
+
+def _apply_surface_ligand_cutout(
+    *,
+    load_result: Any,
+    target_obj: bpy.types.Object | None,
+    cap_material: bpy.types.Material | None = None,
+    cap_material_cfg: dict[str, Any] | None = None,
+    anchor_load_result: Any | None = None,
+    anchor_object: bpy.types.Object | None = None,
+    ligand_anchor: Vector,
+    radius: float,
+    offset: float,
+    mirror: bool,
+    interface_center: Vector | None,
+    camera_axis: Vector | None = None,
+    width_scale: float = 1.15,
+    depth_scale: float = 0.45,
+    height_scale: float = 1.15,
+    one_sided: bool = True,
+    prefer_camera: bool = False,
+    flatten_z: bool = True,
+    one_sided_shift_scale: float = 1.0,
+    cap_mode: str = "panel",
+    cutout_mode: str = "planes",
+    frame_mode: str = "preset",
+    frame_axes_cfg: dict[str, Any] | None = None,
+    planes_enabled_cfg: dict[str, Any] | None = None,
+    plane_scales_cfg: dict[str, Any] | None = None,
+    seal_mode: str = "boundary_fill",
+    seal_depth_scale: float = 0.3,
+    seal_region_scale: float = 2.0,
+    runtime_info: dict[str, Any] | None = None,
+) -> bool:
+    mode = str(cutout_mode or "planes").strip().lower()
+    if mode == "box_legacy":
+        return _apply_surface_ligand_cutout_box_legacy(
+            load_result=load_result,
+            target_obj=target_obj,
+            cap_material=cap_material,
+            cap_material_cfg=cap_material_cfg,
+            anchor_load_result=anchor_load_result,
+            anchor_object=anchor_object,
+            ligand_anchor=ligand_anchor,
+            radius=radius,
+            offset=offset,
+            mirror=mirror,
+            interface_center=interface_center,
+            camera_axis=camera_axis,
+            width_scale=width_scale,
+            depth_scale=depth_scale,
+            height_scale=height_scale,
+            one_sided=one_sided,
+            prefer_camera=prefer_camera,
+            flatten_z=flatten_z,
+            one_sided_shift_scale=one_sided_shift_scale,
+            cap_mode=cap_mode,
+            runtime_info=runtime_info,
+        )
+    return _apply_surface_ligand_cutout_planes(
+        load_result=load_result,
+        target_obj=target_obj,
+        cap_material=cap_material,
+        cap_material_cfg=cap_material_cfg,
+        anchor_load_result=anchor_load_result,
+        anchor_object=anchor_object,
+        ligand_anchor=ligand_anchor,
+        radius=radius,
+        offset=offset,
+        mirror=mirror,
+        interface_center=interface_center,
+        camera_axis=camera_axis,
+        width_scale=width_scale,
+        depth_scale=depth_scale,
+        height_scale=height_scale,
+        flatten_z=flatten_z,
+        frame_mode=frame_mode,
+        frame_axes_cfg=frame_axes_cfg,
+        planes_enabled_cfg=planes_enabled_cfg,
+        plane_scales_cfg=plane_scales_cfg,
+        seal_mode=seal_mode,
+        seal_depth_scale=seal_depth_scale,
+        seal_region_scale=seal_region_scale,
+        runtime_info=runtime_info,
+    )
 
 
 def _apply_override_camera(
@@ -3999,6 +4804,7 @@ def _render(args: argparse.Namespace) -> None:
     runtime_ligand_backend = "none"
     runtime_ligand_atom_spheres = False
     styled_geometry_applied = False
+    surface_cutout_manifest_entries: list[dict[str, Any]] = []
     global_interface_center = _scene_bounds([base_obj] if base_obj is not None else [])[0]
     if debug_styles and base_obj is not None:
         try:
@@ -4037,6 +4843,14 @@ def _render(args: argparse.Namespace) -> None:
         cutout_prefer_camera = False
         cutout_one_sided_shift_scale = 1.0
         cutout_cap_mode = "panel"
+        cutout_mode = "planes"
+        cutout_frame_mode = "interface"
+        cutout_frame_axes_cfg: dict[str, Any] | None = None
+        cutout_planes_enabled_cfg: dict[str, Any] | None = None
+        cutout_plane_scales_cfg: dict[str, Any] | None = None
+        cutout_seal_mode = "boundary_fill"
+        cutout_seal_depth_scale = 0.35
+        cutout_seal_region_scale = 2.0
         if style_kind_lower == "surface":
             try:
                 cutout_radius = float(style_cfg.get("ligand_cutout_radius", 0.0) or 0.0)
@@ -4076,6 +4890,39 @@ def _render(args: argparse.Namespace) -> None:
             cutout_cap_mode_value = str(style_cfg.get("ligand_cutout_cap_mode", "panel")).strip().lower()
             if cutout_cap_mode_value in {"panel", "none"}:
                 cutout_cap_mode = cutout_cap_mode_value
+            cutout_mode_value = str(style_cfg.get("ligand_cutout_mode", "planes")).strip().lower()
+            if cutout_mode_value in {"planes", "box_legacy"}:
+                cutout_mode = cutout_mode_value
+            cutout_frame_axes_raw = style_cfg.get("ligand_cutout_frame_axes")
+            if isinstance(cutout_frame_axes_raw, dict):
+                cutout_frame_axes_cfg = cutout_frame_axes_raw
+            frame_mode_raw = str(style_cfg.get("ligand_cutout_frame_mode", "") or "").strip().lower()
+            if frame_mode_raw in {"preset", "interface", "camera"}:
+                cutout_frame_mode = frame_mode_raw
+            else:
+                if cutout_frame_axes_cfg is not None:
+                    cutout_frame_mode = "preset"
+                elif cutout_axis_mode in {"interface", "camera"}:
+                    # Backward-compatible mapping for old styles that only set ligand_cutout_axis_mode.
+                    cutout_frame_mode = cutout_axis_mode
+            cutout_prefer_camera = (cutout_axis_mode == "camera") or (cutout_frame_mode == "camera")
+            raw_planes_enabled = style_cfg.get("ligand_cutout_planes_enabled")
+            if isinstance(raw_planes_enabled, dict):
+                cutout_planes_enabled_cfg = raw_planes_enabled
+            raw_plane_scales = style_cfg.get("ligand_cutout_plane_scales")
+            if isinstance(raw_plane_scales, dict):
+                cutout_plane_scales_cfg = raw_plane_scales
+            cutout_seal_mode_value = str(style_cfg.get("ligand_cutout_seal_mode", "boundary_fill")).strip().lower()
+            if cutout_seal_mode_value in {"boundary_fill", "trimmed_panel", "none"}:
+                cutout_seal_mode = cutout_seal_mode_value
+            try:
+                cutout_seal_depth_scale = float(style_cfg.get("ligand_cutout_seal_depth_scale", 0.35) or 0.35)
+            except Exception:
+                cutout_seal_depth_scale = 0.35
+            try:
+                cutout_seal_region_scale = float(style_cfg.get("ligand_cutout_seal_region_scale", 2.0) or 2.0)
+            except Exception:
+                cutout_seal_region_scale = 2.0
 
         isolate_surface_cutout = (
             cutout_isolate
@@ -4132,6 +4979,28 @@ def _render(args: argparse.Namespace) -> None:
             cutout_selection = bool(style_cfg.get("ligand_cutout_selection", False))
             if cutout_selection and cutout_radius > 0 and ligand_anchor is not None:
                 cutout_center_ref = global_interface_center
+                selection_width_scale = cutout_width_scale
+                selection_depth_scale = cutout_depth_scale
+                selection_height_scale = cutout_height_scale
+                if cutout_mode != "box_legacy":
+                    try:
+                        _resolved_plane_scales = resolve_plane_scales(
+                            cutout_plane_scales_cfg,
+                            width_scale=float(cutout_width_scale),
+                            depth_scale=float(cutout_depth_scale),
+                            height_scale=float(cutout_height_scale),
+                        )
+                        selection_width_scale = max(
+                            float(_resolved_plane_scales.get("left", selection_width_scale)),
+                            float(_resolved_plane_scales.get("right", selection_width_scale)),
+                        )
+                        selection_height_scale = max(
+                            float(_resolved_plane_scales.get("top", selection_height_scale)),
+                            float(_resolved_plane_scales.get("bottom", selection_height_scale)),
+                        )
+                        selection_depth_scale = float(_resolved_plane_scales.get("back", selection_depth_scale))
+                    except Exception:
+                        pass
                 selection_indices = _selection_indices_with_ligand_box_cutout(
                     load_result=style_load_result,
                     base_indices=selection_indices,
@@ -4140,9 +5009,9 @@ def _render(args: argparse.Namespace) -> None:
                     offset=effective_cutout_offset,
                     interface_center=cutout_center_ref,
                     camera_axis=cutout_camera_axis,
-                    width_scale=cutout_width_scale,
-                    depth_scale=cutout_depth_scale,
-                    height_scale=cutout_height_scale,
+                    width_scale=selection_width_scale,
+                    depth_scale=selection_depth_scale,
+                    height_scale=selection_height_scale,
                     one_sided=cutout_one_sided,
                     prefer_camera=cutout_prefer_camera,
                     flatten_z=cutout_flatten_z,
@@ -4238,6 +5107,10 @@ def _render(args: argparse.Namespace) -> None:
                     cutout_center_ref = global_interface_center
                     cutout_applied = False
                     for cut_target in cutout_targets:
+                        cutout_runtime_info: dict[str, Any] = {
+                            "style_name": str(style_name),
+                            "target_object": str(getattr(cut_target, "name", "")),
+                        }
                         try:
                             applied = _apply_surface_ligand_cutout(
                                 load_result=style_load_result,
@@ -4259,10 +5132,23 @@ def _render(args: argparse.Namespace) -> None:
                                 flatten_z=cutout_flatten_z,
                                 one_sided_shift_scale=cutout_one_sided_shift_scale,
                                 cap_mode=cutout_cap_mode,
+                                cutout_mode=cutout_mode,
+                                frame_mode=cutout_frame_mode,
+                                frame_axes_cfg=cutout_frame_axes_cfg,
+                                planes_enabled_cfg=cutout_planes_enabled_cfg,
+                                plane_scales_cfg=cutout_plane_scales_cfg,
+                                seal_mode=cutout_seal_mode,
+                                seal_depth_scale=cutout_seal_depth_scale,
+                                seal_region_scale=cutout_seal_region_scale,
+                                runtime_info=cutout_runtime_info,
                             )
                             cutout_applied = cutout_applied or bool(applied)
-                        except Exception:
-                            continue
+                            surface_cutout_manifest_entries.append(cutout_runtime_info)
+                        except Exception as exc:
+                            raise RuntimeError(
+                                "Ligand surface cutout failed "
+                                f"style={style_name} target={getattr(cut_target, 'name', '<unknown>')}: {exc}"
+                            ) from exc
                     if debug_styles:
                         target_names = [str(getattr(obj, "name", "")) for obj in cutout_targets]
                         print(
@@ -4493,6 +5379,27 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc["cartoon_polymer_chain_ids"] = protein_chain_ids
             if runtime_chain_colors:
                 manifest_doc["polymer_chain_colors"] = runtime_chain_colors
+            if surface_cutout_manifest_entries:
+                manifest_doc["surface_ligand_cutouts"] = surface_cutout_manifest_entries
+                chosen_cutout = next(
+                    (entry for entry in surface_cutout_manifest_entries if bool(entry.get("applied", False))),
+                    surface_cutout_manifest_entries[0],
+                )
+                for key in (
+                    "ligand_cutout_mode",
+                    "ligand_cutout_frame_mode",
+                    "ligand_cutout_frame_axes",
+                    "ligand_cutout_planes_enabled",
+                    "ligand_cutout_plane_scales",
+                    "ligand_cutout_seal_mode",
+                    "ligand_cutout_seal_depth_scale",
+                    "ligand_cutout_seal_region_scale",
+                    "ligand_cutout_boundary_loops_total",
+                    "ligand_cutout_boundary_loops_near_ligand",
+                    "ligand_cutout_boundary_filled_faces",
+                ):
+                    if key in chosen_cutout:
+                        manifest_doc[key] = chosen_cutout.get(key)
             run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
             run_manifest_path.write_text(json.dumps(manifest_doc, indent=2), encoding="utf-8")
         except Exception as exc:
