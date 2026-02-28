@@ -3149,12 +3149,17 @@ def _ligand_cutout_axis(
         except Exception:
             camera_norm = None
 
-    # Prefer camera-forward for stable rectangular cutout walls in the final frame.
-    # Fallback to ligand->interface direction when camera axis is unavailable.
-    if camera_norm is not None:
-        axis = camera_norm
-    elif ligand_axis is not None:
+    # Prefer interface-driven axis so cut direction tracks pocket geometry.
+    # Camera-forward fallback can flip to an exterior-facing carve.
+    if ligand_axis is not None:
         axis = ligand_axis
+    elif camera_norm is not None:
+        axis = camera_norm
+
+    # Keep cut direction mostly in the horizontal plane to avoid front/back punches.
+    flat_axis = Vector((axis.x, axis.y, 0.0))
+    if flat_axis.length > 1e-8:
+        axis = flat_axis.normalized()
     return axis
 
 
@@ -3351,17 +3356,14 @@ def _ligand_cutout_box_params(
         return None
     axis_z.normalize()
 
-    # Rectangular clip window around ligand; y-axis is cut depth.
-    # Keep the footprint compact and avoid punching through the far side.
-    cut_half_width = max(0.01, float(radius) * 0.90)
-    cut_half_depth = max(0.01, float(radius) * 0.95)
-    cut_half_height = max(0.01, float(radius) * 0.70)
+    # Rectangular clip window around ligand; y-axis is the clip-depth direction.
+    # Use a broader footprint so the cavity reads as an intentional cutaway.
+    cut_half_width = max(0.01, float(radius) * 1.15)
+    cut_half_depth = max(0.01, float(radius) * 0.45)
+    cut_half_height = max(0.01, float(radius) * 1.15)
     cut_center = ligand_anchor.copy()
     if abs(float(offset)) > 1e-6:
         cut_center += axis_y * float(offset)
-    # Bias the cutter downward so top surface stays mostly intact while the
-    # side walls and floor are sharply clipped.
-    cut_center -= axis_z * (cut_half_height * 0.55)
 
     return (cut_center, axis_x, axis_y, axis_z, cut_half_width, cut_half_depth, cut_half_height)
 
@@ -3617,17 +3619,13 @@ def _apply_surface_ligand_cutout(
             f"scale={scale:.6f} radius_world={radius_world:.3f} offset_world={offset_world:.3f}"
         )
 
-    # Directional clip: keep a modest forward push so walls stay planar without
-    # drifting far away from the ligand center.
+    # Keep clip centered on the configured offset; extra directional push tends
+    # to punch through the wrong/exterior side on asymmetric interfaces.
     clip_center = cut_center.copy()
     clip_half_depth = cut_half_depth
     side_sign = 1.0
     if abs(offset_world) > 1e-6:
         side_sign = 1.0 if offset_world >= 0.0 else -1.0
-        clip_half_depth = max(cut_half_depth * 1.05, radius_world * 1.00)
-        clip_center = ligand_anchor_world + (
-            axis_y * (float(offset_world) + (side_sign * clip_half_depth * 0.45))
-        )
     applied_primary = _add_box_cut(clip_center, clip_half_depth)
     if not applied_primary:
         return False
@@ -3996,7 +3994,7 @@ def _render(args: argparse.Namespace) -> None:
             and cutout_radius > 0
             and ligand_anchor is not None
             and abs(cutout_offset) > 1e-6
-            and bool(style_cfg.get("ligand_cutout_auto_side", False))
+            and bool(style_cfg.get("ligand_cutout_auto_side", True))
         ):
             style_center_for_cutout = _indices_centroid_vector(style_load_result, selection_indices)
             cutout_axis_ref = _ligand_cutout_axis(
