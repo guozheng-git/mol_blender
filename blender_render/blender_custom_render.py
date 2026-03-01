@@ -3631,19 +3631,18 @@ def _join_objects_as_single_mesh(objects: list[bpy.types.Object]) -> bpy.types.O
     return merged
 
 
-def _apply_boolean_difference_and_apply(
+def _add_boolean_difference_modifier(
     *,
     target_obj: bpy.types.Object,
     cutter_obj: bpy.types.Object,
-) -> bool:
+) -> bpy.types.Modifier | None:
     if target_obj is None or cutter_obj is None:
-        return False
+        return None
     if str(getattr(target_obj, "type", "")).upper() != "MESH":
-        return False
+        return None
     if str(getattr(cutter_obj, "type", "")).upper() != "MESH":
-        return False
+        return None
 
-    modifier = None
     try:
         modifier = target_obj.modifiers.new(name=f"BridgePlaneCut_{uuid.uuid4().hex[:6]}", type="BOOLEAN")
         modifier.operation = "DIFFERENCE"
@@ -3656,6 +3655,17 @@ def _apply_boolean_difference_and_apply(
             except Exception:
                 pass
     except Exception:
+        return None
+    return modifier
+
+
+def _apply_boolean_difference_and_apply(
+    *,
+    target_obj: bpy.types.Object,
+    cutter_obj: bpy.types.Object,
+) -> bool:
+    modifier = _add_boolean_difference_modifier(target_obj=target_obj, cutter_obj=cutter_obj)
+    if modifier is None:
         return False
 
     try:
@@ -4392,14 +4402,28 @@ def _apply_surface_ligand_cutout_planes(
         for cutter in cutters:
             _delete_object_if_present(cutter)
         return False
-    applied = _apply_boolean_difference_and_apply(target_obj=target_obj, cutter_obj=merged_cutter)
-    _delete_object_if_present(merged_cutter)
+    has_geometry_nodes = False
+    try:
+        has_geometry_nodes = any(str(getattr(mod, "type", "")).upper() == "NODES" for mod in list(target_obj.modifiers))
+    except Exception:
+        has_geometry_nodes = False
+    if has_geometry_nodes:
+        modifier = _add_boolean_difference_modifier(target_obj=target_obj, cutter_obj=merged_cutter)
+        applied = modifier is not None
+    else:
+        applied = _apply_boolean_difference_and_apply(target_obj=target_obj, cutter_obj=merged_cutter)
+        _delete_object_if_present(merged_cutter)
     if not applied:
+        _delete_object_if_present(merged_cutter)
         return False
 
     seal_mode_norm = str(seal_mode or "boundary_fill").strip().lower()
     if seal_mode_norm not in {"boundary_fill", "trimmed_panel", "none"}:
         seal_mode_norm = "boundary_fill"
+    if has_geometry_nodes and seal_mode_norm == "boundary_fill":
+        # Applying boundary-fill requires baking the procedural surface mesh, which
+        # collapses Geometry Nodes styles. Keep procedural cut non-destructive.
+        seal_mode_norm = "none"
     seal_info: dict[str, Any] = {}
     if seal_mode_norm == "boundary_fill":
         seal_material = _ensure_cutout_cap_material(cap_material=cap_material, cap_material_cfg=cap_material_cfg)
