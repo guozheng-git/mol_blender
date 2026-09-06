@@ -1,0 +1,432 @@
+{
+  "2TRX": {
+    "size": [
+      1024,
+      768
+    ],
+    "comparisons": [
+      {
+        "backends": [
+          "mac",
+          "hpc"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0799,
+        "camera_equal": false,
+        "camera_max_abs_difference": 2.9802322387695312e-08,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "mac",
+          "modal"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0799,
+        "camera_equal": false,
+        "camera_max_abs_difference": 2.9802322387695312e-08,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "hpc",
+          "modal"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0001,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      }
+    ],
+    "runs": {
+      "mac": {
+        "sha256": "f992d06c9f7ac915b4ba1786afea102b634c90fae0a307e554007a7157902b41",
+        "seconds": 14.976,
+        "device": null,
+        "runtime": null,
+        "dss_ran": true,
+        "transparent_pixels": 678387,
+        "rounded_objects": 1
+      },
+      "hpc": {
+        "sha256": "8034c5155ad1362fc8d874beb895c1244da28750145f2ac1b058cb3daed9c6c0",
+        "seconds": 19.104,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA RTX A4000",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 678387,
+        "rounded_objects": 1
+      },
+      "modal": {
+        "sha256": "5289650829a1e639814bf589c3de9fdb1fceefdcc0f1d472dec41ac00035d1a5",
+        "seconds": 16.911,
+        "device": null,
+        "runtime": null,
+        "dss_ran": true,
+        "transparent_pixels": 678387,
+        "rounded_objects": 1
+      }
+    }
+  },
+  "1BNA": {
+    "size": [
+      1024,
+      768
+    ],
+    "comparisons": [
+      {
+        "backends": [
+          "mac",
+          "hpc"
+        ],
+        "alpha_iou": 0.99999211,
+        "mean_rgb_difference_255": 0.0494,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "mac",
+          "modal"
+        ],
+        "alpha_iou": 0.99999211,
+        "mean_rgb_difference_255": 0.0494,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "hpc",
+          "modal"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      }
+    ],
+    "runs": {
+      "mac": {
+        "sha256": "6e033a2515cd7623ddfc05ac2d46bf9ed69ef0b6cb5402d1d1ede577564e5153",
+        "seconds": 6.643,
+        "device": {
+          "device": "GPU",
+          "compute_type": "METAL",
+          "devices": [
+            {
+              "name": "Apple M4 (GPU - 10 cores)",
+              "type": "METAL"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 654919,
+        "rounded_objects": 1
+      },
+      "hpc": {
+        "sha256": "d64a49137086bd9d3445bce874129a95d14619c9b7d95504899105c0ef94c300",
+        "seconds": 11.526,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA RTX A4000",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 654919,
+        "rounded_objects": 1
+      },
+      "modal": {
+        "sha256": "076279a42cbe5ac9acc3ef004e1faf325cd7a6a4ce26c7062ef2f8793c54a3f5",
+        "seconds": 13.849,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA L4",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 654919,
+        "rounded_objects": 1
+      }
+    }
+  },
+  "1EHZ": {
+    "size": [
+      1024,
+      768
+    ],
+    "comparisons": [
+      {
+        "backends": [
+          "mac",
+          "hpc"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0651,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "mac",
+          "modal"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0835,
+        "camera_equal": false,
+        "camera_max_abs_difference": 1.1920928955078125e-07,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "hpc",
+          "modal"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0812,
+        "camera_equal": false,
+        "camera_max_abs_difference": 1.1920928955078125e-07,
+        "camera_matches_float32_tolerance": true
+      }
+    ],
+    "runs": {
+      "mac": {
+        "sha256": "b5380c2762bce525f33a3319aa42205043bce4211d358905a071977af52f3065",
+        "seconds": 10.246,
+        "device": {
+          "device": "GPU",
+          "compute_type": "METAL",
+          "devices": [
+            {
+              "name": "Apple M4 (GPU - 10 cores)",
+              "type": "METAL"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 657907,
+        "rounded_objects": 1
+      },
+      "hpc": {
+        "sha256": "baa8910e844a70221ca5958f965d54e85ba584d529310fff7ac2aeb36f6a2f26",
+        "seconds": 10.385,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA RTX A4000",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 657909,
+        "rounded_objects": 1
+      },
+      "modal": {
+        "sha256": "185de07640d8a8a02dcd16f1ed41d16ef84800d8d661d0bc2c3e249ece8da05e",
+        "seconds": 11.605,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA L4",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 657908,
+        "rounded_objects": 1
+      }
+    }
+  },
+  "1SPS": {
+    "size": [
+      1024,
+      768
+    ],
+    "comparisons": [
+      {
+        "backends": [
+          "mac",
+          "hpc"
+        ],
+        "alpha_iou": 1.0,
+        "mean_rgb_difference_255": 0.0748,
+        "camera_equal": false,
+        "camera_max_abs_difference": 5.960464477539063e-08,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "mac",
+          "modal"
+        ],
+        "alpha_iou": 0.99998832,
+        "mean_rgb_difference_255": 0.0632,
+        "camera_equal": true,
+        "camera_max_abs_difference": 0.0,
+        "camera_matches_float32_tolerance": true
+      },
+      {
+        "backends": [
+          "hpc",
+          "modal"
+        ],
+        "alpha_iou": 0.99998832,
+        "mean_rgb_difference_255": 0.0787,
+        "camera_equal": false,
+        "camera_max_abs_difference": 5.960464477539063e-08,
+        "camera_matches_float32_tolerance": true
+      }
+    ],
+    "runs": {
+      "mac": {
+        "sha256": "838c8025fe7516b12f92307a3a44f7e07279d6a1f7e2b5711c64c0bed41296a8",
+        "seconds": 4.522,
+        "device": {
+          "device": "GPU",
+          "compute_type": "METAL",
+          "devices": [
+            {
+              "name": "Apple M4 (GPU - 10 cores)",
+              "type": "METAL"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 692921,
+        "rounded_objects": 1
+      },
+      "hpc": {
+        "sha256": "b8fab2f3d75b604407d351093fa8fb54a28541d5d6acd5ffce450d926aa5cd81",
+        "seconds": 12.413,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA RTX A4000",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 692923,
+        "rounded_objects": 1
+      },
+      "modal": {
+        "sha256": "c6ea3e4c4b6ac62fa002029fe5a986aa9b0bbf6a5e93a170ef7d61e62d4be064",
+        "seconds": 14.538,
+        "device": {
+          "device": "GPU",
+          "compute_type": "CUDA",
+          "devices": [
+            {
+              "name": "NVIDIA L4",
+              "type": "CUDA"
+            }
+          ]
+        },
+        "runtime": {
+          "blender": "5.0.1",
+          "molecularnodes": "4.5.10",
+          "python": "3.11.13",
+          "numpy": "1.26.4",
+          "biotite": "1.6.0"
+        },
+        "dss_ran": true,
+        "transparent_pixels": 692922,
+        "rounded_objects": 1
+      }
+    }
+  }
+}

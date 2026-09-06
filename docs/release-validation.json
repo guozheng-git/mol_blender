@@ -1,0 +1,75 @@
+{
+  "version": "0.2.0b1",
+  "date": "2026-09-06",
+  "distribution": "private",
+  "public_admission": false,
+  "publisher_verification": "deferred_by_owner",
+  "portal_submission": "deferred_by_owner",
+  "checks": {
+    "installed_wheel": {
+      "status": "passed",
+      "evidence": "Final wheel installed with declared extras outside the checkout; 15 copied contract tests, packaged assets, runtime diagnostics and actual no-argument PyMOL render passed."
+    },
+    "clean_mac_runtime": {
+      "status": "passed"
+    },
+    "pymol_export": {
+      "status": "passed"
+    },
+    "visual_mac": {
+      "status": "passed"
+    },
+    "visual_hpc": {
+      "status": "passed"
+    },
+    "visual_modal": {
+      "status": "passed"
+    },
+    "hpc_fifo_restart": {
+      "status": "passed"
+    },
+    "job_reliability": {
+      "status": "passed"
+    },
+    "public_security": {
+      "status": "passed",
+      "evidence": "Ownership, unsafe inputs, expiry and budget tests; live GitHub OAuth, sandbox isolation, raw file imports, and daily quota refusal."
+    },
+    "sandbox_isolation": {
+      "status": "passed"
+    },
+    "budget_exhaustion": {
+      "status": "passed"
+    },
+    "automatic_shutdown": {
+      "status": "passed"
+    },
+    "github_oauth": {
+      "status": "passed"
+    },
+    "codex_plugin": {
+      "status": "passed",
+      "evidence": "Actual Codex tools rendered and downloaded a result; local-file adapter imported PSE and retrieved an existing render without new GPU dispatch."
+    },
+    "chatgpt_plugin": {
+      "status": "partial",
+      "evidence": "OAuth, discovered tools, declared file object with public URL, live render, native preview, and downloaded Blender scene passed. Browser attachment picker remains unverified because extension upload permission was refused."
+    },
+    "blend_download": {
+      "status": "passed"
+    },
+    "container": {
+      "status": "passed",
+      "evidence": "Pinned SIF built and Blender/Molecular Nodes/CCD smoke test passed on IPD. OCI registry publication was not performed."
+    },
+    "licenses": {
+      "status": "passed",
+      "evidence": "MIT/GPL separation, retained notices, 155 Python/Blender source packages and 162 matching Debian source packages collected with checksums."
+    },
+    "history_audit": {
+      "status": "blocked",
+      "evidence": "Deleted research files remain in private Git history. Owner chose to keep the release private; no visibility change is authorized."
+    }
+  },
+  "report": "release-validation.md"
+}
