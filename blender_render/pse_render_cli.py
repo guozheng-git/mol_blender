@@ -1,221 +1,30 @@
-#!/usr/bin/env python3
-"""Render directly from a PyMOL .pse file via command line."""
-
+"""Compatibility adapter for the previous --pse command-line interface."""
 from __future__ import annotations
-
 import argparse
-import json
-import subprocess
-import sys
-from pathlib import Path
-from typing import Any
+from .cli import main
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from blender_render.pymol_bridge_plugin import (
-    DEFAULT_BLENDER_EXE,
-    SUPPORTED_PRESETS,
-    _parse_bool,
-    _run_runner,
-    _runner_path,
-    _write_payload,
-    _default_output_png_path,
-    _load_style_doc,
-    build_render_payload,
-)
-from blender_render.remote_client import RemoteRenderError, submit_render, write_png_response
-
-
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="pse_render_cli",
-        description="Render a .pse session using the Blender bridge without interactive PyMOL UI.",
-    )
-    parser.add_argument("--pse", required=True, help="Path to .pse file")
+def run(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pse", required=True)
+    parser.add_argument("--output-dir", default=".")
+    parser.add_argument("--output-name", default="render.png")
+    parser.add_argument("--mode", default="local")
+    parser.add_argument("--preset", default="preset_1_interface")
+    parser.add_argument("--style-json")
+    parser.add_argument("--rough", default="0")
+    parser.add_argument("--save-blend", default="0")
+    parser.add_argument("--color-follow", default="0")
     parser.add_argument("--selection", default="(all)")
-    parser.add_argument("--state", type=int, default=-1)
-    parser.add_argument("--mode", default="local", choices=["local", "remote", "interactive", "slurm"])
-    parser.add_argument("--preset", default="preset_1_interface", choices=sorted(SUPPORTED_PRESETS))
-    parser.add_argument("--style-json", default="")
-    parser.add_argument("--rough", type=_parse_bool, default=False)
-    parser.add_argument("--raw-view", type=_parse_bool, default=False)
-    parser.add_argument("--color-follow", type=_parse_bool, default=False)
-    parser.add_argument("--save-blend", type=_parse_bool, default=False)
-    parser.add_argument("--blend-output", default="")
-    parser.add_argument("--keep-temp", type=_parse_bool, default=False)
-    parser.add_argument("--output-dir", default="")
-    parser.add_argument("--output-name", default="")
-    parser.add_argument("--blender-exe", default=DEFAULT_BLENDER_EXE)
-    parser.add_argument("--use-apptainer", type=_parse_bool, default=False)
-    parser.add_argument("--apptainer-image", default="")
-    parser.add_argument("--interactive-session", default="")
-    parser.add_argument("--slurm-partition", default="")
-    parser.add_argument("--slurm-account", default="")
-    parser.add_argument("--slurm-gres", default="gpu:1")
-    parser.add_argument("--slurm-time", default="00:30:00")
-    parser.add_argument("--poll", type=_parse_bool, default=True)
-    parser.add_argument("--poll-interval", type=int, default=5)
-    parser.add_argument("--server-host", default="")
-    parser.add_argument("--server-port", type=int, default=8765)
-    parser.add_argument("--server-timeout", type=float, default=1800.0)
-    return parser.parse_args(argv)
-
-
-def _load_payload_from_pse(
-    *,
-    pse_path: Path,
-    selection: str,
-    state: int,
-    include_color_hints: bool,
-) -> dict[str, Any]:
-    try:
-        import pymol2  # type: ignore
-    except Exception as exc:
-        raise RuntimeError(
-            "pymol2 is unavailable in this Python interpreter. "
-            "Run with PyMOL's Python, for example /opt/pymol/bin/python."
-        ) from exc
-
-    with pymol2.PyMOL() as pymol_app:
-        pymol_app.start()
-        cmd = pymol_app.cmd
-        cmd.load(str(pse_path))
-        return build_render_payload(
-            cmd,
-            selection=selection,
-            state=state,
-            include_color_hints=include_color_hints,
-        )
-
-
-def run(argv: list[str] | None = None) -> dict[str, Any]:
-    args = _parse_args(argv)
-    pse_path = Path(args.pse).expanduser().resolve()
-    if not pse_path.is_file():
-        raise RuntimeError(f"PSE file not found: {pse_path}")
-
+    args = parser.parse_args(argv)
+    from pathlib import Path
+    from .export import _parse_bool
+    command = ["render", args.pse, "--pymol-python", __import__("sys").executable, "--profile", args.mode, "--preset", args.preset, "--selection", args.selection, "-o", str(Path(args.output_dir) / args.output_name)]
+    for name in ("rough", "save_blend", "color_follow"):
+        if _parse_bool(getattr(args, name)):
+            command.append("--" + name.replace("_", "-"))
     if args.style_json:
-        style_path = Path(args.style_json).expanduser().resolve()
-        if not style_path.is_file():
-            raise RuntimeError(f"style-json file not found: {style_path}")
-    else:
-        style_path = None
-
-    payload = _load_payload_from_pse(
-        pse_path=pse_path,
-        selection=args.selection,
-        state=int(args.state),
-        include_color_hints=bool(args.color_follow),
-    )
-    if args.mode == "remote" or str(args.server_host or "").strip():
-        style_doc: dict[str, Any] | None = None
-        if style_path is not None:
-            style_doc = _load_style_doc(style_path)
-        host = str(args.server_host or "").strip() or "127.0.0.1"
-        port = int(args.server_port or 8765)
-        try:
-            remote_result = submit_render(
-                host=host,
-                port=port,
-                payload=payload,
-                preset="" if style_doc is not None else str(args.preset),
-                style_doc=style_doc,
-                rough=bool(args.rough),
-                raw_view=bool(args.raw_view),
-                color_follow=bool(args.color_follow),
-                save_blend=bool(args.save_blend),
-                blend_output=str(args.blend_output or ""),
-                keep_temp=bool(args.keep_temp),
-                output_name=str(args.output_name or ""),
-                timeout=float(args.server_timeout or 1800.0),
-            )
-        except RemoteRenderError as exc:
-            raise RuntimeError(str(exc)) from exc
-
-        output_path = _default_output_png_path(
-            output_dir=str(args.output_dir or ""),
-            output_name=str(args.output_name or ""),
-            preset=str(args.preset),
-            suggested_name=str(remote_result.get("output_name", "")),
-        )
-        write_png_response(response_doc=remote_result, output_png=output_path)
-        result = dict(remote_result)
-        result["mode"] = "remote"
-        result["output_png"] = str(output_path)
-        result["output_dir"] = str(output_path.parent)
-        return result
-
-    payload_path = _write_payload(payload)
-
-    runner_subcommand = "interactive-submit" if args.mode == "interactive" else args.mode
-    command = [
-        sys.executable,
-        str(_runner_path()),
-        runner_subcommand,
-        "--payload-json",
-        str(payload_path),
-        "--blender-exe",
-        str(args.blender_exe),
-        "--rough",
-        "1" if bool(args.rough) else "0",
-        "--raw-view",
-        "1" if bool(args.raw_view) else "0",
-        "--color-follow",
-        "1" if bool(args.color_follow) else "0",
-        "--save-blend",
-        "1" if bool(args.save_blend) else "0",
-        "--keep-temp",
-        "1" if bool(args.keep_temp) else "0",
-    ]
-    if args.blend_output:
-        command.extend(["--blend-output", str(Path(args.blend_output).expanduser())])
-
-    if style_path is not None:
-        command.extend(["--style-json", str(style_path)])
-    else:
-        command.extend(["--preset", str(args.preset)])
-
-    if args.output_dir:
-        command.extend(["--output-dir", str(Path(args.output_dir).expanduser())])
-    if args.output_name:
-        command.extend(["--output-name", str(args.output_name)])
-    if bool(args.use_apptainer):
-        command.extend(["--use-apptainer", "1"])
-        if args.apptainer_image:
-            command.extend(["--apptainer-image", str(Path(args.apptainer_image).expanduser())])
-
-    if args.mode == "interactive":
-        session_id = str(args.interactive_session).strip()
-        if not session_id:
-            raise RuntimeError("--interactive-session is required when --mode interactive.")
-        command.extend(["--session-id", session_id])
-        command.extend(["--poll", "1" if bool(args.poll) else "0"])
-        command.extend(["--poll-interval", str(max(1, int(args.poll_interval)))])
-
-    if args.mode == "slurm":
-        command.extend(["--poll", "1" if bool(args.poll) else "0"])
-        command.extend(["--poll-interval", str(max(1, int(args.poll_interval)))])
-        command.extend(["--slurm-gres", str(args.slurm_gres)])
-        command.extend(["--slurm-time", str(args.slurm_time)])
-        if args.slurm_partition:
-            command.extend(["--slurm-partition", str(args.slurm_partition)])
-        if args.slurm_account:
-            command.extend(["--slurm-account", str(args.slurm_account)])
-
-    return _run_runner(command)
-
-
-def main(argv: list[str] | None = None) -> int:
-    try:
-        result = run(argv)
-    except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
+        command += ["--style-json", args.style_json]
+    return main(command)
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())

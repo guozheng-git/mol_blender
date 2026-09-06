@@ -118,6 +118,11 @@
         },
         "denoise": {
           "type": "boolean"
+        },
+        "adaptive_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     },
@@ -184,6 +189,9 @@
         "clip_end": {
           "type": "number",
           "minimum": 0
+        },
+        "preserve_framing": {
+          "type": "boolean"
         }
       }
     },
@@ -291,6 +299,12 @@
           },
           "rotate_with_pymol_yaw": {
             "type": "boolean"
+          },
+          "camera_space": {
+            "type": "boolean"
+          },
+          "normalize_energy": {
+            "type": "boolean"
           }
         }
       }
@@ -366,6 +380,9 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "paint": {
+            "$ref": "#/$defs/paint"
           }
         }
       }
@@ -536,8 +553,7 @@
           "ligand_cutout_mode": {
             "type": "string",
             "enum": [
-              "planes",
-              "box_legacy"
+              "planes"
             ]
           },
           "ligand_cutout_frame_mode": {
@@ -657,6 +673,12 @@
           },
           "del_solvent": {
             "type": "boolean"
+          },
+          "peptide_dssp": {
+            "type": "boolean"
+          },
+          "peptide_arrows": {
+            "type": "boolean"
           }
         }
       }
@@ -690,6 +712,70 @@
           "type": "number",
           "minimum": -1,
           "maximum": 1
+        }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "edge_rounding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "radius_angstrom",
+            "segments",
+            "angle_degrees",
+            "adaptive_clearance"
+          ],
+          "properties": {
+            "radius_angstrom": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "angle_degrees": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 180
+            },
+            "adaptive_clearance": {
+              "type": "boolean"
+            }
+          }
+        },
+        "secondary_structure_palette": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "helix",
+            "sheet",
+            "loop"
+          ],
+          "properties": {
+            "helix": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "string",
+                "pattern": "^#[0-9A-Fa-f]{6}$"
+              }
+            },
+            "sheet": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            },
+            "loop": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          }
         }
       }
     }
@@ -745,6 +831,157 @@
         },
         "expand_to_residue": {
           "type": "boolean"
+        }
+      }
+    },
+    "paint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coarse_scale",
+        "coarse_strength",
+        "coarse_distance",
+        "brush_stretch",
+        "paint_scale",
+        "paint_detail",
+        "paint_distortion",
+        "paint_strength",
+        "paint_distance",
+        "micro_scale",
+        "micro_strength",
+        "micro_distance",
+        "pigment_min",
+        "roughness_min",
+        "roughness_max",
+        "specular",
+        "coat",
+        "coat_roughness",
+        "loop_relief",
+        "edge_normal_radius",
+        "dark_paint_tint",
+        "color_attribute"
+      ],
+      "properties": {
+        "coarse_scale": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "coarse_strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "coarse_distance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "brush_stretch": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "paint_scale": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "paint_detail": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "paint_distortion": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "paint_strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "paint_distance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "micro_scale": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "micro_strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "micro_distance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "pigment_min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "roughness_min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "roughness_max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "specular": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "coat": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "coat_roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "loop_relief": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "edge_normal_radius": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "dark_paint_tint": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "color_attribute": {
+          "type": "string",
+          "enum": [
+            "Color"
+          ]
         }
       }
     }

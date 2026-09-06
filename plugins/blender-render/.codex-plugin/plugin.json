@@ -1,0 +1,43 @@
+{
+  "name": "blender-render",
+  "version": "0.2.0-beta.1+codex.20260906233717",
+  "description": "Ray-trace molecular structures with PyMOL poses, transparent backgrounds, and textured ribbons.",
+  "author": {
+    "name": "Magnus Bauer",
+    "url": "https://github.com/magnusbauer"
+  },
+  "homepage": "https://github.com/magnusbauer/blender_render",
+  "repository": "https://github.com/magnusbauer/blender_render",
+  "license": "MIT",
+  "keywords": [
+    "molecules",
+    "PyMOL",
+    "Blender",
+    "rendering",
+    "protein"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Blender Render",
+    "shortDescription": "Render molecular structures with Blender.",
+    "longDescription": "Create ray-traced molecular stills from PSE, CIF, and PDB files. Preserve PyMOL views and colors, use pastel or dried-paint materials, and download transparent PNGs and optional Blender scenes. Connect to the credit-funded service, your Mac, or your lab's compute.",
+    "developerName": "Magnus Bauer",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://almostscheidplatz--blender-render-beta.modal.run/",
+    "privacyPolicyURL": "https://almostscheidplatz--blender-render-beta.modal.run/privacy",
+    "termsOfServiceURL": "https://almostscheidplatz--blender-render-beta.modal.run/terms",
+    "brandColor": "#216749",
+    "composerIcon": "./assets/molecule.svg",
+    "logo": "./assets/molecule.svg",
+    "defaultPrompt": [
+      "Render this structure with a transparent background.",
+      "Use dried green paint and rounded ribbons.",
+      "Render my saved PyMOL pose and include a Blender file."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

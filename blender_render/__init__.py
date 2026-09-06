@@ -1,5 +1,9 @@
-"""PyMOL -> Blender GPU/SLURM bridge plugin package."""
+"""Reproducible molecular rendering with lightweight, lazy client imports."""
+from .config import VERSION as __version__
 
-from .pymol_bridge_plugin import bridge_render, build_render_payload, register_plugin
 
-__all__ = ["bridge_render", "build_render_payload", "register_plugin"]
+def __getattr__(name):
+    if name in {"bridge_render", "build_render_payload", "register_plugin"}:
+        from . import pymol_bridge_plugin
+        return getattr(pymol_bridge_plugin, name)
+    raise AttributeError(name)

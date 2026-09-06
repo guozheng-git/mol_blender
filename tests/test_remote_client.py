@@ -23,23 +23,22 @@ class _FakeHTTPResponse:
         return self._data
 
 
-def test_submit_render_success(monkeypatch):
-    captured = {}
-
-    def fake_urlopen(req, timeout):
-        captured["url"] = req.full_url
-        captured["timeout"] = timeout
-        body = req.data.decode("utf-8")
-        captured["body"] = json.loads(body)
-        return _FakeHTTPResponse(
-            {
-                "status": "completed",
-                "output_name": "out.png",
-                "png_base64": base64.b64encode(b"pngdata").decode("ascii"),
-            }
-        )
-
-    monkeypatch.setattr(remote_client.urllib_request, "urlopen", fake_urlopen)
+def test_legacy_client_uses_async_api_without_resubmission(monkeypatch):
+    from blender_render.client import Client
+    calls = []
+    def request(self, method, path, body=None, *, binary=False):
+        calls.append((method, path, body))
+        assert self.url == 'http://127.0.0.1:9000'
+        if path == '/v1/structures': return {'input_id':'input'}
+        if path == '/v1/jobs': return {'job_id':'job'}
+        if path == '/v1/jobs/job': return {'status':'done', 'queue_position':0}
+        if path == '/v1/jobs/job/result':
+            return {'manifest':{}, 'artifacts':[{'name':'render.png'}]}
+        if path == '/v1/jobs/job/artifacts/render.png':
+            assert binary
+            return b'pngdata'
+        raise AssertionError(path)
+    monkeypatch.setattr(Client, 'request', request)
 
     result = remote_client.submit_render(
         host="127.0.0.1",
@@ -50,9 +49,10 @@ def test_submit_render_success(monkeypatch):
     )
 
     assert result["status"] == "completed"
-    assert captured["url"].endswith(":9000/render")
-    assert captured["timeout"] == 33
-    assert captured["body"]["preset"] == "preset_1_interface"
+    submits = [body for method, path, body in calls if path == '/v1/jobs']
+    assert len(submits) == 1
+    assert submits[0]['options']['preset'] == 'preset_1_interface'
+    assert base64.b64decode(result['png_base64']) == b'pngdata'
 
 
 def test_write_png_response(tmp_path: Path):

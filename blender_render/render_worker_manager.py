@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import signal
 import socket
 import subprocess
 import threading
@@ -13,9 +14,9 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 try:
-    import bridge_runner as _bridge_runner
+    import core as _bridge_runner
 except Exception:  # pragma: no cover - package import fallback
-    from blender_render import bridge_runner as _bridge_runner
+    from blender_render import core as _bridge_runner
 
 
 class WorkerError(RuntimeError):
@@ -91,6 +92,7 @@ class PersistentBlenderWorker:
         command = [
             blender_exe,
             "--background",
+            "--python-use-system-env",
             "--python",
             str(daemon_script),
             "--",
@@ -123,6 +125,13 @@ class PersistentBlenderWorker:
 
     def _subprocess_env(self) -> dict[str, str]:
         env = os.environ.copy()
+        from blender_render.config import load_config, config_root
+        runtime_site = env.get("BLENDER_RENDER_SITE") or load_config().get("runtime_site", str(config_root() / "runtime" / "site"))
+        env["PYTHONPATH"] = runtime_site + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONUNBUFFERED"] = "1"
+        if self.use_apptainer:
+            env["APPTAINERENV_PYTHONPATH"] = "/opt/runtime/site:/opt:" + env["PYTHONPATH"]
+            env["APPTAINERENV_BLENDER_RENDER_SITE"] = "/opt/runtime/site"
         env.setdefault("PRESS_CYCLES_DEVICE", "GPU")
         env.setdefault("PRESS_CYCLES_COMPUTE_TYPE", "AUTO")
         env.setdefault("PRESS_PRINT_DEVICE_INFO", "1")
@@ -322,8 +331,18 @@ class PersistentBlenderWorker:
             self._ensure_started_locked()
 
     def stop(self) -> None:
+        self.interrupt()
         with self._lock:
             self._stop_locked()
+
+    def interrupt(self) -> None:
+        """Interrupt an active job without waiting for the render socket lock."""
+        process = self._process
+        if process is not None and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     def submit_render(
         self,
@@ -353,11 +372,11 @@ class PersistentBlenderWorker:
             try:
                 response = self._send_request_locked(request_payload, timeout=timeout)
             except Exception:
-                # Restart once for transient socket/process failures.
-                self._log("worker-render-submit retry-after-restart")
+                # An ambiguous result must never replay paid work. The next
+                # distinct job starts a fresh worker after this one is stopped.
+                self.interrupt()
                 self._stop_locked()
-                self._start_locked()
-                response = self._send_request_locked(request_payload, timeout=timeout)
+                raise
 
         status = str(response.get("status", "")).strip().lower()
         if status != "completed":

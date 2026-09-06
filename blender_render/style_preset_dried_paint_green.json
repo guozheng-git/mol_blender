@@ -1,0 +1,240 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "width": 2048,
+    "height": 1715,
+    "samples": 512,
+    "filename": "dried_paint_green.png",
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": true,
+    "adaptive_sampling": true,
+    "adaptive_threshold": 0.008,
+    "denoise": true,
+    "exposure": 0,
+    "gamma": 1,
+    "view_transform": "Standard",
+    "look": "None"
+  },
+  "camera": {
+    "mode": "pymol",
+    "world_scale": 0.01,
+    "preserve_framing": true
+  },
+  "world": {
+    "background_type": "solid",
+    "color": "#FFFFFF",
+    "strength": 0.2
+  },
+  "lights": [
+    {
+      "name": "Raking soft key",
+      "type": "AREA",
+      "energy": 130.0,
+      "size_scale": 2.1,
+      "relative_vector": [
+        -3.0,
+        2.5,
+        3.0
+      ],
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true
+    },
+    {
+      "name": "Front paint sheen",
+      "type": "AREA",
+      "energy": 115.0,
+      "size_scale": 2.3,
+      "relative_vector": [
+        -1.4,
+        -0.7,
+        4.0
+      ],
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true
+    },
+    {
+      "name": "Soft fill",
+      "type": "AREA",
+      "energy": 45.0,
+      "size_scale": 3.0,
+      "relative_vector": [
+        3.0,
+        -0.5,
+        2.0
+      ],
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true
+    },
+    {
+      "name": "Ribbon edge light",
+      "type": "AREA",
+      "energy": 80.0,
+      "size_scale": 1.7,
+      "relative_vector": [
+        -1.0,
+        3.0,
+        -2.0
+      ],
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true
+    }
+  ],
+  "color_follow": {
+    "enabled": false,
+    "mode": "auto",
+    "mix": 0.65,
+    "saturation_boost": 0.08,
+    "value_boost": 0.03
+  },
+  "materials": {
+    "dried_paint": {
+      "paint": {
+        "coarse_scale": 105,
+        "coarse_strength": 0.16,
+        "coarse_distance": 0.0006,
+        "brush_stretch": [
+          1.0,
+          0.85,
+          1.15
+        ],
+        "paint_scale": 400,
+        "paint_detail": 2.2,
+        "paint_distortion": 1.15,
+        "paint_strength": 0.42,
+        "paint_distance": 0.00048,
+        "micro_scale": 2350.0,
+        "micro_strength": 0.14,
+        "micro_distance": 0.00011,
+        "pigment_min": 0.88,
+        "roughness_min": 0.33,
+        "roughness_max": 0.5,
+        "specular": 0.42,
+        "coat": 0.045,
+        "coat_roughness": 0.32,
+        "loop_relief": 0.1,
+        "edge_normal_radius": 0.0005,
+        "dark_paint_tint": [
+          0.85,
+          0.9,
+          0.55
+        ],
+        "color_attribute": "Color"
+      }
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_cartoon",
+      "style": "cartoon",
+      "material": "dried_paint",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "thickness": 0.42,
+      "width": 2.1,
+      "loop_radius": 0.24,
+      "quality": 5,
+      "peptide_smoothing": 0.85,
+      "peptide_cylinders": false,
+      "peptide_rounded": false,
+      "shade_smooth": true,
+      "peptide_dssp": false,
+      "peptide_arrows": true
+    },
+    {
+      "name": "nucleic_cartoon",
+      "style": "cartoon",
+      "material": "dried_paint",
+      "selection": {
+        "nucleic": true
+      },
+      "fallback_selection": {
+        "query": "nucleic"
+      },
+      "thickness": 0.18,
+      "width": 0.66,
+      "loop_radius": 0.15,
+      "quality": 5,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_ptr_sticks",
+      "style": "sticks",
+      "material": "dried_paint",
+      "selection": {
+        "query": "resn PTR"
+      },
+      "radius": 0.62,
+      "quality": 8,
+      "sticks_radius": 0.62,
+      "sticks_quality": 8,
+      "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_other_sticks",
+      "style": "sticks",
+      "material": "dried_paint",
+      "selection": {
+        "query": "ligand and not resn PTR and not resn HOH,WAT,DOD,SOL,TIP3,TIP3P and not resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.52,
+      "quality": 5,
+      "sticks_radius": 0.52,
+      "sticks_quality": 5,
+      "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ions_spheres",
+      "style": "spheres",
+      "material": "dried_paint",
+      "selection": {
+        "query": "ligand and resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.33,
+      "subdivisions": 3,
+      "shade_smooth": true
+    },
+    {
+      "name": "water_spheres",
+      "style": "spheres",
+      "material": "dried_paint",
+      "selection": {
+        "query": "resn HOH,WAT,DOD,SOL,TIP3,TIP3P"
+      },
+      "radius": 0.22,
+      "subdivisions": 2,
+      "shade_smooth": true
+    }
+  ],
+  "geometry": {
+    "edge_rounding": {
+      "radius_angstrom": 0.18,
+      "segments": 8,
+      "angle_degrees": 40,
+      "adaptive_clearance": true
+    },
+    "secondary_structure_palette": {
+      "helix": [
+        "#367449",
+        "#4E8053",
+        "#8FAD70",
+        "#246343",
+        "#A0B680"
+      ],
+      "sheet": "#B1C94F",
+      "loop": "#6C8F56"
+    }
+  }
+}

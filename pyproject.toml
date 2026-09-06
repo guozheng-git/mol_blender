@@ -1,25 +1,38 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymol-plugin-bridge"
-version = "0.1.0"
-description = "PyMOL -> Blender GPU/SLURM bridge plugin and runner."
+version = "0.2.0b1"
+description = "Reproducible molecular rendering from PyMOL, Codex, and ChatGPT."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "PyMOL Plugin Bridge" }]
-dependencies = []
+authors = [{ name = "Magnus Bauer" }]
+license = "MIT AND GPL-3.0-or-later"
+license-files = ["LICENSE", "LICENSES/GPL-3.0-or-later.txt", "THIRD_PARTY_NOTICES.md"]
+dependencies = ["jsonschema>=4.23,<5"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "jsonschema>=4.0"]
+dev = ["pytest>=8,<10", "numpy==1.26.4", "httpx==0.28.1", "pillow>=11,<13", "build>=1.2,<2"]
+server = ["fastapi==0.141.1", "uvicorn==0.52.4", "httpx==0.28.1", "gemmi==0.7.5"]
+mcp = ["fastmcp==2.14.7", "fastapi==0.141.1", "uvicorn==0.52.4", "pillow>=11,<13", "gemmi==0.7.5"]
+modal = ["modal==1.5.5", "fastmcp==2.14.7", "fastapi==0.141.1", "uvicorn==0.52.4", "pillow>=11,<13", "gemmi==0.7.5"]
 
 [project.scripts]
 bridge_runner = "blender_render.bridge_runner:main"
 render_server = "blender_render.render_server:main"
+blender-render = "blender_render.cli:main"
 
 [tool.setuptools]
 packages = ["blender_render"]
+
+[tool.setuptools.package-data]
+blender_render = ["*.json", "*.def", "*.sh", "*.txt", "*.html"]
+
+[project.urls]
+Homepage = "https://github.com/magnusbauer/blender_render"
+Issues = "https://github.com/magnusbauer/blender_render/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

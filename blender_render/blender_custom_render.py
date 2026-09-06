@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Magnus Bauer
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Custom Blender render pipeline driven by style JSON."""
 
 from __future__ import annotations
@@ -90,22 +92,7 @@ def _configure_molecularnodes_import_path() -> None:
                 sys.modules.pop(module_name, None)
 
 
-def _ensure_databpy_compat() -> None:
-    """
-    Molecular Nodes 4.2.x expects databpy.Domains, but some databpy builds only
-    expose AttributeDomains/AttributeDomain.
-    """
-    try:
-        import databpy  # type: ignore
-    except Exception:
-        return
-    if hasattr(databpy, "Domains"):
-        return
-    alias = getattr(databpy, "AttributeDomains", None)
-    if alias is None:
-        alias = getattr(databpy, "AttributeDomain", None)
-    if alias is not None:
-        setattr(databpy, "Domains", alias)
+
 
 try:
     from bridge_runner import StyleValidationError, validate_style_document
@@ -253,31 +240,10 @@ def _ensure_molecularnodes_ready(mn: Any) -> None:
         )
 
 
-class _CompatSelection:
-    def reset(self):
-        return self
-
-    def __getattr__(self, _name: str):
-        def _chain(*_args, **_kwargs):
-            return self
-
-        return _chain
 
 
-class _CompatMolecule:
-    def __init__(self, loaded_obj: Any):
-        self._loaded_obj = loaded_obj
-        self.object = getattr(loaded_obj, "object", None) or loaded_obj
-        self.select = _CompatSelection()
-        self.styles: list[Any] = []
 
-    def add_style(self, *_args, **_kwargs):
-        style = type("CompatStyle", (), {})()
-        self.styles.append(style)
-        return style
 
-    def __getattr__(self, name: str):
-        return getattr(self._loaded_obj, name)
 
 
 def _array_as_upper(values: Any, count: int) -> np.ndarray:
@@ -431,6 +397,8 @@ def _get_atom_array(source: Any) -> Any:
     array = getattr(source, "atom_array", None)
     if array is None:
         array = getattr(source, "array", None)
+    if array is not None and hasattr(array, "shape") and len(array.shape) > 1:
+        return array[0]
     return array
 
 
@@ -631,8 +599,6 @@ def _selection_to_named_attribute(
 ) -> Any:
     if indices is None:
         return None
-    if isinstance(load_result, _ParserMolecule):
-        return indices
     if not hasattr(load_result, "store_named_attribute"):
         return indices
 
@@ -711,470 +677,10 @@ def _normalize_sec_struct_values(values: Any, amino_mask: np.ndarray) -> np.ndar
     return sec
 
 
-class _ParserSelection:
-    def __init__(self, owner: "_ParserMolecule"):
-        self._owner = owner
-        self.reset()
-
-    def reset(self):
-        self._polymer = False
-        self._nucleic = False
-        self._ligand = False
-        self._chain_ids: list[str] = []
-        self._res_ids: list[int] = []
-        return self
-
-    def is_polymer(self):
-        self._polymer = True
-        return self
-
-    def is_nucleic(self):
-        self._nucleic = True
-        return self
-
-    def is_nucleotide(self):
-        self._nucleic = True
-        return self
-
-    def is_canonical_nucleotide(self):
-        self._nucleic = True
-        return self
-
-    def is_ligand(self):
-        self._ligand = True
-        return self
-
-    def chain_id(self, value: Any):
-        if isinstance(value, (list, tuple)):
-            chain_values = [str(item).strip() for item in value]
-        else:
-            chain_values = [str(value).strip()]
-        self._chain_ids = [item for item in chain_values if item]
-        return self
-
-    def res_id(self, value: Any):
-        if isinstance(value, (list, tuple)):
-            values = list(value)
-        else:
-            values = [value]
-        parsed: list[int] = []
-        for item in values:
-            try:
-                parsed.append(int(item))
-            except Exception:
-                continue
-        self._res_ids = parsed
-        return self
-
-    def to_indices(self) -> list[int]:
-        array = self._owner.atom_array
-        count = int(array.array_length()) if hasattr(array, "array_length") else len(array)
-        mask = np.ones(count, dtype=bool)
-        polymer_mask, nucleic_mask, ligand_mask = _semantic_masks(array, count)
-        chain_upper = self._owner._chain_upper(count)
-        res_ids = np.asarray(getattr(array, "res_id", np.full(count, -1, dtype=int))).astype(int)
-
-        if self._polymer:
-            mask &= polymer_mask
-        if self._nucleic:
-            mask &= nucleic_mask
-        if self._ligand:
-            mask &= ligand_mask
-        if self._chain_ids:
-            wanted = [item.upper() for item in self._chain_ids]
-            mask &= np.isin(chain_upper, wanted)
-        if self._res_ids:
-            mask &= np.isin(res_ids, np.asarray(self._res_ids, dtype=int))
-
-        return np.where(mask)[0].astype(int).tolist()
-
-    def __getattr__(self, _name: str):
-        def _chain(*_args, **_kwargs):
-            return self
-
-        return _chain
 
 
-class _ParserMolecule:
-    def __init__(self, parser_obj: Any, name: str, auth_chain_ids: list[str] | None = None):
-        self._parser = parser_obj
-        self._base_name = name
-        self.styles: list[Any] = []
-        self.object: bpy.types.Object | None = None
-        self._style_counter = 0
-        self._auth_chain_ids = [str(item).strip().upper() for item in (auth_chain_ids or [])]
-        self._chain_override_upper: np.ndarray | None = None
-        self._atom_array = self._coerce_atom_array()
-        self.select = _ParserSelection(self)
 
-        initial_object = getattr(self._parser, "object", None)
-        if initial_object is not None:
-            try:
-                initial_object.hide_render = True
-            except Exception:
-                pass
-            try:
-                initial_object.hide_set(True)
-            except Exception:
-                pass
 
-    def _coerce_atom_array(self):
-        array = getattr(self._parser, "array", None)
-        if array is None:
-            raise RuntimeError("MolecularNodes parser object is missing atom array data.")
-        try:
-            if array.__class__.__name__ == "AtomArrayStack" and len(array) > 0:
-                array = array[0]
-                self._parser.array = array
-        except Exception:
-            pass
-
-        # PyMOL CIF exports often store real chain IDs in auth_asym_id while
-        # label_asym_id is ".". MN parser may expose only label_asym_id via
-        # atom_array.chain_id, which breaks chain-based styles.
-        try:
-            count = int(array.array_length()) if hasattr(array, "array_length") else len(array)
-            current_chain_upper = _array_as_upper(
-                getattr(array, "chain_id", np.array([""] * count, dtype=object)),
-                count,
-            )
-            current_values = {item for item in current_chain_upper.tolist() if item}
-            auth_values = np.asarray(self._auth_chain_ids, dtype=object).astype(str)
-            if auth_values.size == count:
-                auth_upper = np.char.upper(auth_values)
-                auth_nonempty = np.array([item not in {"", ".", "?"} for item in auth_upper], dtype=bool)
-                if current_values.issubset({"", ".", "?"}) and bool(np.any(auth_nonempty)):
-                    patched = False
-                    try:
-                        array.chain_id = auth_upper
-                        patched = True
-                    except Exception:
-                        patched = False
-                    if not patched:
-                        try:
-                            categories = list(array.get_annotation_categories()) if hasattr(array, "get_annotation_categories") else []
-                            if "chain_id" in categories:
-                                try:
-                                    array.del_annotation("chain_id")
-                                except Exception:
-                                    pass
-                            array.set_annotation("chain_id", auth_upper)
-                            patched = True
-                        except Exception:
-                            patched = False
-                    # Even if direct patch fails, keep a trusted override for selection logic.
-                    self._chain_override_upper = auth_upper
-                    if patched and _env_bool("PRESS_DEBUG_CHAIN_PATCH", False):
-                        print("Bridge Custom: patched parser chain_id from auth_asym_id")
-                elif bool(np.any(auth_nonempty)):
-                    # Preserve auth chain IDs as a higher-quality selector source.
-                    self._chain_override_upper = auth_upper
-        except Exception:
-            pass
-
-        # CIF payloads from PyMOL often omit secondary-structure annotation.
-        # Populate it so cartoon styles can produce full geometry.
-        try:
-            categories = []
-            if hasattr(array, "get_annotation_categories"):
-                categories = list(array.get_annotation_categories())
-            has_sse = "sec_struct" in categories
-            needs_sse = True
-            count = int(array.array_length()) if hasattr(array, "array_length") else len(array)
-            amino_mask = _normalized_amino_mask(array, count)
-            if has_sse:
-                existing_raw = np.asarray(getattr(array, "sec_struct", []), dtype=object)
-                if existing_raw.size == count:
-                    existing_numeric = _normalize_sec_struct_values(existing_raw, amino_mask)
-                    if bool(np.any(existing_numeric > 0)):
-                        needs_sse = False
-                    if has_sse:
-                        try:
-                            array.del_annotation("sec_struct")
-                        except Exception:
-                            pass
-                    array.set_annotation("sec_struct", existing_numeric.astype(int))
-            if needs_sse:
-                import biotite.structure as bs  # type: ignore
-
-                sec_struct = bs.annotate_sse(array)
-                if sec_struct is not None and len(sec_struct) == len(array):
-                    sec_struct = _normalize_sec_struct_values(sec_struct, amino_mask)
-                    if has_sse:
-                        try:
-                            array.del_annotation("sec_struct")
-                        except Exception:
-                            pass
-                    array.set_annotation("sec_struct", sec_struct.astype(int))
-        except Exception:
-            pass
-        return array
-
-    @property
-    def atom_array(self):
-        return self._atom_array
-
-    def _chain_upper(self, count: int) -> np.ndarray:
-        if self._chain_override_upper is not None and len(self._chain_override_upper) == count:
-            return self._chain_override_upper
-        return _array_as_upper(getattr(self._atom_array, "chain_id", np.array([""] * count, dtype=object)), count)
-
-    def _selection_indices(self, selection: Any) -> list[int] | None:
-        if isinstance(selection, _ParserSelection):
-            return selection.to_indices()
-        if isinstance(selection, str):
-            count = int(self._atom_array.array_length()) if hasattr(self._atom_array, "array_length") else len(self._atom_array)
-            return _query_to_indices(
-                self._atom_array,
-                selection,
-                chain_upper_override=self._chain_upper(count),
-            )
-        if isinstance(selection, np.ndarray):
-            if selection.dtype == bool:
-                return np.where(selection)[0].astype(int).tolist()
-            return selection.astype(int).tolist()
-        if isinstance(selection, (list, tuple)):
-            if not selection:
-                return []
-            if all(isinstance(item, bool) for item in selection):
-                return [idx for idx, flag in enumerate(selection) if flag]
-            parsed: list[int] = []
-            for item in selection:
-                try:
-                    parsed.append(int(item))
-                except Exception:
-                    continue
-            return parsed
-        return None
-
-    @staticmethod
-    def _object_dimension_max(obj: Any) -> float:
-        if obj is None:
-            return 0.0
-        try:
-            dims = getattr(obj, "dimensions", None)
-            if dims is None:
-                return 0.0
-            return float(max(float(dims[0]), float(dims[1]), float(dims[2])))
-        except Exception:
-            return 0.0
-
-    @staticmethod
-    def _evaluated_mesh_stats(obj: Any) -> tuple[int, float]:
-        if obj is None or str(getattr(obj, "type", "")).upper() != "MESH":
-            return 0, 0.0
-        eval_obj = None
-        try:
-            depsgraph = bpy.context.evaluated_depsgraph_get()
-            eval_obj = obj.evaluated_get(depsgraph)
-            eval_mesh = eval_obj.to_mesh()
-        except Exception:
-            return 0, 0.0
-
-        try:
-            vertices = getattr(eval_mesh, "vertices", None)
-            if vertices is None:
-                return 0, 0.0
-            count = int(len(vertices))
-            if count == 0:
-                return 0, 0.0
-            min_x = min(float(v.co.x) for v in vertices)
-            max_x = max(float(v.co.x) for v in vertices)
-            min_y = min(float(v.co.y) for v in vertices)
-            max_y = max(float(v.co.y) for v in vertices)
-            min_z = min(float(v.co.z) for v in vertices)
-            max_z = max(float(v.co.z) for v in vertices)
-            extent = max(max_x - min_x, max_y - min_y, max_z - min_z)
-            return count, float(extent)
-        except Exception:
-            return 0, 0.0
-        finally:
-            if eval_obj is not None:
-                try:
-                    eval_obj.to_mesh_clear()
-                except Exception:
-                    pass
-
-    @staticmethod
-    def _replace_object(old_obj: Any, new_obj: Any) -> Any:
-        if old_obj is None or new_obj is None:
-            return new_obj
-        try:
-            bpy.data.objects.remove(old_obj, do_unlink=True)
-        except Exception:
-            pass
-        return new_obj
-
-    @staticmethod
-    def _remove_created_object_if_present(name: str) -> None:
-        if not name:
-            return
-        obj = bpy.data.objects.get(name)
-        if obj is None:
-            return
-        try:
-            bpy.data.objects.remove(obj, do_unlink=True)
-        except Exception:
-            pass
-
-    def add_style(self, style_name: str, selection: Any = None, material: Any = None, **kwargs: Any):
-        style_aliases = {
-            "sphere": "spheres",
-        }
-        resolved_style = style_aliases.get(style_name, style_name)
-        style_candidates = [resolved_style]
-        indices = self._selection_indices(selection)
-
-        if indices is not None and len(indices) == 0:
-            style = type("CompatStyle", (), {})()
-            setattr(style, "_object", None)
-            setattr(style, "_selection_indices", [])
-            setattr(style, "_material", material)
-            self.styles.append(style)
-            self._style_counter += 1
-            return style
-
-        created = None
-        creation_errors: list[str] = []
-
-        def _create_style_object(create_kwargs: dict[str, Any]) -> Any:
-            create_fn = getattr(self._parser, "create_model", None)
-            if callable(create_fn):
-                return create_fn(**create_kwargs)
-            create_fn = getattr(self._parser, "create_object", None)
-            if callable(create_fn):
-                return create_fn(**create_kwargs)
-            raise RuntimeError("Molecular Nodes loader did not expose create_model/create_object.")
-
-        for style_candidate in style_candidates:
-            create_kwargs: dict[str, Any] = {
-                "name": f"{self._base_name}_{style_candidate}_{self._style_counter}",
-                "style": style_candidate,
-                "centre": False,
-                "del_solvent": bool(kwargs.get("del_solvent", False)),
-            }
-            candidate_object_name = str(create_kwargs["name"])
-            if indices is not None:
-                create_kwargs["selection"] = indices
-            for key in (
-                "radius",
-                "probe_radius",
-                "quality",
-                "subdivisions",
-                "thickness",
-                "width",
-                "loop_radius",
-                "shade_smooth",
-                "color",
-                "peptide_cylinders",
-                "peptide_rounded",
-                "peptide_smoothing",
-                "nucleic_thickness",
-                "nucleic_width",
-                "nucleic_radius",
-                "backbone_shape",
-                "base_shape",
-                "base_realize",
-                "color_blur",
-            ):
-                if key in kwargs:
-                    create_kwargs[key] = kwargs[key]
-
-            try:
-                created = _create_style_object(create_kwargs)
-                resolved_style = style_candidate
-                break
-            except TypeError:
-                self._remove_created_object_if_present(candidate_object_name)
-                fallback_kwargs = {
-                    "name": create_kwargs["name"],
-                    "style": create_kwargs["style"],
-                    "centre": create_kwargs["centre"],
-                    "del_solvent": create_kwargs["del_solvent"],
-                }
-                if "selection" in create_kwargs:
-                    fallback_kwargs["selection"] = create_kwargs["selection"]
-                try:
-                    created = _create_style_object(fallback_kwargs)
-                    resolved_style = style_candidate
-                    break
-                except Exception as exc:
-                    self._remove_created_object_if_present(candidate_object_name)
-                    if _env_bool("PRESS_DEBUG_STYLE_CREATE", False):
-                        print(
-                            "Bridge Custom style create fallback failed: "
-                            f"base={self._base_name} style_name={style_name} "
-                            f"candidate={style_candidate} error={type(exc).__name__}: {exc}"
-                        )
-                    creation_errors.append(str(exc))
-                    continue
-            except Exception as exc:
-                self._remove_created_object_if_present(candidate_object_name)
-                if _env_bool("PRESS_DEBUG_STYLE_CREATE", False):
-                    print(
-                        "Bridge Custom style create failed: "
-                        f"base={self._base_name} style_name={style_name} "
-                        f"candidate={style_candidate} error={type(exc).__name__}: {exc}"
-                    )
-                creation_errors.append(str(exc))
-                continue
-
-        if created is None:
-            raise RuntimeError(
-                f"Could not create style {style_name!r} (candidates={style_candidates}). "
-                f"Recent errors: {' | '.join(creation_errors[-2:])}"
-            )
-
-        if style_name == "sticks" and resolved_style == "sticks":
-            desired_radius = kwargs.get("sticks_radius", kwargs.get("radius"))
-            desired_quality = kwargs.get("sticks_quality", kwargs.get("quality"))
-            desired_shade_smooth = kwargs.get("sticks_shade_smooth", kwargs.get("shade_smooth"))
-            desired_color_blur = kwargs.get("color_blur")
-            tuned = _tune_native_sticks_style(
-                created,
-                float(desired_radius) if desired_radius is not None else None,
-                desired_quality,
-                desired_shade_smooth,
-                desired_color_blur,
-                disable_atom_spheres=True,
-            )
-            if tuned > 0:
-                print(
-                    "Bridge Custom: tuned native sticks style "
-                    f"(sockets={tuned}) for {self._base_name}"
-                )
-
-        try:
-            created.hide_render = False
-        except Exception:
-            pass
-        try:
-            created.hide_set(False)
-        except Exception:
-            pass
-
-        if material is not None:
-            _apply_material_fallback(created, material)
-
-        if self.object is None:
-            self.object = created
-        else:
-            try:
-                created.parent = self.object
-                created.matrix_parent_inverse = self.object.matrix_world.inverted()
-            except Exception:
-                pass
-
-        style = type("CompatStyle", (), {})()
-        setattr(style, "_object", created)
-        setattr(style, "_selection_indices", indices if indices is not None else [])
-        setattr(style, "_material", material)
-        self.styles.append(style)
-        self._style_counter += 1
-        return style
-
-    def __getattr__(self, name: str):
-        return getattr(self._parser, name)
 
 
 def _extract_auth_chain_ids_from_cif(structure_path: Path) -> list[str] | None:
@@ -1247,13 +753,7 @@ def _extract_auth_chain_ids_from_cif(structure_path: Path) -> list[str] | None:
         return None
 
 
-def _as_style_molecule(loaded: Any, name: str, structure_path: Path):
-    auth_chain_ids = _extract_auth_chain_ids_from_cif(structure_path)
-    if hasattr(loaded, "select") and hasattr(loaded, "add_style"):
-        return loaded
-    if (hasattr(loaded, "create_model") or hasattr(loaded, "create_object")) and hasattr(loaded, "array"):
-        return _ParserMolecule(loaded, name=name, auth_chain_ids=auth_chain_ids)
-    return _CompatMolecule(loaded)
+
 
 
 def _apply_auth_chain_override(load_result: Any, structure_path: Path) -> None:
@@ -1313,164 +813,38 @@ def _cycles_compute_options(cycles_prefs) -> list[str]:
 
 
 def _configure_cycles_gpu_for_custom(scene: bpy.types.Scene, renderer: dict[str, Any]) -> None:
-    requested = str(renderer.get("compute_device_type", "")).strip().upper()
-    if not requested:
-        requested = os.getenv("PRESS_CYCLES_COMPUTE_TYPE", "AUTO").strip().upper() or "AUTO"
-
-    try:
-        addon = bpy.context.preferences.addons.get("cycles")
-    except Exception:
-        addon = None
-    if addon is None:
-        print("Bridge Custom Cycles GPU: cycles addon preferences unavailable")
-        return
-
-    prefs = addon.preferences
-    options = _cycles_compute_options(prefs)
-    if requested == "AUTO":
-        candidates = ["OPTIX", "CUDA", "HIP", "ONEAPI", "METAL"]
-    else:
-        candidates = [requested]
-
-    selected = None
-    for candidate in candidates:
-        if options and candidate not in options:
-            continue
-        try:
-            prefs.compute_device_type = candidate
-            selected = candidate
-            break
-        except Exception:
-            continue
-
-    try:
-        prefs.get_devices()
-    except Exception:
-        pass
-
-    infos: list[str] = []
-    gpu_enabled = 0
-    for dev in list(getattr(prefs, "devices", [])):
-        dev_type = str(getattr(dev, "type", "")).upper()
-        dev_name = str(getattr(dev, "name", "unknown"))
-        is_gpu = dev_type not in {"", "CPU"}
-        use_flag = bool(getattr(dev, "use", False))
-        if getattr(scene.cycles, "device", "CPU") == "GPU":
+    requested = str(renderer.get("compute_device_type", "AUTO")).upper()
+    want_gpu = scene.cycles.device == "GPU"
+    addon = bpy.context.preferences.addons.get("cycles")
+    candidates = ["METAL", "CUDA", "OPTIX", "HIP", "ONEAPI"] if requested == "AUTO" else [requested]
+    selected, devices = None, []
+    if addon and want_gpu:
+        prefs = addon.preferences
+        for candidate in candidates:
             try:
-                dev.use = is_gpu
-                use_flag = bool(getattr(dev, "use", False))
-            except Exception:
-                pass
-        if is_gpu and use_flag:
-            gpu_enabled += 1
-        infos.append(f"{dev_name}:{dev_type}:use={int(use_flag)}")
-
-    require_gpu = bool(renderer.get("require_gpu", _env_bool("PRESS_REQUIRE_GPU", False)))
-    if getattr(scene.cycles, "device", "CPU") == "GPU" and gpu_enabled == 0:
-        message = (
-            "Bridge Custom Cycles GPU: no GPU device enabled "
-            f"(requested={requested}, selected={selected}, options={options}, devices={infos})"
-        )
-        if require_gpu:
-            raise RuntimeError(message)
-        print(message)
-
-    if _env_bool("PRESS_PRINT_DEVICE_INFO", True):
-        print(
-            "Bridge Custom Cycles GPU: "
-            f"scene_device={getattr(scene.cycles, 'device', 'CPU')} "
-            f"requested={requested} selected={selected} options={options} devices={infos}"
-        )
-
-
-def _ensure_biotite_pdbx_compat() -> None:
-    """Provide compatibility aliases for Molecular Nodes on newer Biotite builds.
-
-    Molecular Nodes releases used in this project may still import
-    ``biotite.structure.io.pdbx.PDBxFile``. Biotite 1.x replaced this symbol
-    with ``CIFFile``.
-    """
-    try:
-        import biotite.structure.io.pdbx as pdbx  # type: ignore
-    except Exception:
-        return
-
-    if hasattr(pdbx, "PDBxFile") or not hasattr(pdbx, "CIFFile"):
-        return
-
-    def _legacy_category(category: Any) -> dict[str, np.ndarray] | None:
-        if category is None:
-            return None
-        try:
-            keys = list(category.keys())
-        except Exception:
-            return None
-        converted: dict[str, np.ndarray] = {}
-        for key in keys:
-            try:
-                column = category[key]
-            except Exception:
-                continue
-            if hasattr(column, "as_array"):
-                try:
-                    values = column.as_array(str)
-                except Exception:
-                    try:
-                        values = column.as_array()
-                    except Exception:
-                        continue
-            else:
-                try:
-                    values = np.asarray(column)
-                except Exception:
+                prefs.compute_device_type = candidate
+                prefs.get_devices()
+                available = [d for d in prefs.devices if d.type == candidate]
+                if not available:
                     continue
-            converted[str(key)] = np.asarray(values)
-        return converted
+                for device in prefs.devices:
+                    device.use = device.type == candidate
+                selected = candidate
+                devices = [{"name":d.name,"type":d.type} for d in available]
+                break
+            except (TypeError, RuntimeError):
+                continue
+    if want_gpu and not devices:
+        if bool(renderer.get("require_gpu", _env_bool("PRESS_REQUIRE_GPU", False))):
+            raise RuntimeError("No usable GPU found for the requested Cycles backend")
+        scene.cycles.device = "CPU"
+    info = {"device":scene.cycles.device,"compute_type":selected,"devices":devices}
+    scene["bridge_device_info"] = json.dumps(info)
+    print("Cycles device: " + json.dumps(info), flush=True)
 
-    class _CompatPDBxFile:
-        def __init__(self, cif_file: Any):
-            self._cif_file = cif_file
-            self.block = self._resolve_block(cif_file)
 
-        @staticmethod
-        def _resolve_block(cif_file: Any) -> Any:
-            try:
-                keys = list(cif_file.keys())
-                if keys:
-                    return cif_file[keys[0]]
-            except Exception:
-                pass
-            return getattr(cif_file, "block", cif_file)
 
-        @classmethod
-        def read(cls, file_path: str | Path):
-            cif_file = pdbx.CIFFile.read(file_path)
-            return cls(cif_file)
 
-        def get_category(self, name: str, **_kwargs: Any):
-            category = None
-            try:
-                category = self.block.get(name)
-            except Exception:
-                try:
-                    category = self.block[name]
-                except Exception:
-                    category = None
-            return _legacy_category(category)
-
-        def __getitem__(self, key: str):
-            return self.get_category(key)
-
-        def get(self, key: str, default: Any = None):
-            value = self.get_category(key)
-            return default if value is None else value
-
-    try:
-        setattr(pdbx, "PDBxFile", _CompatPDBxFile)
-        if _env_bool("PRESS_DEBUG_LOADER", False):
-            print("Bridge Custom loader: installed compat pdbx.PDBxFile wrapper")
-    except Exception:
-        pass
 
 
 def _activate_biotite_ccd_path(ccd_path: Path) -> None:
@@ -1714,159 +1088,10 @@ def _ensure_biotite_ccd_database() -> None:
 
 def _load_molecule_with_fallback(structure_path: Path, object_name: str):
     _configure_molecularnodes_import_path()
-    _ensure_databpy_compat()
-    _ensure_biotite_pdbx_compat()
-    try:
-        import molecularnodes as mn
-    except Exception as exc:
-        raise RuntimeError(f"Molecular Nodes import failed: {exc}") from exc
-
+    import molecularnodes as mn
     _ensure_molecularnodes_ready(mn)
+    return mn.Molecule.load(str(structure_path), name=object_name)
 
-    loader_attempts = []
-    loader_errors: list[str] = []
-
-    def _record_loader_error(loader_name: str, exc: Exception) -> None:
-        message = f"{loader_name}: {type(exc).__name__}: {exc}"
-        loader_errors.append(message)
-        if _env_bool("PRESS_DEBUG_LOADER", False):
-            print(f"Bridge Custom loader error: {message}")
-
-    def _finalize_loaded(loader_name: str, loaded_obj: Any):
-        if _env_bool("PRESS_DEBUG_LOADER", False):
-            print(
-                "Bridge Custom loader: "
-                f"{loader_name} "
-                f"type={type(loaded_obj).__name__} "
-                f"select={int(bool(hasattr(loaded_obj, 'select')))} "
-                f"add_style={int(bool(hasattr(loaded_obj, 'add_style')))} "
-                f"create_model={int(bool(hasattr(loaded_obj, 'create_model')))}"
-            )
-        return _as_style_molecule(loaded_obj, object_name, structure_path)
-
-    if hasattr(mn, "entities") and hasattr(mn.entities, "Molecule"):
-        molecule_cls = mn.entities.Molecule
-        if hasattr(molecule_cls, "load"):
-            loader_attempts.append("mn.entities.Molecule.load")
-            try:
-                return _finalize_loaded(
-                    "mn.entities.Molecule.load",
-                    molecule_cls.load(str(structure_path), name=object_name),
-                )
-            except Exception as exc:
-                _record_loader_error("mn.entities.Molecule.load", exc)
-                pass
-
-    try:
-        from molecularnodes.entities import Molecule as legacy_molecule_cls  # type: ignore
-
-        if hasattr(legacy_molecule_cls, "load"):
-            loader_attempts.append("molecularnodes.entities.Molecule.load")
-            try:
-                return _finalize_loaded(
-                    "molecularnodes.entities.Molecule.load",
-                    legacy_molecule_cls.load(str(structure_path), name=object_name),
-                )
-            except Exception as exc:
-                _record_loader_error("molecularnodes.entities.Molecule.load", exc)
-                pass
-    except Exception:
-        pass
-
-    entities_ns = getattr(mn, "entities", None)
-    entities_load_local = getattr(entities_ns, "load_local", None) if entities_ns is not None else None
-    if callable(entities_load_local):
-        loader_attempts.append("mn.entities.load_local")
-        for kwargs in (
-            {"style": "spheres"},
-            {"style": "cartoon"},
-            {},
-        ):
-            try:
-                return _finalize_loaded("mn.entities.load_local", entities_load_local(str(structure_path), **kwargs))
-            except TypeError:
-                continue
-            except Exception as exc:
-                _record_loader_error("mn.entities.load_local", exc)
-                break
-
-    io_ns = getattr(mn, "io", None)
-    if io_ns is not None:
-        loader = getattr(io_ns, "load", None)
-        if callable(loader):
-            loader_attempts.append("mn.io.load")
-            for kwargs in ({"name": object_name, "style": "spheres"}, {"name": object_name}, {}):
-                try:
-                    return _finalize_loaded("mn.io.load", loader(str(structure_path), **kwargs))
-                except TypeError:
-                    continue
-                except Exception as exc:
-                    _record_loader_error("mn.io.load", exc)
-                    break
-
-        local_ns = getattr(io_ns, "local", None)
-        local_loader = getattr(local_ns, "load", None) if local_ns is not None else None
-        if callable(local_loader):
-            loader_attempts.append("mn.io.local.load")
-            for kwargs in ({"name": object_name, "style": "spheres"}, {"name": object_name}, {}):
-                try:
-                    return _finalize_loaded("mn.io.local.load", local_loader(str(structure_path), **kwargs))
-                except TypeError:
-                    continue
-                except Exception as exc:
-                    _record_loader_error("mn.io.local.load", exc)
-                    break
-
-    load_ns = getattr(mn, "load", None)
-    if load_ns is not None:
-        for attr in ("molecule_local", "load_molecule_local"):
-            loader = getattr(load_ns, attr, None)
-            if loader is None:
-                continue
-            loader_attempts.append(f"mn.load.{attr}")
-            for kwargs in ({"name": object_name, "starting_style": 1}, {"name": object_name}):
-                try:
-                    return _finalize_loaded(f"mn.load.{attr}", loader(str(structure_path), **kwargs))
-                except TypeError:
-                    continue
-                except Exception as exc:
-                    _record_loader_error(f"mn.load.{attr}", exc)
-                    break
-
-    top_level_load_local = getattr(mn, "load_local", None)
-    if callable(top_level_load_local):
-        loader_attempts.append("mn.load_local")
-        for kwargs in ({"name": object_name, "style": "spheres"}, {"name": object_name}, {}):
-            try:
-                return _finalize_loaded("mn.load_local", top_level_load_local(str(structure_path), **kwargs))
-            except TypeError:
-                continue
-            except Exception as exc:
-                _record_loader_error("mn.load_local", exc)
-                break
-
-    # Lowest-priority fallback: parser APIs. These tend to require compatibility
-    # shims and may degrade style fidelity compared with entity/load APIs.
-    if io_ns is not None:
-        parse_ns = getattr(io_ns, "parse", None)
-        if parse_ns is not None:
-            for parser_name in ("MMCIF", "BCIF", "CIF", "PDB"):
-                parser_cls = getattr(parse_ns, parser_name, None)
-                if parser_cls is None:
-                    continue
-                loader_attempts.append(f"mn.io.parse.{parser_name}")
-                try:
-                    return _finalize_loaded(f"mn.io.parse.{parser_name}", parser_cls(str(structure_path)))
-                except Exception as exc:
-                    _record_loader_error(f"mn.io.parse.{parser_name}", exc)
-                    continue
-
-    details = ""
-    if loader_errors:
-        details = "\nLoader errors:\n- " + "\n- ".join(loader_errors[-8:])
-    raise RuntimeError(
-        f"No compatible Molecular Nodes loader found. Attempted: {', '.join(loader_attempts)}{details}"
-    )
 
 
 def _resolve_loaded_object(load_result: Any, object_name: str, *, allow_missing: bool = False) -> bpy.types.Object | None:
@@ -1901,6 +1126,8 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
     scene.render.resolution_y = int(output["height"])
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = str(output.get("format", "PNG")).upper()
+    scene.render.image_settings.color_mode = "RGBA"
+    scene.render.image_settings.color_depth = "8"
     scene.render.film_transparent = bool(renderer.get("transparent_background", False))
     if isinstance(renderer.get("exposure"), (int, float)):
         scene.view_settings.exposure = float(renderer["exposure"])
@@ -1915,6 +1142,7 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
         scene.cycles.samples = int(output.get("samples", 128))
         scene.cycles.device = str(renderer.get("device", "GPU")).upper()
         scene.cycles.use_adaptive_sampling = bool(renderer.get("adaptive_sampling", True))
+        scene.cycles.adaptive_threshold = float(renderer.get("adaptive_threshold", 0.01))
         try:
             scene.cycles.seed = int(renderer.get("seed", 0))
         except Exception:
@@ -2058,6 +1286,8 @@ def _add_lights(
         scene.collection.objects.link(light_obj)
 
         light_data.energy = float(cfg.get("energy", 1000.0))
+        if cfg.get("normalize_energy", False):
+            light_data.energy *= effective_radius ** 2
         if hasattr(light_data, "size"):
             if "size_scale" in cfg:
                 size_scale = float(cfg.get("size_scale", 1.0))
@@ -2072,6 +1302,10 @@ def _add_lights(
         if isinstance(relative_vec, (list, tuple)) and len(relative_vec) == 3:
             dist_scale = float(cfg.get("distance_scale", 1.0))
             rel = Vector((float(relative_vec[0]), float(relative_vec[1]), float(relative_vec[2])))
+            if cfg.get("camera_space", False):
+                rel = scene.camera.matrix_world.to_3x3() @ rel
+                if light_type == "AREA":
+                    light_data.shape = "DISK"
             rotate_with_pymol_yaw = bool(cfg.get("rotate_with_pymol_yaw", False))
             if (
                 rotate_with_pymol_yaw
@@ -2115,6 +1349,11 @@ def _set_bsdf_input(node: bpy.types.ShaderNodeBsdfPrincipled, names: tuple[str, 
 
 
 def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
+    if cfg.get("paint"):
+        from paint import make_paint_material
+        material = make_paint_material(cfg["paint"])
+        material.name = name
+        return material
     material = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     material.use_nodes = True
     nt = material.node_tree
@@ -2156,6 +1395,7 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         nt.links.new(one_minus_ao.outputs["Value"], ao_mul.inputs[0])
 
         mix_shadow = nt.nodes.new("ShaderNodeMixRGB")
+        mix_shadow.name = "Clay shadow"
         mix_shadow.location = (20, 80)
         mix_shadow.blend_type = "MIX"
         mix_shadow.inputs["Color1"].default_value = _hex_to_rgba(base_color)
@@ -2520,24 +1760,21 @@ def _build_selection(
 
 
 def _is_native_mn_molecule(load_result: Any) -> bool:
-    if isinstance(load_result, (_ParserMolecule, _CompatMolecule)):
-        return False
-    return bool(hasattr(load_result, "add_style") and hasattr(load_result, "tree"))
+    import molecularnodes as mn
+    return isinstance(load_result, mn.Molecule)
+
 
 
 def _native_style_from_cfg(style_cfg: dict[str, Any]) -> Any:
-    try:
-        import molecularnodes.nodes.styles as mn_styles  # type: ignore
-    except Exception:
-        return str(style_cfg.get("style", "spheres"))
+    import molecularnodes.nodes.styles as mn_styles
 
     style_kind = str(style_cfg.get("style", "spheres")).strip().lower()
     if style_kind == "cartoon":
         return mn_styles.StyleCartoon(
             quality=int(style_cfg.get("quality", 2)),
-            peptide_dssp=True,
+            peptide_dssp=bool(style_cfg.get("peptide_dssp", False)),
             peptide_cylinders=bool(style_cfg.get("peptide_cylinders", False)),
-            peptide_arrows=False,
+            peptide_arrows=bool(style_cfg.get("peptide_arrows", True)),
             peptide_rounded=bool(style_cfg.get("peptide_rounded", False)),
             peptide_smoothing=float(style_cfg.get("peptide_smoothing", 0.5)),
             peptide_thickness=float(style_cfg.get("thickness", 0.6)),
@@ -2548,7 +1785,7 @@ def _native_style_from_cfg(style_cfg: dict[str, Any]) -> Any:
             nucleic_radius=float(style_cfg.get("nucleic_radius", 2.0)),
             backbone_shape=style_cfg.get("backbone_shape", "Cylinder"),
             base_shape=style_cfg.get("base_shape", "Rectangle"),
-            base_realize=bool(style_cfg.get("base_realize", False)),
+            base_realize=bool(style_cfg.get("base_realize", True)),
             color_blur=bool(style_cfg.get("color_blur", False)),
             shade_smooth=bool(style_cfg.get("shade_smooth", True)),
         )
@@ -2591,98 +1828,13 @@ def _native_style_from_cfg(style_cfg: dict[str, Any]) -> Any:
     return style_kind
 
 
-def _add_style(
-    load_result: Any,
-    style_cfg: dict[str, Any],
-    selection: Any,
-    material: bpy.types.Material | None = None,
-) -> Any:
-    if not hasattr(load_result, "add_style"):
-        return None
+def _add_style(load_result: Any, style_cfg: dict[str, Any], selection: Any,
+               material: bpy.types.Material | None = None) -> Any:
+    if not _is_native_mn_molecule(load_result):
+        raise RuntimeError("Molecular Nodes 4.5.10 native molecule is required")
+    return load_result.add_style(_native_style_from_cfg(style_cfg), selection=selection,
+        color=None, name=style_cfg.get("name"), material=material)
 
-    style_kind = str(style_cfg["style"])
-    if _is_native_mn_molecule(load_result):
-        native_style = _native_style_from_cfg(style_cfg)
-        attempts = []
-        base_kwargs: dict[str, Any] = {"color": None}
-        style_name = str(style_cfg.get("name", "")).strip()
-        if style_name:
-            base_kwargs["name"] = style_name
-        if material is not None:
-            base_kwargs["material"] = material
-        if selection is not None:
-            attempts.append({"selection": selection, **base_kwargs})
-            attempts.append({"selection": selection})
-        attempts.append(base_kwargs)
-        attempts.append({})
-
-        errors: list[str] = []
-        for kwargs in attempts:
-            try:
-                return load_result.add_style(native_style, **kwargs)
-            except TypeError as exc:
-                errors.append(str(exc))
-                continue
-            except Exception as exc:
-                errors.append(str(exc))
-                continue
-        raise RuntimeError(
-            f"Could not add native style {style_cfg.get('name', style_kind)!r}. "
-            f"Last errors: {' | '.join(errors[-2:])}"
-        )
-
-    extra_kwargs: dict[str, Any] = {}
-    for key in (
-        "color",
-        "radius",
-        "probe_radius",
-        "quality",
-        "subdivisions",
-        "thickness",
-        "width",
-        "loop_radius",
-        "shade_smooth",
-        "peptide_cylinders",
-        "peptide_rounded",
-        "peptide_smoothing",
-        "nucleic_thickness",
-        "nucleic_width",
-        "nucleic_radius",
-        "backbone_shape",
-        "base_shape",
-        "base_realize",
-        "color_blur",
-        "sticks_radius",
-        "sticks_quality",
-        "sticks_shade_smooth",
-    ):
-        if key in style_cfg:
-            extra_kwargs[key] = style_cfg[key]
-    if material is not None:
-        extra_kwargs["material"] = material
-
-    attempts = []
-    if selection is not None:
-        attempts.append({"selection": selection, **extra_kwargs})
-        attempts.append({"selection": selection})
-    attempts.append(extra_kwargs)
-    attempts.append({})
-
-    errors: list[str] = []
-    for kwargs in attempts:
-        try:
-            return load_result.add_style(style_kind, **kwargs)
-        except TypeError as exc:
-            errors.append(str(exc))
-            continue
-        except Exception as exc:
-            errors.append(str(exc))
-            continue
-
-    raise RuntimeError(
-        f"Could not add style {style_cfg.get('name', style_kind)!r}. "
-        f"Tried kwargs variants; last errors: {' | '.join(errors[-2:])}"
-    )
 
 
 def _assign_style_material(
@@ -3028,6 +2180,17 @@ def _ensure_camera(scene: bpy.types.Scene, style_doc: dict[str, Any], view_doc: 
         camera_data.type = "PERSP"
         camera_data.angle = math.radians(fov_deg)
 
+    if camera_cfg.get("preserve_framing", False):
+        # PyMOL FOV is vertical; Blender's horizontal sensor expects the
+        # corresponding horizontal extent, including for portrait viewports.
+        viewport = view_doc.get("viewport_px", [scene.render.resolution_x, scene.render.resolution_y])
+        aspect = float(viewport[0]) / float(viewport[1])
+        camera_data.sensor_fit = "HORIZONTAL"
+        if camera_type == "ORTHO":
+            camera_data.ortho_scale *= aspect
+        else:
+            camera_data.angle = 2 * math.atan(math.tan(math.radians(fov_deg) / 2) * aspect)
+
     camera_mode = str(camera_cfg.get("mode", "pymol")).strip().lower()
     override_intrinsics = bool(camera_cfg.get("override_intrinsics", False))
     if camera_mode == "override" or override_intrinsics:
@@ -3067,6 +2230,43 @@ def _orient_camera_with_up(camera_obj: bpy.types.Object, forward: Vector, up_hin
     return True
 
 
+def _evaluated_mesh_stats(obj: Any) -> tuple[int, float]:
+    if obj is None or str(getattr(obj, "type", "")).upper() != "MESH":
+        return 0, 0.0
+    eval_obj = None
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        eval_mesh = eval_obj.to_mesh()
+    except Exception:
+        return 0, 0.0
+
+    try:
+        vertices = getattr(eval_mesh, "vertices", None)
+        if vertices is None:
+            return 0, 0.0
+        count = int(len(vertices))
+        if count == 0:
+            return 0, 0.0
+        min_x = min(float(v.co.x) for v in vertices)
+        max_x = max(float(v.co.x) for v in vertices)
+        min_y = min(float(v.co.y) for v in vertices)
+        max_y = max(float(v.co.y) for v in vertices)
+        min_z = min(float(v.co.z) for v in vertices)
+        max_z = max(float(v.co.z) for v in vertices)
+        extent = max(max_x - min_x, max_y - min_y, max_z - min_z)
+        return count, float(extent)
+    except Exception:
+        return 0, 0.0
+    finally:
+        if eval_obj is not None:
+            try:
+                eval_obj.to_mesh_clear()
+            except Exception:
+                pass
+
+
+
 def _object_has_renderable_geometry(obj: bpy.types.Object) -> bool:
     if obj is None:
         return False
@@ -3081,7 +2281,7 @@ def _object_has_renderable_geometry(obj: bpy.types.Object) -> bool:
     if obj_type not in {"MESH", "CURVE", "SURFACE"}:
         return False
     if obj_type == "MESH":
-        eval_count, eval_extent = _ParserMolecule._evaluated_mesh_stats(obj)
+        eval_count, eval_extent = _evaluated_mesh_stats(obj)
         if eval_count <= 0 or eval_extent < 1e-8:
             return False
     return True
@@ -4008,266 +3208,7 @@ def _selection_indices_with_ligand_box_cutout(
     return selected
 
 
-def _apply_surface_ligand_cutout_box_legacy(
-    *,
-    load_result: Any,
-    target_obj: bpy.types.Object | None,
-    cap_material: bpy.types.Material | None = None,
-    cap_material_cfg: dict[str, Any] | None = None,
-    anchor_load_result: Any | None = None,
-    anchor_object: bpy.types.Object | None = None,
-    ligand_anchor: Vector,
-    radius: float,
-    offset: float,
-    mirror: bool,
-    interface_center: Vector | None,
-    camera_axis: Vector | None = None,
-    width_scale: float = 1.15,
-    depth_scale: float = 0.45,
-    height_scale: float = 1.15,
-    one_sided: bool = True,
-    prefer_camera: bool = False,
-    flatten_z: bool = True,
-    one_sided_shift_scale: float = 1.0,
-    cap_mode: str = "panel",
-    runtime_info: dict[str, Any] | None = None,
-) -> bool:
-    if runtime_info is not None:
-        runtime_info.update(
-            {
-                "ligand_cutout_mode": "box_legacy",
-                "ligand_cutout_frame_mode": "camera" if bool(prefer_camera) else "interface",
-                "ligand_cutout_frame_axes": None,
-                "ligand_cutout_planes_enabled": dict(DEFAULT_PLANE_ENABLED),
-                "ligand_cutout_plane_scales": {
-                    "left": float(width_scale),
-                    "right": float(width_scale),
-                    "top": float(height_scale),
-                    "bottom": float(height_scale),
-                    "back": float(depth_scale),
-                },
-                "ligand_cutout_seal_mode": "trimmed_panel" if str(cap_mode or "panel").strip().lower() != "none" else "none",
-                "ligand_cutout_seal_depth_scale": None,
-                "ligand_cutout_seal_region_scale": None,
-                "ligand_cutout_boundary_loops_total": 0,
-                "ligand_cutout_boundary_loops_near_ligand": 0,
-                "ligand_cutout_boundary_filled_faces": 0,
-                "applied": False,
-            }
-        )
-    if target_obj is None or str(getattr(target_obj, "type", "")).upper() != "MESH":
-        return False
-    if float(radius) <= 1e-6:
-        return False
 
-    anchor_result = anchor_load_result if anchor_load_result is not None else load_result
-    anchor_target = anchor_object if anchor_object is not None else target_obj
-
-    ligand_anchor_world = _map_atom_point_to_object_bounds(
-        anchor_result,
-        anchor_target,
-        ligand_anchor,
-    )
-    scale = _estimate_atom_to_object_scale(anchor_result, anchor_target)
-    radius_world = max(0.02, float(radius) * max(scale, 1e-6))
-    offset_world = float(offset) * max(scale, 1e-6)
-
-    box = _ligand_cutout_box_params(
-        ligand_anchor=ligand_anchor_world,
-        radius=radius_world,
-        offset=offset_world,
-        interface_center=interface_center,
-        camera_axis=camera_axis,
-        width_scale=width_scale,
-        depth_scale=depth_scale,
-        height_scale=height_scale,
-        prefer_camera=prefer_camera,
-        flatten_z=flatten_z,
-    )
-    if box is None:
-        return False
-    cut_center, _, axis_y, _, cut_half_width, cut_half_depth, cut_half_height = box
-
-    def _add_box_cut(center: Vector, half_depth: float) -> bool:
-        try:
-            bpy.ops.mesh.primitive_cube_add(
-                size=2.0,
-                location=center,
-            )
-        except Exception:
-            return False
-
-        cutter = bpy.context.active_object
-        if cutter is None or str(getattr(cutter, "type", "")).upper() != "MESH":
-            return False
-
-        cutter.name = f"BridgeLigandCutout_{uuid.uuid4().hex[:8]}"
-        try:
-            cutter.scale = (cut_half_width, half_depth, cut_half_height)
-        except Exception:
-            pass
-        if axis_y.length > 1e-8:
-            try:
-                cutter.rotation_euler = axis_y.to_track_quat("Y", "Z").to_euler()
-            except Exception:
-                pass
-        try:
-            cutter.hide_render = True
-        except Exception:
-            pass
-        try:
-            cutter.hide_viewport = True
-        except Exception:
-            pass
-        try:
-            cutter.display_type = "WIRE"
-        except Exception:
-            pass
-
-        try:
-            modifier = target_obj.modifiers.new(name=f"BridgeLigandCutout_{uuid.uuid4().hex[:6]}", type="BOOLEAN")
-            modifier.operation = "DIFFERENCE"
-            modifier.object = cutter
-            if hasattr(modifier, "solver"):
-                modifier.solver = "EXACT"
-            if hasattr(modifier, "use_hole_tolerant"):
-                try:
-                    modifier.use_hole_tolerant = True
-                except Exception:
-                    pass
-            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-                try:
-                    stack = [str(mod.name) for mod in list(target_obj.modifiers)]
-                except Exception:
-                    stack = []
-                print(
-                    "Bridge Custom cutout modifier attached: "
-                    f"target={getattr(target_obj, 'name', '<unknown>')} "
-                    f"modifier={getattr(modifier, 'name', '<unknown>')} "
-                    f"stack={stack}"
-                )
-            return True
-        except Exception:
-            return False
-
-    def _add_cut_cap(center: Vector, side_sign: float) -> bool:
-        try:
-            bpy.ops.mesh.primitive_cube_add(size=2.0, location=center)
-        except Exception as exc:
-            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-                print(f"Bridge Custom cutout cap: cube_add failed: {exc}")
-            return False
-        panel = bpy.context.active_object
-        if panel is None or str(getattr(panel, "type", "")).upper() != "MESH":
-            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-                print("Bridge Custom cutout cap: active object missing/non-mesh")
-            return False
-        panel.name = f"BridgeCutoutCap_{uuid.uuid4().hex[:8]}"
-        try:
-            panel.scale = (
-                max(0.006, cut_half_width * 1.08),
-                max(0.0015, min(cut_half_depth * 0.035, 0.008)),
-                max(0.006, cut_half_height * 1.08),
-            )
-        except Exception:
-            pass
-        if axis_y.length > 1e-8:
-            try:
-                panel.rotation_euler = axis_y.to_track_quat("Y", "Z").to_euler()
-            except Exception:
-                pass
-        try:
-            mat = cap_material
-            if mat is None:
-                mat = _ensure_cutout_cap_material(cap_material_cfg=cap_material_cfg)
-            data = getattr(panel, "data", None)
-            materials = getattr(data, "materials", None) if data is not None else None
-            if materials is not None:
-                materials.clear()
-                materials.append(mat)
-        except Exception as exc:
-            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-                print(f"Bridge Custom cutout cap: material assignment failed: {exc}")
-            pass
-        # Trim the cap to the actual protein volume so we avoid detached rectangular slabs.
-        try:
-            trim_modifier = panel.modifiers.new(
-                name=f"BridgeCutoutCapTrim_{uuid.uuid4().hex[:6]}",
-                type="BOOLEAN",
-            )
-            trim_modifier.operation = "INTERSECT"
-            trim_modifier.object = target_obj
-            if hasattr(trim_modifier, "solver"):
-                trim_modifier.solver = "EXACT"
-            if hasattr(trim_modifier, "use_hole_tolerant"):
-                try:
-                    trim_modifier.use_hole_tolerant = True
-                except Exception:
-                    pass
-        except Exception as exc:
-            if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-                print(f"Bridge Custom cutout cap: trim modifier failed: {exc}")
-        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-            print(
-                "Bridge Custom cutout cap created: "
-                f"name={getattr(panel, 'name', '<unknown>')} "
-                f"center=({center.x:.3f},{center.y:.3f},{center.z:.3f})"
-            )
-        return True
-
-
-    if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-        print(
-            "Bridge Custom cutout box: "
-            f"center=({cut_center.x:.3f},{cut_center.y:.3f},{cut_center.z:.3f}) "
-            f"axis=({axis_y.x:.3f},{axis_y.y:.3f},{axis_y.z:.3f}) "
-            f"half=({cut_half_width:.3f},{cut_half_depth:.3f},{cut_half_height:.3f}) "
-            f"scale={scale:.6f} radius_world={radius_world:.3f} offset_world={offset_world:.3f}"
-        )
-
-    # Default to one-sided clipping so the far/exterior side stays intact.
-    clip_center = cut_center.copy()
-    clip_half_depth = cut_half_depth
-    side_sign = 1.0
-    if abs(offset_world) > 1e-6:
-        side_sign = 1.0 if offset_world >= 0.0 else -1.0
-    shift_scale = max(0.0, float(one_sided_shift_scale))
-    if one_sided:
-        clip_center = cut_center + (axis_y * (clip_half_depth * side_sign * shift_scale))
-    applied_primary = _add_box_cut(clip_center, clip_half_depth)
-    if not applied_primary:
-        return False
-    cap_mode_norm = str(cap_mode or "panel").strip().lower()
-    if abs(offset_world) > 1e-6 and cap_mode_norm != "none":
-        # Cap should sit on the kept-side cut boundary, which depends on one-sided shift.
-        if one_sided:
-            cap_center = clip_center - (axis_y * (clip_half_depth * side_sign))
-        else:
-            cap_center = cut_center.copy()
-        cap_added = _add_cut_cap(cap_center, side_sign)
-        if _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
-            print(f"Bridge Custom cutout cap added={int(bool(cap_added))}")
-
-    if mirror and abs(float(offset)) > 1e-6:
-        mirrored = Vector(
-            (
-                (ligand_anchor_world.x * 2.0) - clip_center.x,
-                (ligand_anchor_world.y * 2.0) - clip_center.y,
-                (ligand_anchor_world.z * 2.0) - clip_center.z,
-            )
-        )
-        _add_box_cut(mirrored, clip_half_depth)
-
-    if runtime_info is not None:
-        frame_axes = _orthonormal_frame_from_axis_y(axis_y)
-        runtime_info["applied"] = True
-        if frame_axes is not None:
-            runtime_info["ligand_cutout_frame_axes"] = {
-                "x": _vector_to_triplet(frame_axes[0]),
-                "y": _vector_to_triplet(frame_axes[1]),
-                "z": _vector_to_triplet(frame_axes[2]),
-            }
-    return True
 
 
 def _apply_surface_ligand_cutout_planes(
@@ -4500,30 +3441,6 @@ def _apply_surface_ligand_cutout(
     runtime_info: dict[str, Any] | None = None,
 ) -> bool:
     mode = str(cutout_mode or "planes").strip().lower()
-    if mode == "box_legacy":
-        return _apply_surface_ligand_cutout_box_legacy(
-            load_result=load_result,
-            target_obj=target_obj,
-            cap_material=cap_material,
-            cap_material_cfg=cap_material_cfg,
-            anchor_load_result=anchor_load_result,
-            anchor_object=anchor_object,
-            ligand_anchor=ligand_anchor,
-            radius=radius,
-            offset=offset,
-            mirror=mirror,
-            interface_center=interface_center,
-            camera_axis=camera_axis,
-            width_scale=width_scale,
-            depth_scale=depth_scale,
-            height_scale=height_scale,
-            one_sided=one_sided,
-            prefer_camera=prefer_camera,
-            flatten_z=flatten_z,
-            one_sided_shift_scale=one_sided_shift_scale,
-            cap_mode=cap_mode,
-            runtime_info=runtime_info,
-        )
     return _apply_surface_ligand_cutout_planes(
         load_result=load_result,
         target_obj=target_obj,
@@ -4727,7 +3644,9 @@ def _apply_pymol_ss_hints(load_result: Any, view_doc: dict[str, Any]) -> int:
         chain_id = _strip_wrapping_quotes(str(chain_upper[idx])).strip().upper()
         if not chain_id or chain_id in {".", "?"}:
             continue
-        key = f"{chain_id}:{int(res_ids[idx])}"
+        actual_chain = str(atom_array.chain_id[idx])
+        insertion = str(getattr(atom_array, "ins_code", [""] * count)[idx]).strip()
+        key = f"{actual_chain}:{int(res_ids[idx])}{insertion}"
         ss_code = str(by_chain_resi.get(key, "")).strip().upper()
         if ss_code == "H":
             sec_struct[idx] = 1
@@ -4755,6 +3674,9 @@ def _apply_pymol_ss_hints(load_result: Any, view_doc: dict[str, Any]) -> int:
 
 
 def _render(args: argparse.Namespace) -> None:
+    import time
+    import importlib.metadata
+    started = time.monotonic()
     style_path = Path(args.style_json).expanduser()
     if not style_path.is_absolute():
         style_path = (Path.cwd() / style_path).absolute()
@@ -4805,10 +3727,11 @@ def _render(args: argparse.Namespace) -> None:
     load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
     _apply_auth_chain_override(load_result, structure_path)
     ss_applied = _apply_pymol_ss_hints(load_result, view_doc)
+    from geometry import apply_atom_attributes, round_edges
+    apply_atom_attributes(load_result, view_doc, style_doc)
     if ss_applied > 0 and _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
         print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object=BridgeCustom")
     base_obj = _resolve_loaded_object(load_result, "BridgeCustom", allow_missing=True)
-    parser_mode = isinstance(load_result, _ParserMolecule)
     ligand_anchor = _ligand_anchor_from_load_result(load_result)
     if ligand_anchor is None and _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
         print("Bridge Custom: ligand anchor not available; ligand cutout styles will be skipped.")
@@ -4821,6 +3744,21 @@ def _render(args: argparse.Namespace) -> None:
         protein_chain_ids=protein_chain_ids,
     )
     materials = _build_materials(material_config)
+    if style_doc.get("color_follow", {}).get("enabled") and view_doc.get("color_hints", {}).get("atoms"):
+        for name, material in materials.items():
+            if material_config.get(name, {}).get("paint"):
+                continue
+            tree = material.node_tree
+            attr = tree.nodes.new("ShaderNodeAttribute")
+            attr.attribute_name = "Color"
+            mix = tree.nodes.new("ShaderNodeMixRGB")
+            mix.inputs[0].default_value = style_doc["color_follow"].get("mix", .65)
+            mix.inputs[1].default_value = _hex_to_rgba(material_config[name]["base_color"])
+            tree.links.new(attr.outputs["Color"], mix.inputs[2])
+            # Feed the pigment into the existing clay AO/rim shader.
+            shadow = tree.nodes.get("Clay shadow")
+            bsdf = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
+            tree.links.new(mix.outputs["Color"], shadow.inputs[1] if shadow else bsdf.inputs["Base Color"])
     created_objects: list[bpy.types.Object] = []
     style_objects_by_name: dict[str, list[bpy.types.Object]] = {}
     debug_styles = _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False)
@@ -4915,7 +3853,7 @@ def _render(args: argparse.Namespace) -> None:
             if cutout_cap_mode_value in {"panel", "none"}:
                 cutout_cap_mode = cutout_cap_mode_value
             cutout_mode_value = str(style_cfg.get("ligand_cutout_mode", "planes")).strip().lower()
-            if cutout_mode_value in {"planes", "box_legacy"}:
+            if cutout_mode_value in {"planes"}:
                 cutout_mode = cutout_mode_value
             cutout_frame_axes_raw = style_cfg.get("ligand_cutout_frame_axes")
             if isinstance(cutout_frame_axes_raw, dict):
@@ -4950,7 +3888,6 @@ def _render(args: argparse.Namespace) -> None:
 
         isolate_surface_cutout = (
             cutout_isolate
-            and not parser_mode
             and style_kind_lower == "surface"
             and cutout_radius > 0
             and ligand_anchor is not None
@@ -4958,11 +3895,12 @@ def _render(args: argparse.Namespace) -> None:
 
         style_load_result = load_result
         style_base_obj = base_obj
-        if parser_mode or isolate_surface_cutout:
+        if isolate_surface_cutout:
             style_object_name = f"BridgeCustom_{style_idx}"
             style_load_result = _load_with_ccd_retry(structure_path, style_object_name)
             _apply_auth_chain_override(style_load_result, structure_path)
             ss_applied = _apply_pymol_ss_hints(style_load_result, view_doc)
+            apply_atom_attributes(style_load_result, view_doc, style_doc)
             if ss_applied > 0 and debug_styles:
                 print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object={style_object_name}")
             style_base_obj = _resolve_loaded_object(style_load_result, style_object_name, allow_missing=True)
@@ -5006,7 +3944,7 @@ def _render(args: argparse.Namespace) -> None:
                 selection_width_scale = cutout_width_scale
                 selection_depth_scale = cutout_depth_scale
                 selection_height_scale = cutout_height_scale
-                if cutout_mode != "box_legacy":
+                if cutout_mode == "planes":
                     try:
                         _resolved_plane_scales = resolve_plane_scales(
                             cutout_plane_scales_cfg,
@@ -5314,23 +4252,8 @@ def _render(args: argparse.Namespace) -> None:
             pass
         created_objects.append(base_obj)
     if not any(_object_has_renderable_geometry(obj) for obj in created_objects):
-        fallback_material = next(iter(materials.values()), None)
-        if fallback_material is not None:
-            try:
-                fallback_style = {
-                    "name": "fallback_visible_geometry",
-                    "style": "spheres",
-                    "radius": 0.15,
-                    "subdivisions": 2,
-                    "shade_smooth": True,
-                }
-                fallback_result = _add_style(load_result, fallback_style, selection=None, material=fallback_material)
-                fallback_obj = getattr(fallback_result, "_object", None)
-                if fallback_obj is not None:
-                    created_objects.append(fallback_obj)
-                    print("Bridge Custom: styles produced no visible geometry, added fallback spheres.")
-            except Exception as exc:
-                print(f"Bridge Custom: fallback geometry failed: {exc}")
+        raise RuntimeError("Styles produced no visible geometry; refusing a different representation.")
+    rounded_objects = round_edges(created_objects, style_doc.get("geometry", {}).get("edge_rounding"))
 
     if debug_styles:
         for obj in created_objects:
@@ -5375,14 +4298,23 @@ def _render(args: argparse.Namespace) -> None:
     scene.render.filepath = str(output_png)
 
     output_cfg = style_doc.get("output")
+    geometry_ready = time.monotonic()
     raw_view = bool(isinstance(output_cfg, dict) and output_cfg.get("raw_view", False))
     if raw_view:
         _render_raw_view(scene)
     else:
         bpy.ops.render.render(animation=False, write_still=True)
+    rendered = time.monotonic()
     blend_output = _resolve_blend_output_path(style_doc, output_png)
     if blend_output is not None:
         blend_output.parent.mkdir(parents=True, exist_ok=True)
+        notice = bpy.data.texts.get("Blender Render - dependency licenses") or bpy.data.texts.new("Blender Render - dependency licenses")
+        notice.clear()
+        notice.write("Rendered with Blender 5.0.1 and Molecular Nodes 4.5.10.\n"
+                     "Molecular Nodes assets and Blender API scripts retain GPL-3.0-or-later.\n"
+                     "Source and build instructions: https://github.com/magnusbauer/blender_render\n"
+                     "Upstream Molecular Nodes: https://github.com/BradyAJohnston/MolecularNodes\n\n")
+        notice.write(Path(__file__).with_name("GPL-3.0-or-later.txt").read_text())
         bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), copy=True)
         print(f"Custom blend saved: {blend_output}")
     run_manifest_raw = str(getattr(args, "run_manifest", "") or "").strip()
@@ -5395,6 +4327,24 @@ def _render(args: argparse.Namespace) -> None:
             if run_manifest_path.is_file():
                 manifest_doc = _load_json(run_manifest_path)
             manifest_doc["polymer_backend"] = runtime_polymer_backend
+            manifest_doc["blender_version"] = bpy.app.version_string
+            try:
+                mn_version = importlib.metadata.version("molecularnodes")
+            except importlib.metadata.PackageNotFoundError:
+                import molecularnodes, tomllib
+                mn_version = tomllib.loads(Path(molecularnodes.__file__).with_name("blender_manifest.toml").read_text())["version"]
+            import biotite
+            manifest_doc["runtime_versions"] = {"blender": bpy.app.version_string, "molecularnodes": mn_version,
+                "python": ".".join(map(str, sys.version_info[:3])), "numpy": np.__version__, "biotite": biotite.__version__}
+            manifest_doc["cycles_device"] = json.loads(scene.get("bridge_device_info", "{}"))
+            manifest_doc["timings_seconds"] = {"scene_build": geometry_ready - started, "path_trace": rendered - geometry_ready,
+                "save": time.monotonic() - rendered, "total": time.monotonic() - started}
+            manifest_doc["resolved_preset"] = style_doc
+            manifest_doc["camera_matrix_world"] = [list(row) for row in camera.matrix_world]
+            manifest_doc["camera_type"] = camera.data.type
+            manifest_doc["camera_ortho_scale"] = camera.data.ortho_scale
+            manifest_doc["resolution"] = [scene.render.resolution_x, scene.render.resolution_y]
+            manifest_doc["rounded_objects"] = rounded_objects
             manifest_doc["ligand_backend"] = runtime_ligand_backend
             manifest_doc["ligand_atom_spheres"] = bool(runtime_ligand_atom_spheres)
             # Backward-compatible aliases.
@@ -5427,7 +4377,7 @@ def _render(args: argparse.Namespace) -> None:
             run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
             run_manifest_path.write_text(json.dumps(manifest_doc, indent=2), encoding="utf-8")
         except Exception as exc:
-            print(f"Bridge Custom: failed to update run manifest: {exc}")
+            raise RuntimeError("Required render manifest could not be written") from exc
     print(f"Custom render complete: {output_png}")
 
 

@@ -1,0 +1,10 @@
+{
+  "kind": "hpc",
+  "transport": "slurm",
+  "host": "YOUR_IPD_SSH_ALIAS",
+  "remote_python": "/shared/path/blender-render/.venv/bin/python",
+  "remote_root": "/shared/path/blender-render",
+  "image": "/shared/path/blender-render-0.2.0b1.sif",
+  "registry": "/shared/path/blender-render-session",
+  "allocation": ["-p", "gpu", "--gres=gpu:small:1", "--constraint=A4000", "--mem=64G", "-c", "4", "--time=00:30:00"]
+}

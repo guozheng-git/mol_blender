@@ -1,0 +1,295 @@
+"""Authenticated HTTP API and short-lived artifact downloads."""
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+import time
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+
+from .config import VERSION
+from .jobs import JobError
+from .service import RenderService
+
+
+class Downloads:
+    def __init__(self, key: str, base_url: str, clock=time.time):
+        if len(key) < 32:
+            raise ValueError("Download signing key must contain at least 32 characters")
+        self.key = key.encode()
+        self.base_url = base_url.rstrip("/")
+        self.clock = clock
+
+    def url(self, owner: str, job_id: str, name: str, ttl: int = 900) -> str:
+        data = base64.urlsafe_b64encode(json.dumps([owner, job_id, name, int(self.clock()) + ttl], separators=(",", ":")).encode()).decode().rstrip("=")
+        signature = hmac.new(self.key, data.encode(), hashlib.sha256).hexdigest()
+        return f"{self.base_url}/download/{data}.{signature}"
+
+    def verify(self, value: str) -> tuple[str, str, str]:
+        try:
+            if len(value) > 2048:
+                raise ValueError()
+            data, signature = value.rsplit(".", 1)
+            expected = hmac.new(self.key, data.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected, signature):
+                raise ValueError()
+            owner, job, name, expires = json.loads(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))
+            if self.clock() >= expires:
+                raise JobError("Download link has expired; request a fresh result link.", "expired", 410)
+            return owner, job, name
+        except JobError:
+            raise
+        except Exception as exc:
+            raise JobError("Invalid download link.", "unauthorized", 401) from exc
+
+
+class BoundedBody:
+    """Bound chunked bodies before handing them to REST, OAuth, or MCP parsers."""
+    def __init__(self, app, limit):
+        self.app, self.limit = app, limit
+        self.readers = asyncio.Semaphore(4)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in {"GET", "HEAD", "OPTIONS"}:
+            return await self.app(scope, receive, send)
+        limit = min(self.limit, 1024**2) if scope["path"].startswith("/mcp") else self.limit
+        async with self.readers:
+            data = bytearray()
+            while True:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    return
+                data.extend(message.get("body", b""))
+                if len(data) > limit:
+                    response = JSONResponse({"error":"Request is too large", "code":"too_large"}, status_code=413,
+                        headers={"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"})
+                    return await response(scope, receive, send)
+                if not message.get("more_body", False):
+                    break
+            delivered = False
+            async def bounded_receive():
+                nonlocal delivered
+                if delivered:
+                    return await receive()
+                delivered = True
+                return {"type":"http.request", "body":bytes(data), "more_body":False}
+            await self.app(scope, bounded_receive, send)
+
+
+def create_app(service: RenderService, *, token: str, public_url: str = "", signing_key: str = "", auth_provider=None, mcp_server=None, converter=None, tokens: dict[str, str] | None = None) -> FastAPI:
+    if len(token) < 32:
+        raise ValueError("A service/admin token of at least 32 characters is required")
+    token_owners = {token: "local"} if tokens is None else tokens
+    downloads = Downloads(signing_key or token, public_url)
+    mcp_app = mcp_server.http_app(path="/mcp", stateless_http=True) if mcp_server else None
+
+    @asynccontextmanager
+    async def lifespan(app):
+        service.start()
+        try:
+            if mcp_app:
+                async with mcp_app.lifespan(app):
+                    yield
+            else:
+                yield
+        finally:
+            service.stop()
+
+    app = FastAPI(title="Blender Render", version=VERSION, lifespan=lifespan)
+    app.state.service = service
+    app.state.downloads = downloads
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def homepage():
+        from .public_site import page
+        return page("home")
+
+    @app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+    async def privacy():
+        from .public_site import page
+        return page("privacy")
+
+    @app.get("/terms", response_class=HTMLResponse, include_in_schema=False)
+    async def terms():
+        from .public_site import page
+        return page("terms")
+
+    @app.exception_handler(JobError)
+    async def job_error(request, exc):
+        return JSONResponse({"error": str(exc), "code": exc.code}, status_code=exc.status)
+
+    @app.middleware("http")
+    async def size_limit(request: Request, call_next):
+        raw_length = request.headers.get("content-length", "0")
+        try:
+            if int(raw_length) > service.store.policy.max_upload_bytes + 65536:
+                return JSONResponse({"error": "Request is too large", "code": "too_large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"error": "Invalid content length"}, status_code=400)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    async def owner(request: Request) -> str:
+        value = request.headers.get("authorization", "")
+        bearer = value[7:] if value.startswith("Bearer ") else ""
+        # The private operator token is never a public user's identity.
+        if not service.store.policy.public:
+            for candidate, identity in token_owners.items():
+                if hmac.compare_digest(candidate, bearer):
+                    return identity
+        if auth_provider and bearer:
+            verified = await auth_provider.verify_token(bearer)
+            if verified and verified.claims.get("sub"):
+                return "github:" + str(verified.claims["sub"])
+        raise JobError("Sign in to access this render service.", "unauthorized", 401)
+
+    async def admin(request: Request):
+        value = request.headers.get("authorization", "")
+        if not hmac.compare_digest(value, "Bearer " + token):
+            raise JobError("Operator authentication required.", "unauthorized", 401)
+
+    async def body(request: Request) -> dict:
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > service.store.policy.max_upload_bytes + 65536:
+                raise JobError("Request is too large.", "too_large", 413)
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            raise JobError("Request body must be valid JSON.") from exc
+        if not isinstance(data, dict):
+            raise JobError("Request body must be an object.")
+        return data
+
+    @app.get("/healthz")
+    @app.get("/health")
+    async def health(request: Request):
+        if not service.store.policy.public:
+            await owner(request)
+        with service.store.lock:
+            queue = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued'").fetchone()[0]
+            running = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='running'").fetchone()[0]
+        return {"status": "ok" if service.store.healthy else "unavailable", "version": VERSION, "queue_depth": queue, "running": running}
+
+    @app.get("/v1/quota")
+    async def quota(identity=Depends(owner)):
+        return service.store.quota(identity)
+
+    @app.get("/v1/presets")
+    async def presets(identity=Depends(owner)):
+        from .core import PRESET_STYLE_FILENAMES
+        return {"presets": list(PRESET_STYLE_FILENAMES)}
+
+    @app.post("/v1/structures")
+    async def upload(request: Request, identity=Depends(owner)):
+        data = await body(request)
+        return await asyncio.to_thread(service.import_payload, identity, data.get("payload"), data.get("name", "structure.cif"))
+
+    @app.post("/v1/files/{format}")
+    async def upload_file(format: str, request: Request, identity=Depends(owner)):
+        if format not in {"pse", "cif", "mmcif", "pdb"} or converter is None:
+            raise JobError("This service does not support that file conversion.", "unsupported", 422)
+        data = await request.body()
+        if len(data) > service.store.policy.max_upload_bytes:
+            raise JobError("File is too large.", "too_large", 413)
+        await asyncio.to_thread(service.store.reserve_conversion, identity)
+        try:
+            payload = await asyncio.to_thread(converter, data, "." + format)
+        except Exception as exc:
+            raise JobError("The molecular file could not be converted. Check that it is a valid PSE, CIF, or PDB file.", "invalid_structure", 422) from exc
+        return await asyncio.to_thread(service.import_payload, identity, payload, "structure." + format)
+
+    @app.post("/v1/jobs", status_code=202)
+    async def submit(request: Request, identity=Depends(owner)):
+        data = await body(request)
+        return await asyncio.to_thread(service.submit, identity, data.get("input_id", ""), data.get("options", {}), data.get("idempotency_key", ""))
+
+    @app.get("/status/{job_id}")
+    @app.get("/v1/jobs/{job_id}")
+    async def status(job_id: str, identity=Depends(owner)):
+        return service.store.get(identity, job_id)
+
+    @app.post("/v1/jobs/{job_id}/cancel")
+    async def cancel(job_id: str, identity=Depends(owner)):
+        return await asyncio.to_thread(service.store.cancel, identity, job_id)
+
+    @app.get("/result/{job_id}")
+    @app.get("/v1/jobs/{job_id}/result")
+    async def result(job_id: str, identity=Depends(owner)):
+        data = service.store.result(identity, job_id)
+        for artifact in data["artifacts"]:
+            artifact["download_url"] = downloads.url(identity, job_id, artifact["name"])
+        return data
+
+    @app.get("/v1/jobs/{job_id}/artifacts/{name}")
+    async def artifact(job_id: str, name: str, identity=Depends(owner)):
+        path, mime = service.artifact(identity, job_id, name)
+        return FileResponse(path, media_type=mime, filename=name)
+
+    @app.get("/download/{signed}")
+    async def download(signed: str):
+        identity, identifier, name = downloads.verify(signed)
+        path, mime = service.artifact(identity, identifier, name)
+        return FileResponse(path, media_type=mime, filename=name)
+
+    @app.post("/v1/admin/drain", dependencies=[Depends(admin)])
+    async def drain():
+        await asyncio.to_thread(service.store.drain)
+        return {"status": "draining"}
+
+    @app.post("/v1/admin/maintenance", dependencies=[Depends(admin)])
+    async def maintenance():
+        await asyncio.to_thread(service.store.cleanup)
+        return {"status": "ok"}
+
+    @app.post("/v1/admin/resume", dependencies=[Depends(admin)])
+    async def resume():
+        await asyncio.to_thread(service.store.resume)
+        service.wakeup.set()
+        return {"status": "open"}
+
+    @app.post("/stop", dependencies=[Depends(admin)])
+    @app.post("/v1/admin/stop", dependencies=[Depends(admin)])
+    async def stop():
+        await asyncio.to_thread(service.store.drain)
+        shutdown = getattr(app.state, "shutdown", None)
+        if shutdown:
+            shutdown()
+        return {"status": "stopping" if shutdown else "draining"}
+
+    @app.post("/render")
+    async def legacy_render(request: Request, identity=Depends(owner)):
+        data = await body(request)
+        source = await asyncio.to_thread(service.import_payload, identity, data.get("payload"))
+        allowed = {"preset", "style_doc", "rough", "raw_view", "color_follow", "save_blend", "width", "height", "samples", "transparent_background", "preserve_view"}
+        options = {k: v for k, v in data.items() if k in allowed}
+        job = await asyncio.to_thread(service.submit, identity, source["input_id"], options, data.get("idempotency_key") or secrets.token_hex(16))
+        deadline = time.monotonic() + min(float(data.get("request_timeout_seconds", 1800)), 3600)
+        while time.monotonic() < deadline:
+            state = service.store.get(identity, job["job_id"])
+            if state["status"] == "done":
+                result = service.store.result(identity, job["job_id"])
+                response = {"status": "completed", "job_id": job["job_id"], "output_name": "render.png", "manifest": result["manifest"]}
+                for name, field in (("render.png", "png_base64"), ("render.blend", "blend_base64")):
+                    if any(a["name"] == name for a in result["artifacts"]):
+                        path, _ = service.artifact(identity, job["job_id"], name)
+                        response[field] = base64.b64encode(path.read_bytes()).decode()
+                return response
+            if state["status"] in {"failed", "cancelled", "expired"}:
+                raise JobError(state.get("error") or "Render cancelled", "render_failed", 422)
+            await asyncio.sleep(0.25)
+        return JSONResponse({"error": "Render is still pending; poll the job ID instead of resubmitting.", **job}, status_code=504)
+
+    if mcp_app:
+        app.mount("/", mcp_app)
+    app.add_middleware(BoundedBody, limit=service.store.policy.max_upload_bytes + 65536)
+    return app

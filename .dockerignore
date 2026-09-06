@@ -1,0 +1,11 @@
+.git
+.venv
+.validation
+dist
+build
+**/__pycache__
+**/*.pyc
+**/*.blend
+**/*.sif
+**/*.pse
+.env*

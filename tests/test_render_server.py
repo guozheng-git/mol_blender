@@ -33,6 +33,9 @@ class _FallbackWorker(_FakeWorker):
         output_png.parent.mkdir(parents=True, exist_ok=True)
         if structure_path.suffix.lower() == ".pdb":
             output_png.write_bytes(b"png-data")
+        else:
+            from blender_render.render_worker_manager import WorkerError
+            raise WorkerError('CIF parse failed')
         return {"status": "completed", "runtime_seconds": 0.11}
 
 

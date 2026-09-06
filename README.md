@@ -1,65 +1,74 @@
-# PyMOL Plugin Bridge
+# Blender Render
 
-Repository focus: PyMOL -> Blender bridge using JSON-defined style presets.
-Operation model: **server/client only**.
+Ray-traced molecular stills from PyMOL, with the saved pose, colors, and transparent background. Use the same Blender renderer on an Apple Silicon Mac, your lab's SLURM cluster, or Modal, and connect it to Codex or ChatGPT through MCP.
 
-- Server: persistent FIFO render service that returns PNG bytes.
-- Client: PyMOL plugin or CLI that sends the same payload format as before.
-- Execution target is configured by server runtime (`host Blender` or `Apptainer`), not by client mode.
+This is the **private 0.2.0b1 beta**. The repository and release artifacts remain private, and the hosted endpoint admits only the owner's GitHub account. Public publication, publisher identity verification, and OpenAI portal submission are deferred at the owner's request. The [validation report](docs/release-validation.md) distinguishes executed checks from remaining release gates.
 
-Primary docs:
-- `blender_render/README.md`
-- See `blender_render/README.md` sections:
-  - `Remote server mode (FIFO + persistent Blender worker)`
-  - `Platform quick setup`
+![Dried green paint on public PDB structure 2TRX](examples/rendered/2trx_dried_paint.png)
 
-Core runtime files:
-- `blender_render/pymol_bridge_plugin.py`
-- `blender_render/pse_render_cli.py`
-- `blender_render/render_server.py`
-- `blender_render/render_worker_manager.py`
-- `blender_render/remote_client.py`
-- `blender_render/blender_custom_render.py`
-- `blender_render/style.schema.json`
-- `blender_render/style_preset_1_opaque_pastel.json`
-- `blender_render/style_preset_2_frosted_blue.json`
-- `blender_render/style_preset_3_black_tubes.json`
-- `blender_render/style_preset_4_milky_green.json`
-- `blender_render/style_preset_5_black_interface.json`
+The renderer pins **Blender 5.0.1**, **Molecular Nodes 4.5.10**, and **Python 3.11**. Preset 1 remains the default pastel style. `dried_paint_green` adds pigment variation, surface relief, and rounded ribbon edges. Output is a PNG plus a provenance manifest, with an optional `.blend` download. Animation and interactive 3D editing are outside this beta.
 
-Quick start (server):
+## Choose compute
 
-```bash
-pixi run render-server
+| Compute | Setup | Use |
+|---|---|---|
+| Mac | Install the wheel and run setup | `blender_render` inside PyMOL; Metal with CPU fallback |
+| Own HPC | Add a named cluster profile | `blender_render mode=interactive, profile=ipd`; warm Apptainer worker with SSH transport |
+| Shared Modal | Install the plugin and sign in with GitHub | Import, submit, inspect progress, preview, and download |
+| Your Modal account | Deploy a personal service with an explicit budget | Connect its HTTPS MCP URL |
+
+- [Mac installation and PyMOL](docs/mac.md)
+- [SLURM, Apptainer, and a lab HTTPS gateway](docs/hpc.md)
+- [Codex and ChatGPT plugin installation](docs/plugin.md)
+- [Modal deployment and budget operation](docs/modal.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
+## Quick start
+
+After installing the release wheel's `server` extra in Python 3.11:
+
+```sh
+blender-render setup --install-runtime
 ```
 
-One-command wrapper (server + optional auto tunnel exposure):
-
-```bash
-./scripts/start_render_server_exposed.sh
-```
-
-With reverse tunnel exposure:
-
-```bash
-./scripts/start_render_server_exposed.sh --relay-target user@public-host --relay-port 8765
-```
-
-Verbose server logs:
-
-```bash
-pixi run render-server-verbose
-```
-
-Custom host/port:
-
-```bash
-pixi run python -m blender_render.render_server --host 0.0.0.0 --port 8765
-```
-
-Quick start (PyMOL client):
+Run the plugin path printed by setup in PyMOL, then:
 
 ```python
-run /net/scratch/magnusb/git/blender_bridge/blender_render/pymol_bridge_plugin.py
-blender_render selection='(all)', preset='preset_1_interface', mode='remote', server_host='127.0.0.1', server_port=8765, rough=1
+blender_render
+blender_render preset=dried_paint_green, transparent_background=1, save_blend=1
 ```
+
+For files on disk, configure `--pymol-python` with an interpreter containing `pymol2`, then:
+
+```sh
+blender-render render pose.pse --preset dried_paint_green --transparent --save-blend -o figure.png
+```
+
+PSE input preserves enabled objects, object transforms, the saved camera/projection/FOV, and PyMOL colors. CIF and PDB input receive a fitted initial view. Export is CIF-first and assigns secondary structure before rendering. Ligands use native Molecular Nodes sticks, with no legacy ball-and-stick fallback. Rough mode changes performance settings only.
+
+## Jobs and provenance
+
+The versioned API provides upload, immediate asynchronous submission, status, cancellation, results, and expiring downloads. Submission is idempotent; reconnect to the returned job ID instead of launching another render after a network interruption. One durable FIFO queue owns each service's Blender worker. Local and HPC services stop after 15 idle minutes.
+
+Each manifest records input hashes and provenance, DSS status, structure format, selected geometry backends, resolved preset, runtime and GPU versions, camera settings, timings, and output checksums. Temporary run directories are cleaned by default.
+
+The shared service allows one active job per account, five renders and twenty GPU minutes per UTC day, 2048-pixel default output, a 4096-pixel maximum dimension, and a ten-minute timeout. It reserves worst-case job costs before dispatch and stops admission when lifetime credits are insufficient or expiring. Inputs and results expire after 24 hours. There is no public gallery. See [privacy](docs/privacy.md) and [terms](docs/terms.md).
+
+## Development
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev,server,mcp,modal]'
+.venv/bin/python -m pytest
+.venv/bin/python -m build
+```
+
+`blender_render` is the only implementation package. `bridge_runner`, `render_server`, and the PyMOL script remain compatibility entry points. The preset JSON schema and packaged runtime lock are shared by all backends. See [architecture](docs/architecture.md) and [release validation](docs/release-validation.md).
+
+The examples use public PDB structures; accession, source URL, and SHA256 are recorded in `examples/structures.json`.
+
+## License and support
+
+Independently authored bridge/client code is MIT. Blender, Molecular Nodes, and other dependencies retain their licenses and source availability; the combined runtime is not MIT-only. [Dependency notices](THIRD_PARTY_NOTICES.md) describe the distributed source bundle and upstream licenses.
+
+Report reproducible problems through [GitHub issues](https://github.com/magnusbauer/blender_render/issues), preferably with a public example and a reviewed manifest. OpenAI directory publication is deferred; private testing uses repository installation and the restricted MCP endpoint.

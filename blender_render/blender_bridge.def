@@ -1,152 +1,39 @@
 Bootstrap: docker
-From: ubuntu:24.04
+From: python@sha256:78b39ef14d8e2b4d71f8dc304f1328c37df95fe0ef99477c2ae6bd3d03784553
 
 %labels
-    Author PyMOLBlenderBridge
-    Description "PyMOL -> Blender GPU/SLURM bridge runtime"
+    org.opencontainers.image.title "Blender Render"
+    org.opencontainers.image.version "0.2.0b1"
+    org.opencontainers.image.source "https://github.com/magnusbauer/blender_render"
+    org.opencontainers.image.licenses "MIT AND GPL-3.0-or-later"
 
 %files
-    . /opt/blender_render
+    blender_render /opt/blender_render
+    LICENSE /opt/LICENSE
+    THIRD_PARTY_NOTICES.md /opt/THIRD_PARTY_NOTICES.md
+    containers/runtime-install.sh /opt/runtime-install.sh
 
 %post
-    set -eux
-    export DEBIAN_FRONTEND=noninteractive
-
-    apt-get update
-    apt-get install -y --no-install-recommends \
-        python3 \
-        python3-pip \
-        python3-venv \
-        ca-certificates \
-        wget \
-        xz-utils \
-        git \
-        slurm-client \
-        libx11-6 \
-        libxi6 \
-        libxxf86vm1 \
-        libxfixes3 \
-        libxrender1 \
-        libxcursor1 \
-        libxext6 \
-        libxkbcommon0 \
-        libdbus-1-3 \
-        libegl1 \
-        libgl1 \
-        libglib2.0-0 \
-        libsm6 \
-        libice6 \
-        libfontconfig1 \
-        libfreetype6 \
-        libwayland-client0 \
-        libopengl0 \
-        libpulse0 \
-        libxrandr2 \
-        libxinerama1 \
-        libnss3 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxshmfence1
-    rm -rf /var/lib/apt/lists/*
-
-    # Install official Blender build (bundled Python runtime, compatible with Molecular Nodes).
-    BLENDER_VERSION=5.0.1
-    BLENDER_SERIES=5.0
-    BLENDER_TAR="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-    BLENDER_URL="https://download.blender.org/release/Blender${BLENDER_SERIES}/${BLENDER_TAR}"
-    wget -q -O "/tmp/${BLENDER_TAR}" "${BLENDER_URL}"
-    tar -xJf "/tmp/${BLENDER_TAR}" -C /opt
-    ln -sf "/opt/blender-${BLENDER_VERSION}-linux-x64/blender" /usr/local/bin/blender
-    rm -f "/tmp/${BLENDER_TAR}"
-    blender --version
-
-    # System Python is used by bridge_runner.py and helper tooling.
-    # Do not install bpy here: Linux wheels are not available for generic CPython.
-    python3 -m pip install --break-system-packages --no-cache-dir \
-        jsonschema
-
-    # Install Molecular Nodes into Blender's bundled Python runtime.
-cat > /tmp/install_molecularnodes.py <<'PY'
-import ensurepip
-import importlib
-import importlib.metadata as metadata
-import subprocess
-import sys
-import bpy
-
-print("Blender Python executable:", sys.executable)
-print("Blender Python version:", sys.version)
-
-ensurepip.bootstrap(upgrade=True)
-subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "pip", "setuptools", "wheel"])
-# Pinned runtime versions for preset fidelity.
-subprocess.check_call(
-    [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--no-cache-dir",
-        "numpy==1.26.4",
-        "biotite==1.6.0",
-        "MDAnalysis>=2.10",
-        "mrcfile",
-        "starfile",
-        "PyYAML",
-        "databpy>=0.6.0",
-        "imdclient>=0.2.3",
-        "ipython>=9.7.0",
-        "pandas<3.0.0",
-    ]
-)
-subprocess.check_call(
-    [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--no-cache-dir",
-        "--no-deps",
-        "molecularnodes==4.5.10",
-    ]
-)
-mn = importlib.import_module("molecularnodes")
-numpy = importlib.import_module("numpy")
-biotite = importlib.import_module("biotite")
-print("molecularnodes version:", getattr(mn, "__version__", "unknown"))
-print("numpy version:", getattr(numpy, "__version__", "unknown"))
-print("biotite version:", getattr(biotite, "__version__", "unknown"))
-print("bpy version:", bpy.app.version_string)
-
-# Build-time guard: fail image build if pinned versions drift.
-expected = {
-    "molecularnodes": "4.5.10",
-    "numpy": "1.26.4",
-    "biotite": "1.6.0",
-}
-for pkg, version in expected.items():
-    got = metadata.version(pkg)
-    if got != version:
-        raise SystemExit(f"Version mismatch for {pkg}: expected {version}, got {got}")
-if tuple(bpy.app.version[:3]) != (5, 0, 1):
-    raise SystemExit(f"Blender version mismatch: expected (5, 0, 1), got {tuple(bpy.app.version[:3])}")
-PY
-
-    blender --background --factory-startup --python-exit-code 1 --python /tmp/install_molecularnodes.py
-    rm -f /tmp/install_molecularnodes.py
+    sh /opt/runtime-install.sh
 
 %environment
-    export BRIDGE_ROOT=/opt/blender_render
-    export PATH=/usr/bin:$PATH
-    export PYTHONPATH=/opt/blender_render:$PYTHONPATH
+    export PYTHONPATH=/opt:/opt/runtime/site
+    export BLENDER_RENDER_SITE=/opt/runtime/site
+    export PYTHONUNBUFFERED=1
+    export QT_QPA_PLATFORM=offscreen
 
 %runscript
-    exec python3 /opt/blender_render/bridge_runner.py "$@"
+    exec python -m blender_render.cli "$@"
+
+%test
+    blender --background --python-use-system-env --python-exit-code 1 --python /opt/blender_render/runtime_initialize.py
 
 %help
-    Build:
-      apptainer build blender_bridge.sif blender_bridge.def
+    Build from the source repository root:
+      apptainer build blender-render-0.2.0b1-linux-x64.sif blender_render/blender_bridge.def
 
-    Run local render from payload JSON:
-      apptainer exec --nv blender_bridge.sif \
-        python3 /opt/blender_render/bridge_runner.py local ...
+    Run the pinned worker:
+      apptainer run --nv blender-render-0.2.0b1-linux-x64.sif serve --token-file /path/to/token
+
+    Dependency notices are in /usr/share/doc and /opt/notices. Corresponding
+    sources and build instructions accompany the release.
