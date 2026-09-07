@@ -9,6 +9,24 @@ from blender_render.mcp_server import create_stdio, create_http
 from blender_render.api import Downloads
 
 
+def test_preview_is_bounded_and_preserves_original_alpha(tmp_path):
+    import base64
+    import io
+    from blender_render.mcp_server import image_preview
+    path = tmp_path / 'large.png'
+    source = PillowImage.effect_noise((2048, 1536), 80).convert('RGBA')
+    source.putalpha(PillowImage.linear_gradient('L').resize(source.size))
+    source.save(path)
+    original = path.read_bytes()
+    result = image_preview(path).to_image_content()
+    raw = base64.b64decode(result.data)
+    preview = PillowImage.open(io.BytesIO(raw))
+    assert len(raw) <= 384 * 1024
+    assert max(preview.size) <= 1024 and preview.mode == 'RGBA'
+    assert preview.getchannel('A').getextrema() == (0, 255)
+    assert path.read_bytes() == original
+
+
 def test_native_preview_and_stdio_tools(monkeypatch, tmp_path):
     import blender_render.client
     path = tmp_path / 'preview.png'
@@ -54,7 +72,11 @@ def test_chatgpt_declared_file_contract():
             assert tools['render_status'].annotations.readOnlyHint
             assert tools['render_status'].inputSchema['properties']['wait_seconds']['maximum'] == 25
             assert tools['render_result'].outputSchema
-            uri=tools['render_result'].meta['ui']['resourceUri']
+            # Delivery must not depend on the optional widget bridge, which
+            # can remain on its loading state after a successful render.
+            assert not (tools['render_result'].meta or {}).get('ui')
+            assert 'openai/outputTemplate' not in (tools['render_result'].meta or {})
+            uri='ui://blender-render/result-v1.html'
             resource=await client.read_resource(uri)
             assert resource[0].mimeType == 'text/html;profile=mcp-app'
             assert resource[0].meta['ui']['csp']['connectDomains'] == []

@@ -18,6 +18,8 @@
 | Download link expired or already used | Files are deleted after download or fifteen minutes after completion. Check your downloads; the service does not archive rendered files. |
 | ChatGPT preview shows a DNS error after an endpoint upgrade | Refresh the plugin in ChatGPT settings, then reload the conversation. Operators should configure a short, dedicated widget origin; the Modal HTTP Server URL can make ChatGPT's derived hostname too long. |
 | Repeated import permissions or repeated "I'll render" announcements | Use the current plugin and refresh the ChatGPT connection's tools. Call `render_structure` once, then only status/result for that job. Enabling Always allow does not repair a submission loop. The server also deduplicates identical requests with changed retry keys. |
+| "Loading the completed render" with no download buttons | The old custom card could remain empty after a completed render. Refresh the connection's tools and retrieve the same job with `render_result`; current results use a native image and direct links in the chat. Do not rerender merely to refresh delivery. |
+| Repeated "Allow file materialization" for render results | Current results use ordinary download links instead of automatic file attachments. Refresh tools, retrieve the same job, and click the desired download link. Do not widen global permissions to repair the loop. |
 | Green plugin asks to use Blender Render Private Beta | Private Beta is the registered service connection referenced by the green plugin. ChatGPT asks permission under that connection's name. The obsolete disconnected Blender Render connection is not needed. |
 | A job is cancelled | Cancellation is separate from a structure or preset failure. Check whether a user/operator cancelled it. If accidental duplicates existed, retrieve the original completed job rather than reporting the cancelled copy as the entire request's outcome. |
 | Temporary input not found | Submit an import within five minutes. Inputs are deleted after rendering or lost when a transient worker restarts. Reimport for a new render, but reuse the original idempotency key when checking an uncertain submission. |
@@ -26,3 +28,12 @@
 | Rootless container build reports a GLIBC mismatch | Use the pinned compatible base and a supported Apptainer installation. See the upstream fakeroot guide; do not request host root privileges just to run a render. |
 
 Attach a manifest and software versions to a bug report. Review it first for private filenames, object names, paths, or scientific metadata. Keep input structures private unless you can share them publicly. The supplied examples are suitable for public reports.
+
+### Download links appear but the inline image is absent
+
+Some ChatGPT surfaces omit remote Markdown images. Use **View PNG preview**,
+which opens the PNG without consuming the download, then download the full PNG
+or Blender scene. The result tool returns this preview link explicitly; do not
+reimport or rerender to make an image appear. Download files promptly before
+the fifteen-minute expiry. An external-link confirmation can appear when
+opening a download; this is separate from repeated attachment-import requests.

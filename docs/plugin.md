@@ -53,8 +53,20 @@ Use `render_structure` to upload and submit in one tool call. Keep its job ID, u
 
 The ten tools are `render_structure`, `import_structure`, `list_structures`, `delete_structure`, `list_presets`, `submit_render`, `render_status`, `render_result`, `cancel_render`, and `available_quota`. The separate import/submit tools remain for existing clients. `list_structures` shows pending imports, not a saved library. `delete_structure` removes an unused import early. Inputs are automatically deleted after rendering. The result includes a native PNG preview and PNG, optional `.blend`, and manifest downloads. Refresh the ChatGPT connection's tools after an upgrade and use a new conversation so cached tool descriptions do not repeat the old workflow.
 
-ChatGPT additionally displays an MCP Apps preview card with download buttons.
-Its checkerboard indicates transparency; it is not baked into the PNG. Request
-the result promptly: each downloaded file is deleted, and undelivered files expire fifteen minutes after completion.
+ChatGPT receives a lightweight native PNG preview, an inline preview URL, and direct PNG,
+Blender scene, and manifest links. The assistant should include **View PNG preview** and download links in its final
+reply. Some ChatGPT surfaces hide remote Markdown images even when the URL is
+correct, so the explicit preview link is required. Inline display is not yet
+reliable across ChatGPT surfaces. Delivery does not depend on a custom MCP Apps card: a ChatGPT
+conversation mounted that card but stayed on "Loading the completed render"
+after the render had finished. The legacy resource remains available for
+old clients, but current tool discovery does not attach it to results. Request
+the result promptly: each downloaded file is deleted, and undelivered files
+expire fifteen minutes after completion.
+
+The native preview is at most 1024 pixels on its longest edge and 384 KiB;
+the downloadable PNG keeps the requested resolution and transparency. Results
+use ordinary download links instead of MCP resource attachments, avoiding an
+automatic import of all output files before ChatGPT can finish its reply.
 
 For ChatGPT with private compute, use your lab's authenticated HTTPS gateway as described in [HPC setup](hpc.md). ChatGPT cannot call a laptop's loopback stdio service directly.
