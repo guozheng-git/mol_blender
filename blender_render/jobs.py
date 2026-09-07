@@ -98,6 +98,19 @@ class JobStore:
             self.db.execute("UPDATE jobs SET rendered=1 WHERE state='done'")
         if 'client_request_hash' not in columns:
             self.db.execute('ALTER TABLE jobs ADD COLUMN client_request_hash TEXT')
+        for column in ('render_fingerprint', 'source_key'):
+            if column not in columns:
+                self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
+        self.db.executescript("""
+        CREATE TABLE IF NOT EXISTS submission_keys (
+          owner TEXT NOT NULL, key TEXT NOT NULL, input_id TEXT NOT NULL,
+          client_hash TEXT, request_hash TEXT NOT NULL, job_id TEXT NOT NULL,
+          PRIMARY KEY(owner,key));
+        INSERT OR IGNORE INTO submission_keys
+          SELECT owner,idempotency_key,input_id,client_request_hash,request_hash,id FROM jobs;
+        CREATE INDEX IF NOT EXISTS render_retries ON jobs(owner,render_fingerprint);
+        CREATE INDEX IF NOT EXISTS file_retries ON jobs(owner,source_key,client_request_hash);
+        """)
         if 'result_expires' not in columns:
             self.db.execute('ALTER TABLE jobs ADD COLUMN result_expires REAL')
             # Preserve existing download deadlines; new jobs use the short
@@ -288,20 +301,44 @@ class JobStore:
                 raise JobError("Temporary structure was lost on restart; upload it again.", "expired", 410)
             return json.loads(path.read_text())
 
-    def submission_replay(self, owner, input_id, key, client_hash):
+    def _remember_submission(self, db, owner, input_id, key, client_hash, request_hash, job_id):
+        db.execute("INSERT OR IGNORE INTO submission_keys VALUES (?,?,?,?,?,?)",
+                   (owner, key, input_id, client_hash, request_hash, job_id))
+
+    def _reused_job(self, row):
+        return {**self._public_job(row), 'reused': True}
+
+    def file_replay(self, owner, source_key, client_hash):
+        """Reuse a recent operation without retaining its molecular input."""
+        with self.lock:
+            row = self.db.execute("""SELECT * FROM jobs WHERE owner=? AND source_key=?
+                AND client_request_hash=? AND (state IN ('queued','running') OR finished>?)
+                ORDER BY submitted,id LIMIT 1""",
+                (owner, source_key, client_hash, self.clock()-self.policy.ttl_seconds)).fetchone()
+            return self._reused_job(row) if row else None
+
+    def submission_replay(self, owner, input_id, key, client_hash, *, rerender=False, legacy_hash=None):
         if not isinstance(key, str) or not 1 <= len(key) <= 128:
             raise JobError("Provide an idempotency key of 1 to 128 characters.")
         if not isinstance(input_id, str):
             raise JobError("input_id must be a string")
-        with self.lock:
-            row = self.db.execute("SELECT * FROM jobs WHERE owner=? AND idempotency_key=?", (owner, key)).fetchone()
-            if row and row['client_request_hash']:
-                if row['input_id'] != input_id or row['client_request_hash'] != client_hash:
+        with self.transaction() as db:
+            alias = db.execute("SELECT * FROM submission_keys WHERE owner=? AND key=?", (owner, key)).fetchone()
+            if alias and alias['client_hash']:
+                if alias['input_id'] != input_id or alias['client_hash'] not in {client_hash, legacy_hash}:
                     raise JobError("Idempotency key was already used for a different request.", "idempotency_conflict", 409)
-                return self._public_job(row)
+                return self._reused_job(db.execute('SELECT * FROM jobs WHERE id=?', (alias['job_id'],)).fetchone())
+            # An agent may lose its retry key after a tool approval or handoff.
+            # The input ID and request still identify the same operation, even
+            # after privacy cleanup has deleted the coordinates and options.
+            if not alias and not rerender:
+                row = db.execute("SELECT j.* FROM jobs j JOIN submission_keys s ON j.id=s.job_id WHERE s.owner=? AND s.input_id=? AND s.client_hash=? ORDER BY j.submitted,j.id LIMIT 1", (owner, input_id, client_hash)).fetchone()
+                if row:
+                    self._remember_submission(db, owner, input_id, key, client_hash, row['request_hash'], row['id'])
+                    return self._reused_job(row)
             return None
 
-    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, client_hash: str | None = None) -> dict:
+    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, client_hash: str | None = None, rerender: bool = False) -> dict:
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
             raise JobError("Provide an idempotency key of 1 to 128 characters.")
         encoded = json.dumps(options, sort_keys=True, allow_nan=False, separators=(",", ":"))
@@ -309,12 +346,25 @@ class JobStore:
         now = self.clock()
         identifier = secrets.token_hex(16)
         with self.transaction() as db:
-            existing = db.execute("SELECT * FROM jobs WHERE owner=? AND idempotency_key=?", (owner, idempotency_key)).fetchone()
-            if existing:
-                if existing["request_hash"] != request_hash:
+            alias = db.execute("SELECT * FROM submission_keys WHERE owner=? AND key=?", (owner, idempotency_key)).fetchone()
+            if alias:
+                if alias["request_hash"] != request_hash:
                     raise JobError("Idempotency key was already used for a different request.", "idempotency_conflict", 409)
-                return self._public_job(existing)
+                return self._reused_job(db.execute('SELECT * FROM jobs WHERE id=?', (alias['job_id'],)).fetchone())
             self.input(owner, input_id)
+            source = db.execute('SELECT * FROM inputs WHERE id=? AND owner=?', (input_id, owner)).fetchone()
+            fingerprint = hashlib.sha256((source['content_sha256'] + encoded).encode()).hexdigest()
+            if not rerender:
+                existing = db.execute("""SELECT * FROM jobs WHERE owner=? AND render_fingerprint=?
+                    AND (state IN ('queued','running') OR (state='done' AND result_expires>?)
+                         OR (state IN ('delivered','deleted','failed','cancelled') AND finished>?))
+                    ORDER BY submitted,id LIMIT 1""", (owner, fingerprint, now, now-self.policy.ttl_seconds)).fetchone()
+                if existing:
+                    self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, existing['id'])
+                    if existing['input_id'] != input_id and not db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (input_id,)).fetchone():
+                        self.input_path(input_id).unlink(missing_ok=True)
+                        db.execute('DELETE FROM inputs WHERE id=?', (input_id,))
+                    return self._reused_job(existing)
             reservation = self.policy.reserve()
             self._admit(db, reservation)
             if db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.policy.max_queue:
@@ -325,19 +375,24 @@ class JobStore:
                 if owner not in self.policy.quota_exempt_owners and count >= self.policy.daily_jobs:
                     raise JobError("Your daily free render quota is used up.", "daily_quota", 429)
             db.execute("INSERT INTO jobs(id,owner,input_id,idempotency_key,request_hash,options,state,submitted,reserved) VALUES (?,?,?,?,?,?,'queued',?,?)", (identifier, owner, input_id, idempotency_key, request_hash, encoded, now, reservation))
-            db.execute("UPDATE jobs SET session_id=?,submitted_by=?,client_request_hash=? WHERE id=?", (self.session_id,owner,client_hash,identifier))
+            db.execute("UPDATE jobs SET session_id=?,submitted_by=?,client_request_hash=?,render_fingerprint=?,source_key=? WHERE id=?", (self.session_id,owner,client_hash,fingerprint,source['source_key'],identifier))
+            self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, identifier)
         return self.get(owner, identifier)
 
     def _public_job(self, row) -> dict:
         position = 0
         if row["state"] == "queued":
             position = self.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND (submitted<? OR (submitted=? AND rowid <= (SELECT rowid FROM jobs WHERE id=?)))", (row["submitted"], row["submitted"], row["id"])).fetchone()[0]
+        pending = row['state'] in {'queued', 'running'}
         return {"job_id": row["id"], "status": row["state"], "queue_position": position,
                 "session_id": row["session_id"], "submitted_by": row["submitted_by"],
                 "submitted_at": row["submitted"], "started_at": row["started"], "finished_at": row["finished"],
                 "cancel_requested": bool(row["cancel_requested"]), "error": row["error"],
                 "estimated_cost_usd": row["charged"] / 1_000_000,
-                "expires_at": row['result_expires']}
+                "expires_at": row['result_expires'],
+                "next_action": 'render_status' if pending else ('render_result' if row['state']=='done' else 'stop'),
+                "poll_after_seconds": 5 if pending else None,
+                "reused": False}
 
     def get(self, owner: str, identifier: str) -> dict:
         with self.lock:
@@ -417,7 +472,7 @@ class JobStore:
             if not row:
                 raise JobError("Job not found.", "not_found", 404)
             if row["state"] == "queued":
-                db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}' WHERE id=?", (self.clock(), identifier))
+                db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Render cancelled by a user or operator request.' WHERE id=?", (self.clock(), identifier))
             elif row["state"] == "running":
                 db.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (identifier,))
             self._release_finished_inputs(db)
@@ -429,6 +484,8 @@ class JobStore:
             if not row or row["state"] != "running":
                 return
             state = "cancelled" if row["cancel_requested"] else ("failed" if error else "done")
+            if state == 'cancelled':
+                error = 'Render cancelled by a user or operator request.'
             seconds = max(0, min(float(seconds), self.policy.max_job_seconds))
             charged = min(row["reserved"], math.ceil((seconds + self.policy.startup_seconds) * self.policy.usd_per_second * 1_000_000)) if self.policy.public else 0
             record = {k: v for k, v in (result or {}).items() if k != 'manifest'}

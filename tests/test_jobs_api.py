@@ -243,13 +243,15 @@ def test_running_and_queued_cancellation(tmp_path, payload):
     service = RenderService(store, Compute(gate))
     source = service.import_payload("a", payload)
     first = service.submit("a", source["input_id"], {}, "one")
-    second = service.submit("a", source["input_id"], {}, "two")
+    second = service.submit("a", source["input_id"], {}, "two", rerender=True)
     assert store.cancel("a", second["job_id"])["status"] == "cancelled"
     service.start()
     try:
         await_status(store, "a", first["job_id"], "running")
         store.cancel("a", first["job_id"])
-        await_status(store, "a", first["job_id"], "cancelled")
+        final = await_status(store, "a", first["job_id"], "cancelled")
+        assert final['error'] == 'Render cancelled by a user or operator request.'
+        assert final['next_action'] == 'stop'
         assert len(service.backend.calls) == 1
     finally:
         service.stop()
@@ -261,12 +263,12 @@ def test_daily_quota_credit_expiry_and_retention(tmp_path, payload):
     store = JobStore(tmp_path, Policy(public=True, ttl_seconds=10), clock=lambda: now[0])
     for i in range(10):
         source = store.add_input('a', payload)
-        job = store.submit('a', source['input_id'], {}, str(i))
+        job = store.submit('a', source['input_id'], {}, str(i), rerender=True)
         store.claim(); store.finish(job['job_id'], seconds=600)
         assert not store.list_inputs('a')['structures']
     source = store.add_input('a', payload)
     with pytest.raises(JobError, match="daily"):
-        store.submit('a', source['input_id'], {}, 'eleven')
+        store.submit('a', source['input_id'], {}, 'eleven', rerender=True)
     store.delete_input('a', source['input_id'])
     now[0] += 11
     store.cleanup()
@@ -283,6 +285,175 @@ def test_options_cannot_bypass_public_limits(payload):
     for options in ({"width":4097}, {"height":4097}, {"samples":513}, {"raw_view":True}, {"width":True}, {"script":"evil"}, [], {"rough":"false"}):
         with pytest.raises(JobError):
             prepare_options(options, payload, public=True, timeout=600)
+
+
+def test_changed_retry_keys_reserve_and_dispatch_only_once(tmp_path, payload):
+    from concurrent.futures import ThreadPoolExecutor
+    store = JobStore(tmp_path, Policy(public=True))
+    service = RenderService(store, Compute())
+    source = service.import_payload('a', payload)
+    settings = ({}, {'rough': False, 'raw_view': False, 'color_follow': False,
+                     'preserve_view': True, 'keep_temp': False, 'preset': 'preset_1_interface'})
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        jobs = list(pool.map(lambda i: service.submit('a', source['input_id'], settings[i % 2], 'retry-'+str(i)), range(10)))
+    identifier = jobs[0]['job_id']
+    assert {j['job_id'] for j in jobs} == {identifier}
+    assert sum(not j['reused'] for j in jobs) == 1
+    assert store.quota('a')['reserved_usd'] == pytest.approx(.312)
+    assert store.quota('a')['renders_remaining_today'] == 9
+    service.start()
+    try:
+        await_status(store, 'a', identifier, 'done')
+        assert service.backend.calls == [identifier]
+        assert store.list_inputs('a')['structures'] == []
+        assert service.submit('a', source['input_id'], {}, 'lost-key-after-completion')['job_id'] == identifier
+        assert service.submit('a', source['input_id'], settings[1], 'retry-1')['next_action'] == 'render_result'
+        with pytest.raises(JobError) as exc:
+            service.submit('b', source['input_id'], {}, 'retry-1')
+        assert exc.value.status == 404
+        with pytest.raises(JobError, match='different request'):
+            service.submit('a', source['input_id'], {'rough': True}, 'retry-1')
+    finally:
+        service.stop()
+        store.close()
+    store = JobStore(tmp_path, Policy(public=True))
+    service = RenderService(store, Compute())
+    assert service.submit('a', source['input_id'], {}, 'lost-key-after-completion')['job_id'] == identifier
+    assert store.claim() is None
+    store.close()
+
+
+def test_effective_settings_and_reimport_reuse_available_result(tmp_path, payload):
+    store = JobStore(tmp_path, Policy(public=True))
+    service = RenderService(store, Compute())
+    source = service.import_payload('a', payload)
+    first = service.submit('a', source['input_id'], {}, 'first')
+    # Explicit output dimensions equal to the resolved defaults are identical.
+    second = service.submit('a', source['input_id'], {'width': 2048, 'height': 1536}, 'second')
+    assert first['job_id'] == second['job_id']
+    service.start()
+    try:
+        await_status(store, 'a', first['job_id'], 'done')
+        new_source = service.import_payload('a', {**payload, 'generated_at_utc': 'later'})
+        assert new_source['input_id'] != source['input_id']
+        replay = service.submit('a', new_source['input_id'], {}, 'new-import')
+        assert replay['job_id'] == first['job_id'] and replay['reused']
+        assert store.list_inputs('a')['structures'] == []
+        assert service.submit('a', new_source['input_id'], {}, 'new-import')['job_id'] == first['job_id']
+        assert service.submit('a', new_source['input_id'], {}, 'another-key')['job_id'] == first['job_id']
+        assert service.backend.calls == [first['job_id']]
+        for item in store.result('a', first['job_id'])['artifacts']:
+            store.artifact_delivered('a', first['job_id'], item['name'])
+        # The local adapter's import/submit pair must also stop after delivery.
+        third_source = service.import_payload('a', payload)
+        delivered = service.submit('a', third_source['input_id'], {}, 'after-download')
+        assert delivered['job_id'] == first['job_id'] and delivered['next_action'] == 'stop'
+        assert store.list_inputs('a')['structures'] == []
+    finally:
+        service.stop()
+        store.close()
+
+
+def test_intentional_rerender_different_settings_and_camera_are_distinct(tmp_path, payload):
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute())
+    source = service.import_payload('a', payload)
+    first = service.submit('a', source['input_id'], {}, 'first')
+    repeat = service.submit('a', source['input_id'], {}, 'explicit-repeat', rerender=True)
+    assert repeat['job_id'] != first['job_id']
+    assert service.submit('a', source['input_id'], {}, 'explicit-repeat', rerender=True)['job_id'] == repeat['job_id']
+    changed = service.submit('a', source['input_id'], {'width': 1024}, 'changed-options')
+    pose = {**payload, 'view': {**payload['view'], 'orthoscopic': True}}
+    changed_input = service.import_payload('a', pose)
+    moved = service.submit('a', changed_input['input_id'], {}, 'changed-camera')
+    other = service.submit('b', service.import_payload('b', payload)['input_id'], {}, 'first')
+    assert len({j['job_id'] for j in (first, repeat, changed, moved, other)}) == 5
+    store.close()
+
+
+def test_one_call_file_retries_do_not_reconvert_after_input_deletion(tmp_path, payload):
+    from concurrent.futures import ThreadPoolExecutor
+    now = [1800000000.0]
+    store = JobStore(tmp_path, Policy(public=True), clock=lambda: now[0])
+    service = RenderService(store, Compute())
+    converted = []
+    def converter(data, suffix):
+        converted.append(data)
+        return payload
+    def render(_):
+        return service.render_file('a', b'public fixture', '.cif', 'test.cif', converter, {})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(render, range(4)))
+    identifier = results[0]['job_id']
+    assert {r['job_id'] for r in results} == {identifier}
+    assert converted == [b'public fixture']
+    service.start()
+    try:
+        await_status(store, 'a', identifier, 'done')
+        assert store.list_inputs('a')['structures'] == []
+        assert render(None)['job_id'] == identifier
+        for item in store.result('a', identifier)['artifacts']:
+            store.artifact_delivered('a', identifier, item['name'])
+        delivered = render(None)
+        assert delivered['status'] == 'delivered' and delivered['next_action'] == 'stop'
+        assert converted == [b'public fixture']
+        assert service.backend.calls == [identifier]
+    finally:
+        service.stop()
+    # A later explicit request may render again after the short delivery window.
+    now[0] += 901
+    store.cleanup()
+    assert render(None)['job_id'] != identifier
+    assert len(converted) == 2
+    store.close()
+
+
+def test_old_submission_key_survives_hash_normalization_upgrade(tmp_path, payload):
+    import hashlib
+    store = JobStore(tmp_path)
+    source = store.add_input('a', payload)
+    old_hash = hashlib.sha256(b'{}').hexdigest()
+    first = store.submit('a', source['input_id'], {}, 'old', client_hash=old_hash)
+    store.claim(); store.finish(first['job_id'], result={'artifacts': []})
+    service = RenderService(store, Compute())
+    assert service.submit('a', source['input_id'], {}, 'old')['job_id'] == first['job_id']
+    store.close()
+
+
+def test_mcp_single_call_retry_status_and_native_result(tmp_path, payload, monkeypatch):
+    import asyncio
+    from fastmcp import Client as MCPClient
+    from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+    import blender_render.mcp_server as mcp_server
+    import blender_render.uploads as uploads
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute())
+    monkeypatch.setattr(mcp_server, 'owner', lambda: 'a')
+    monkeypatch.setattr(uploads, 'download_file', lambda *a, **kw: b'fixture')
+    conversions = []
+    def convert(data, suffix):
+        conversions.append(suffix)
+        return payload
+    server = mcp_server.create_http(service, auth=StaticTokenVerifier(tokens={}),
+        downloads=Downloads('x'*48, 'https://render.example.org'), converter=convert)
+    async def run():
+        async with MCPClient(server) as client:
+            args = {'file': {'download_url': 'https://example.org/test.cif', 'file_id': 'fixture', 'file_name': 'test.cif'},
+                    'options': {'preset': 'dried_paint_green', 'transparent_background': True}}
+            first = (await client.call_tool('render_structure', args)).structured_content
+            service.start()
+            state = (await client.call_tool('render_status', {'job_id': first['job_id'], 'wait_seconds': 1})).structured_content
+            assert state['status'] == 'done' and state['next_action'] == 'render_result'
+            repeated = (await client.call_tool('render_structure', args)).structured_content
+            assert repeated['job_id'] == first['job_id'] and repeated['reused']
+            result = await client.call_tool('render_result', {'job_id': first['job_id']})
+            assert any(item.type == 'image' for item in result.content)
+            assert conversions == ['.cif'] and service.backend.calls == [first['job_id']]
+    try:
+        asyncio.run(run())
+    finally:
+        service.stop()
+        store.close()
 
 
 def test_uploads_have_no_count_quota_and_pending_retries_deduplicate(tmp_path, payload):
@@ -312,7 +483,7 @@ def test_tester_exemption_keeps_project_budget_and_other_users_limited(tmp_path,
     store = JobStore(tmp_path, Policy(public=True, quota_exempt_owners=('github:11480757',)))
     for i in range(12):
         source = store.add_input('github:11480757', payload)
-        job = store.submit('github:11480757', source['input_id'], {}, str(i))
+        job = store.submit('github:11480757', source['input_id'], {}, str(i), rerender=True)
         store.claim(); store.finish(job['job_id'], seconds=10)
     assert store.quota('github:11480757')['renders_remaining_today'] is None
     assert store.quota('github:11480757')['testing_quota_exempt']
@@ -329,10 +500,10 @@ def test_tester_exemption_keeps_project_budget_and_other_users_limited(tmp_path,
 def test_quota_reserves_queued_slots_but_failure_and_cancel_do_not_count(tmp_path, payload):
     store = JobStore(tmp_path, Policy(public=True))
     source = store.add_input('a', payload)
-    jobs = [store.submit('a', source['input_id'], {}, str(i)) for i in range(10)]
+    jobs = [store.submit('a', source['input_id'], {}, str(i), rerender=True) for i in range(10)]
     assert store.quota('a')['renders_remaining_today'] == 0
     with pytest.raises(JobError, match='daily'):
-        store.submit('a', source['input_id'], {}, 'eleven')
+        store.submit('a', source['input_id'], {}, 'eleven', rerender=True)
     store.cancel('a', jobs[-1]['job_id'])
     store.claim(); store.finish(jobs[0]['job_id'], error='Worker failed', seconds=10)
     assert store.quota('a')['renders_remaining_today'] == 2

@@ -1,6 +1,6 @@
 {
   "name": "blender-render",
-  "version": "0.2.0-beta.1+codex.20260907012708",
+  "version": "0.2.0-beta.1+codex.20260907023826",
   "description": "Ray-trace molecular structures with PyMOL poses, transparent backgrounds, and textured ribbons.",
   "author": {
     "name": "Magnus Bauer",
@@ -39,5 +39,6 @@
       "Render my saved PyMOL pose and include a Blender file."
     ]
   },
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "apps": "./.app.json"
 }

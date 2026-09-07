@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import math
+import secrets
 import shutil
 import threading
 import time
@@ -165,6 +166,12 @@ def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int)
             raise JobError("Public renders use Cycles.")
         style["renderer"].update(device="GPU", compute_device_type="CUDA", require_gpu=True)
     request.update(style_doc=core.validate_style_document(style), output_name="render.png", job_timeout_seconds=timeout, keep_temp=bool(request.get("keep_temp", False)))
+    # Omitted defaults and explicit defaults must describe the same paid job.
+    # Preserve the preset name for the renderer's secondary-structure gates.
+    request.setdefault('preset', 'preset_1_interface' if 'style_doc' not in options else '')
+    request['save_blend'] = output['save_blend']
+    for flag in ('rough', 'raw_view', 'color_follow'):
+        request.setdefault(flag, False)
     return request
 
 
@@ -246,21 +253,51 @@ class RenderService:
                 raise JobError("The molecular file could not be converted. Attach a valid PSE, CIF, or PDB file.", "invalid_structure", 422) from exc
             return self.import_payload(owner, payload, name, source_key=key)
 
-    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str) -> dict:
-        self.last_activity = time.time()
+    @staticmethod
+    def _client_hash(options, *, rerender=False):
+        if not isinstance(options, dict):
+            raise JobError('Render options must be an object.')
+        canonical = dict(options)
+        canonical.setdefault('preset', 'preset_1_interface')
+        for flag in ('rough', 'raw_view', 'color_follow', 'keep_temp'):
+            canonical.setdefault(flag, False)
+        canonical.setdefault('preserve_view', True)
+        if rerender:
+            canonical['rerender'] = True
         try:
-            client_hash = hashlib.sha256(json.dumps(options, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+            return hashlib.sha256(json.dumps(canonical, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
         except (TypeError, ValueError) as exc:
             raise JobError('Render options must be valid JSON.') from exc
-        replay = self.store.submission_replay(owner, input_id, idempotency_key, client_hash)
-        if replay:
-            return replay
-        payload = self.store.input(owner, input_id)
-        try:
-            normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
-        except core.StyleValidationError as exc:
-            raise JobError(str(exc)) from exc
-        result = self.store.submit(owner, input_id, normalized, idempotency_key, client_hash=client_hash)
+
+    def render_file(self, owner, data, suffix, name, converter, options):
+        """One upload-and-submit operation; retries never invent a paid job."""
+        client_hash = self._client_hash(options)
+        source_key = suffix + ':' + hashlib.sha256(data).hexdigest()
+        with self._owner_import(owner):
+            existing = self.store.file_replay(owner, source_key, client_hash)
+            if existing:
+                return existing
+            source = self.import_file(owner, data, suffix, name, converter)
+            return self.submit(owner, source['input_id'], options, secrets.token_hex(16))
+
+    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, rerender: bool = False) -> dict:
+        self.last_activity = time.time()
+        if not isinstance(rerender, bool):
+            raise JobError('rerender must be a boolean')
+        client_hash = self._client_hash(options, rerender=rerender)
+        # Do not let completion delete the input between replay lookup and
+        # normalization. This lock contains no network or compute operations.
+        with self.store.lock:
+            legacy_hash = hashlib.sha256(json.dumps(options, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+            replay = self.store.submission_replay(owner, input_id, idempotency_key, client_hash, rerender=rerender, legacy_hash=legacy_hash if not rerender else None)
+            if replay:
+                return replay
+            payload = self.store.input(owner, input_id)
+            try:
+                normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
+            except core.StyleValidationError as exc:
+                raise JobError(str(exc)) from exc
+            result = self.store.submit(owner, input_id, normalized, idempotency_key, client_hash=client_hash, rerender=rerender)
         self.wakeup.set()
         return result
 

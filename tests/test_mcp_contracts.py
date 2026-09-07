@@ -27,8 +27,9 @@ def test_native_preview_and_stdio_tools(monkeypatch, tmp_path):
     async def run():
         async with MCPClient(create_stdio()) as client:
             tools = {t.name:t for t in await client.list_tools()}
-            assert set(tools) == {'list_presets','list_structures','delete_structure','import_structure','submit_render','render_status','render_result','cancel_render','available_quota'}
+            assert set(tools) == {'list_presets','list_structures','delete_structure','import_structure','render_structure','submit_render','render_status','render_result','cancel_render','available_quota'}
             assert tools['submit_render'].annotations.idempotentHint
+            assert tools['render_structure'].annotations.idempotentHint
             result = await client.call_tool('render_result',{'job_id':'job','output_path':str(path)})
             assert any(item.type == 'image' and item.mimeType == 'image/png' for item in result.content)
             assert any(item.type == 'text' and 'dss_ran' in item.text for item in result.content)
@@ -48,6 +49,10 @@ def test_chatgpt_declared_file_contract():
             assert {'download_url','file_id'} <= set(file_schema['required'])
             assert {'download_url','file_id','mime_type','file_name'} == set(file_schema['properties'])
             assert file_schema['properties']['file_name']['type'] == 'string'
+            assert tools['render_structure'].meta['openai/fileParams'] == ['file']
+            assert tools['render_structure'].annotations.idempotentHint
+            assert tools['render_status'].annotations.readOnlyHint
+            assert tools['render_status'].inputSchema['properties']['wait_seconds']['maximum'] == 25
             assert tools['render_result'].outputSchema
             uri=tools['render_result'].meta['ui']['resourceUri']
             resource=await client.read_resource(uri)

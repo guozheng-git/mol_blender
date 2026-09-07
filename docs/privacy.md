@@ -12,7 +12,7 @@ There is no retained structure library. Inputs live in the controller's temporar
 
 The persistent Modal Volume contains authentication and minimal job/accounting state, not new molecular inputs, rendered images, Blender scenes, or provenance manifests. The service does not create data snapshots or archives. Earlier beta Function invocations remain subject to Modal's provider-side retention of up to seven days; switching transports cannot retroactively erase those provider records. Existing completed downloads keep their original expiry unless explicitly removed.
 
-Minimal job IDs, timestamps, status, pseudonymous ownership, idempotency keys, and cost/quota records remain to prevent duplicate spending and enforce the lifetime budget. Operational logs are for diagnostics; public API errors omit raw uploaded content and internal paths. OAuth records expire with their tokens or can be revoked through GitHub. The service does not use uploaded structures to train models.
+Minimal job IDs, timestamps, status, pseudonymous ownership, idempotency keys, opaque input/settings hashes, and cost/quota records remain to prevent duplicate spending and enforce the lifetime budget. Operational logs are for diagnostics; public API errors omit raw uploaded content and internal paths. OAuth records expire with their tokens or can be revoked through GitHub. The service does not use uploaded structures to train models.
 
 Owners may also delete a completed result immediately through authenticated `DELETE /v1/jobs/{job_id}/result`. This removes its remaining files and saved provenance and invalidates existing download links. Deleting a result does not reset usage or refund compute already performed.
 

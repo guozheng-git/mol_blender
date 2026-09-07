@@ -216,7 +216,7 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     @app.post("/v1/jobs", status_code=202)
     async def submit(request: Request, identity=Depends(owner)):
         data = await body(request)
-        return await asyncio.to_thread(service.submit, identity, data.get("input_id", ""), data.get("options", {}), data.get("idempotency_key", ""))
+        return await asyncio.to_thread(service.submit, identity, data.get("input_id", ""), data.get("options", {}), data.get("idempotency_key", ""), rerender=data.get('rerender', False))
 
     @app.get("/status/{job_id}")
     @app.get("/v1/jobs/{job_id}")

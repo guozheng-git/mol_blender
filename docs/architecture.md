@@ -68,6 +68,15 @@ instead require a new upload. Only one
 Blender render runs at a time per service. A second PyMOL client attaches to the
 same queue. Cancellation propagates to Blender or the remote HTTP worker.
 
+Submission also compares owner-scoped hashes of the input (including pose and
+colors) and effective render settings. Changing an idempotency key does not
+create duplicate active work or rerender an available result. Retry-key aliases
+survive input deletion and restarts. The combined MCP `render_structure` tool
+checks a recent raw-file/settings hash before sandbox conversion, so retrying
+after completion does not reimport deleted molecular data. Only opaque digests
+remain; inputs are not retained for this protection. An intentional additional
+identical render requires `rerender=true` and a new stable request key.
+
 New Modal inputs and results use temporary container storage. Inputs are deleted
 when their final active job terminates; unused uploads expire after five minutes.
 Each completed download removes that artifact. Undelivered files expire after

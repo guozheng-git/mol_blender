@@ -73,8 +73,8 @@ class Client:
     def delete_structure(self, input_id):
         return self.request("DELETE", "/v1/structures/" + quote(input_id, safe=''))
 
-    def submit(self, input_id, options=None, idempotency_key=None):
-        return self.request("POST", "/v1/jobs", {"input_id": input_id, "options": options or {}, "idempotency_key": idempotency_key or uuid.uuid4().hex})
+    def submit(self, input_id, options=None, idempotency_key=None, *, rerender=False):
+        return self.request("POST", "/v1/jobs", {"input_id": input_id, "options": options or {}, "idempotency_key": idempotency_key or uuid.uuid4().hex, "rerender": rerender})
 
     def status(self, job_id):
         return self.request("GET", "/v1/jobs/" + job_id)
