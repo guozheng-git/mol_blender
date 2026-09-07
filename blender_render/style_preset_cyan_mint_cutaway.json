@@ -123,7 +123,12 @@
       "highlight_color": "#FF149B",
       "rim_strength": 0.03,
       "emission_color": "#FF36BD",
-      "emission_strength": 0.35
+      "emission_strength": 1.5,
+      "glow": {
+        "strength": 0.5,
+        "threshold": 0.7,
+        "size": 6
+      }
     },
     "sidechain": {
       "base_color": "#75ADAD",
@@ -190,7 +195,7 @@
       },
       "quality": 4,
       "shade_smooth": true,
-      "radius": 0.2,
+      "radius": 0.3,
       "color_blur": false,
       "color_by_chain": false
     },

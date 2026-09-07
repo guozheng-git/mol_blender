@@ -308,6 +308,9 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"materials.{name}.color_attribute ElementColor requires geometry.element_palette")
         if material.get("color_attribute") and gradient:
             errors.append(f"materials.{name}: choose color_attribute or color_gradient, not both")
+        glow = material.get("glow")
+        if isinstance(glow, dict) and float(glow.get("strength", 0)) > 0 and "emission_color" not in material:
+            errors.append(f"materials.{name}.glow requires emission_color")
     for path, direction in gradients:
         if isinstance(direction, list) and direction and all(isinstance(v, (int, float)) for v in direction) and not any(direction):
             errors.append(f"{path} must be nonzero")

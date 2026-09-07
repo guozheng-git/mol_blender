@@ -1270,6 +1270,70 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
         nt.links.new(mix.outputs[0], out.inputs["Surface"])
 
 
+def _configure_glow_compositor(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> None:
+    """Add one optional fog-glow pass for materials that explicitly request it."""
+    glows = [material.get("glow") for material in style_doc.get("materials", {}).values()
+             if isinstance(material, dict) and isinstance(material.get("glow"), dict)]
+    if not glows:
+        return
+    strength = max(float(item.get("strength", 0.0)) for item in glows)
+    if strength <= 0:
+        return
+    threshold = min(float(item.get("threshold", 1.0)) for item in glows)
+    size = max(2, min(9, max(int(item.get("size", 6)) for item in glows)))
+    tree = getattr(scene, "compositing_node_group", None)
+    if tree is None:
+        try:
+            tree = bpy.data.node_groups.new("Blender Render compositor", "CompositorNodeTree")
+            scene.compositing_node_group = tree
+        except Exception:
+            scene.use_nodes = True
+            tree = scene.node_tree
+    tree.nodes.clear()
+    layers = tree.nodes.new("CompositorNodeRLayers")
+    glare = tree.nodes.new("CompositorNodeGlare")
+    if hasattr(glare, "glare_type"):
+        glare.glare_type = "FOG_GLOW"
+    if hasattr(glare, "quality"):
+        glare.quality = "HIGH"
+    if glare.inputs.get("Quality") is not None:
+        try:
+            glare.inputs["Quality"].default_value = "HIGH"
+        except (TypeError, ValueError):
+            pass
+    if glare.inputs.get("Type") is not None:
+        try:
+            glare.inputs["Type"].default_value = "Fog Glow"
+        except (TypeError, ValueError):
+            pass
+    if glare.inputs.get("Threshold") is not None:
+        glare.inputs["Threshold"].default_value = threshold
+    elif hasattr(glare, "threshold"):
+        glare.threshold = threshold
+    if glare.inputs.get("Strength") is not None:
+        glare.inputs["Strength"].default_value = strength
+    if hasattr(glare, "size"):
+        try:
+            glare.size = size
+        except (TypeError, ValueError):
+            # Blender 5 exposes this legacy property as an enum; the node's
+            # default remains a valid small fog-glow when the enum is absent.
+            pass
+    if glare.inputs.get("Size") is not None:
+        try:
+            glare.inputs["Size"].default_value = size
+        except (TypeError, ValueError):
+            pass
+    tree.links.new(layers.outputs["Image"], glare.inputs["Image"])
+    try:
+        output = tree.nodes.new("CompositorNodeComposite")
+    except Exception:
+        if not any(socket.name == "Image" and socket.in_out == "OUTPUT" for socket in tree.interface.items_tree):
+            tree.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+        output = tree.nodes.new("NodeGroupOutput")
+    tree.links.new(glare.outputs["Image"], output.inputs[0])
+
+
 def _add_lights(
     scene: bpy.types.Scene,
     lights_cfg: list[dict[str, Any]],
@@ -3776,6 +3840,7 @@ def _render(args: argparse.Namespace) -> None:
 
     _configure_renderer(scene, style_doc)
     _set_world(scene, style_doc["world"])
+    _configure_glow_compositor(scene, style_doc)
     camera = _ensure_camera(scene, style_doc, view_doc)
     pymol_up_axis = None
     try:

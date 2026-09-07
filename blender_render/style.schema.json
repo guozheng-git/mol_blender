@@ -418,6 +418,16 @@
             "minimum": 0,
             "maximum": 1
           },
+          "glow": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["strength", "threshold", "size"],
+            "properties": {
+              "strength": {"type": "number", "minimum": 0},
+              "threshold": {"type": "number", "minimum": 0},
+              "size": {"type": "integer", "minimum": 2, "maximum": 9}
+            }
+          },
           "paint": {
             "$ref": "#/$defs/paint"
           },

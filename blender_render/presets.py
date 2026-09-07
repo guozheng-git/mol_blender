@@ -59,7 +59,7 @@ def required_capabilities(style: dict) -> list[str]:
     if style.get("geometry", {}).get("edge_rounding", {}).get("radius_angstrom", 0) > 0:
         required.add("geometry.edge_rounding")
     for material in style["materials"].values():
-        for field, capability in (("frosted", "material.frosted_grid"), ("color_gradient", "material.color_gradient"), ("color_attribute", "material.attribute_color")):
+        for field, capability in (("frosted", "material.frosted_grid"), ("color_gradient", "material.color_gradient"), ("color_attribute", "material.attribute_color"), ("glow", "material.fog_glow")):
             if field in material:
                 required.add(capability)
     if "element_palette" in style.get("geometry", {}):

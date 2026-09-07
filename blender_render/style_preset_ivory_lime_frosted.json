@@ -87,14 +87,14 @@
   ],
   "materials": {
     "pink": {
-      "base_color": "#04CEBF",
-      "roughness": 0.35,
-      "specular": 0.2,
-      "alpha": 1,
-      "ao_strength": 0.15,
-      "shadow_color": "#04CEBF",
-      "highlight_color": "#04CEBF",
-      "rim_strength": 0.03
+      "base_color": "#52DBD2",
+      "roughness": 0.13,
+      "specular": 0.5,
+      "alpha": 0.78,
+      "transmission": 0.88,
+      "coat": 0.4,
+      "emission_color": "#58E6DE",
+      "emission_strength": 0.15
     },
     "ligand": {
       "base_color": "#F89816",
@@ -107,34 +107,28 @@
       "rim_strength": 0.03
     },
     "shell": {
-      "base_color": "#E9ECD5",
-      "roughness": 0.65,
-      "specular": 0.2,
-      "alpha": 1,
-      "ao_strength": 0.15,
-      "shadow_color": "#E9ECD5",
-      "highlight_color": "#E9ECD5",
-      "rim_strength": 0.03,
+      "base_color": "#EDF0E5",
+      "roughness": 0.18,
+      "specular": 0.5,
+      "alpha": 0.72,
+      "transmission": 0.86,
+      "coat": 0.3,
       "frosted": {
         "noise_scale": 4,
-        "opacity_min": 0.08,
-        "opacity_max": 1,
-        "grid_scale": 35,
-        "grid_width": 0.018,
-        "grid_strength": 0.8,
-        "grid_color": "#FFFFFF"
-      },
-      "transmission": 0
+        "opacity_min": 0.16,
+        "opacity_max": 0.72,
+        "grid_scale": 65,
+        "grid_width": 0.006,
+        "grid_strength": 0.28,
+        "grid_color": "#F8FAF1"
+      }
     },
     "core": {
-      "base_color": "#A0BB2D",
-      "roughness": 0.5,
-      "specular": 0.2,
+      "base_color": "#B5CB63",
+      "roughness": 0.4,
+      "specular": 0.35,
       "alpha": 1,
-      "ao_strength": 0.15,
-      "shadow_color": "#A0BB2D",
-      "highlight_color": "#A0BB2D",
-      "rim_strength": 0.03
+      "transmission": 0.1
     }
   },
   "styles": [

@@ -121,3 +121,16 @@ def test_cutaway_pocket_residues_are_complete_and_element_colored():
     assert style['materials'][pocket['material']]['color_attribute'] == 'Color'
     palette = style['geometry']['element_palette']
     assert len({palette[element] for element in ('C', 'N', 'O', 'S')}) == 4
+
+
+def test_reference_materials_keep_glow_and_glass_controls_explicit():
+    from blender_render.presets import preset_path, required_capabilities
+    cutaway = json.loads(preset_path('cyan_mint_cutaway').read_text())
+    ligand = cutaway['materials']['ligand']
+    assert ligand['emission_strength'] == 1.5
+    assert ligand['glow']['threshold'] < 1.0
+    assert 'material.fog_glow' in required_capabilities(cutaway)
+    glass = json.loads(preset_path('ivory_lime_frosted').read_text())
+    assert glass['materials']['shell']['transmission'] >= 0.7
+    assert glass['materials']['shell']['frosted']['grid_width'] <= 0.01
+    assert glass['materials']['pink']['transmission'] >= 0.7

@@ -36,7 +36,7 @@ The same installed PyMOL is used throughout. Its `pymol2` API creates isolated i
 
 ## Cutaway geometry
 
-The pocket cut operates on two isolated surface meshes. It never Boolean-cuts the shared interior cartoon, ligand or pocket-residue mesh. Native Molecular Nodes sticks remain sphere-free. Residues with an atom within 5 angstrom of the ligand expand to complete residues, so a distance cutoff cannot amputate a side chain. Their carbon is muted cyan, nitrogen blue, oxygen red and sulfur yellow; the ligand remains pink.
+The pocket cut operates on two isolated surface meshes. It never Boolean-cuts the shared interior cartoon, ligand or pocket-residue mesh. Native Molecular Nodes sticks remain sphere-free. Residues with an atom within 5 angstrom of the ligand expand to complete residues, so a distance cutoff cannot amputate a side chain. Their carbon is muted cyan, nitrogen blue, oxygen red and sulfur yellow; the ligand remains pink with a restrained compositor fog glow. The pocket sticks use a larger radius so the colored side chains remain legible through the opening.
 
 The final cut uses a 12-angstrom base radius with left/right scales 0.85, top 2.0, bottom 1.0 and back 1.2 in the camera frame. Reducing the bottom scale retains the lower shell. The upper opening avoids thin leftover shelves. Cut faces inherit their surface pigment, remain flat-shaded and form closed walls. There are no untrimmed panels laid across the opening. The final real-molecule audit compares the evaluated interior vertices and polygon indices before and after both cuts, checks complete residue selections and stored element colors, and counts boundary/nonmanifold edges.
 
@@ -48,7 +48,7 @@ This is a deliberately configured A/B example. For another complex, edit both su
 - Surface styles: `surface_scale_radius` and `surface_relaxation_steps` expose native surface coarseness/smoothing. Defaults retain Molecular Nodes 4.5.10's previous values.
 - Cartoon styles: `nucleic_base_scale` changes rung thickness without changing its length or the shared Molecular Nodes asset. `color_by_chain=false` preserves explicitly chosen pigments.
 - `geometry.element_palette` stores element colors; `color_attribute=Color` uses native stick color boundaries. `ElementColor` is also available and requires an explicit palette. Existing color-follow/secondary-structure palettes can override `Color`; `ElementColor` retains the element mapping.
-- Materials: `color_gradient` supplies spatial pigment; `frosted` combines noise-driven opacity with a fine grid. Frosted opacity multiplies the material's base alpha. A gradient or attribute replaces solid base pigment; attribute and gradient cannot both be selected.
+- Materials: `color_gradient` supplies spatial pigment; `frosted` combines noise-driven opacity with a very light grid; `glow` adds an explicit emission-backed fog-glow pass. Frosted opacity multiplies the material's base alpha. A gradient or attribute replaces solid base pigment; attribute and gradient cannot both be selected. The ivory/lime reference uses higher transmission on both its shell and cyan nucleic acids to keep the glassy look while retaining the fine grid.
 - World: `gradient_direction` controls the visible background ramp; `ambient_color` and `ambient_strength` separate illumination from that background.
 
 All controls use the existing schema and scene builder. Unsupported keys, zero gradient directions and inverted opacity ranges fail validation. No developer workbench, new deployment path or separate rendering engine is included.

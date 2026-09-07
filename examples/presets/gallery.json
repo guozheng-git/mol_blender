@@ -421,16 +421,16 @@
       ]
     },
     "preset_json": "blender_render/style_preset_cyan_mint_cutaway.json",
-    "preset_file_sha256": "562582da77067186a359ee0facfec93b1ac9ac451d632cec1f1af288b42b42a0",
-    "resolved_style_sha256": "29d1f0bbbda2378780dd3208b461a270ca123f5d13f38135488b2d48ec50d442",
+    "preset_file_sha256": "65065bc375fee1fe5baf5d77fb891daef1d70050d43c8a79d65150691c9b846a",
+    "resolved_style_sha256": "eb752c5112c634212686b736788e9e17370a98f227e707dd9e31af25c8d504b2",
     "dimensions": [
       1600,
       1072
     ],
     "samples": 128,
     "thumbnail": "examples/presets/cyan_mint_cutaway.png",
-    "thumbnail_sha256": "19455f234dd3afbd37bdc9ae66c3e1d0d10d5b5f056327e4f54b1fbbf9ee03ae",
-    "full_png_sha256": "5d04b589e98621c7d9f81ad1e7065da4468a1c204f3e23b2d51b7d1598c47827",
+    "thumbnail_sha256": "fbd62e4f3df644f915e9722b6032ec2f671ed90fafece91056bf51c708262480",
+    "full_png_sha256": "b3dc3df812f9a411c8e9f7ed64af1519c88fb1d51b7af2f85ef1654e5b5d03fb",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -642,16 +642,16 @@
       ]
     },
     "preset_json": "blender_render/style_preset_ivory_lime_frosted.json",
-    "preset_file_sha256": "878b10b8a5534d61ef426b5aab0336ae8bef85b71c08d57a80a92e0d48e6547b",
-    "resolved_style_sha256": "f212d6c5a4226c5e0babc5577db040094974905cc95a695018b23c444c1ee6bd",
+    "preset_file_sha256": "436584c0059807ad2693f40d4e9e0db071377beb3fbfbb7e1d3290e94e7bbd0a",
+    "resolved_style_sha256": "7adf4d94ae473ec79d8c69823306cb803b6394a814bbebf724dfe4c5e6562bf7",
     "dimensions": [
       1600,
       900
     ],
     "samples": 128,
     "thumbnail": "examples/presets/ivory_lime_frosted.png",
-    "thumbnail_sha256": "25e73716a254047c25920aa6fa91d5ddd12981d46e1fc3bfda20ecc4e0924bf1",
-    "full_png_sha256": "feaae34f6db60b8fd4ef0d8d4f9a984b610daaf9a0f1bf4622a774ed38abcdbf",
+    "thumbnail_sha256": "bae23a213c3231edf5f5eb952eca6b5de2cf002071a17bf86696836a14c118c0",
+    "full_png_sha256": "a0217c843fc820c6bb1a9e5cd856d8c79b3af5f6e4feeac8e36d250bcd3122b7",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
