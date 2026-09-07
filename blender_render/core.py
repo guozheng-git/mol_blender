@@ -277,6 +277,8 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
         prefix = f"styles[{idx}]"
         if "nucleic_base_scale" in style and style.get("style") != "cartoon":
             errors.append(f"{prefix}.nucleic_base_scale requires cartoon style")
+        if "wireframe_spacing_angstrom" in style and "wireframe_width_angstrom" not in style:
+            errors.append(f"{prefix}.wireframe_spacing_angstrom requires wireframe_width_angstrom")
         reference = style.get("material")
         if isinstance(reference, str) and isinstance(materials, dict) and reference not in materials:
             errors.append(f"{prefix}.material references '{reference}', which is not defined in materials")

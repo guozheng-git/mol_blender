@@ -421,16 +421,16 @@
       ]
     },
     "preset_json": "blender_render/style_preset_cyan_mint_cutaway.json",
-    "preset_file_sha256": "65065bc375fee1fe5baf5d77fb891daef1d70050d43c8a79d65150691c9b846a",
-    "resolved_style_sha256": "eb752c5112c634212686b736788e9e17370a98f227e707dd9e31af25c8d504b2",
+    "preset_file_sha256": "98e8d06f73bdbf5122548ec15425c7a92f05457c42e514f265b19377d05025d1",
+    "resolved_style_sha256": "4e33e94b47594836f898857a1e5d0f8723765c5129da3e26e1f207fc17641dce",
     "dimensions": [
       1600,
       1072
     ],
     "samples": 128,
     "thumbnail": "examples/presets/cyan_mint_cutaway.png",
-    "thumbnail_sha256": "fbd62e4f3df644f915e9722b6032ec2f671ed90fafece91056bf51c708262480",
-    "full_png_sha256": "b3dc3df812f9a411c8e9f7ed64af1519c88fb1d51b7af2f85ef1654e5b5d03fb",
+    "thumbnail_sha256": "d6d4218ff959374c0fc74ea121bb702cd19af419306b961b1e7261a57ce6791c",
+    "full_png_sha256": "65b04e2aaa7f10c78d06bf4516b36f54a558dceae7306b62b88132e15e51f61c",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -609,49 +609,49 @@
   {
     "preset": "ivory_lime_frosted",
     "description": "Ivory frosted grid shell, lime core and cyan nucleic acids.",
-    "source_id": "8AW3",
-    "coordinate_url": "https://files.rcsb.org/download/8AW3.cif",
-    "coordinate_sha256": "3afd24514166a5d96ad8687bae916f814ff639bd53d557199a25d7486b728d1d",
+    "source_id": "7PZB",
+    "coordinate_url": "https://files.rcsb.org/download/7PZB.cif",
+    "coordinate_sha256": "d48ccef75b2df04b139cf0fb0e7f5dcd35fe09e1d62e5bdb2b65f55ddabe1ee6",
     "source_pose": "public coordinates with the example view below",
     "view": {
       "pymol_view": [
-        0.14490991830825806,
-        -0.4713420569896698,
-        -0.8699642419815063,
-        -0.08808586746454239,
-        0.8696082234382629,
-        -0.4858216345310211,
-        0.9855161309242249,
-        0.14703191816806793,
-        0.08449625968933105,
+        -0.9888423681259155,
+        0.06762229651212692,
+        0.1327427476644516,
+        -0.0056318799033761024,
+        -0.9073760509490967,
+        0.42027658224105835,
+        0.14887243509292603,
+        0.4148373305797577,
+        0.8976337909698486,
         0.0,
         0.0,
-        -306.9216613769531,
-        119.13481903076172,
-        124.91986846923828,
-        120.96756744384766,
-        241.9793701171875,
-        371.86395263671875,
+        -194.02247619628906,
+        11.050090789794922,
+        12.154590606689453,
+        22.3900146484375,
+        134.95729064941406,
+        253.08761596679688,
         20.0
       ],
       "fov_deg": 20.0,
       "orthoscopic": true,
       "viewport_px": [
-        640,
-        480
+        2980,
+        1700
       ]
     },
     "preset_json": "blender_render/style_preset_ivory_lime_frosted.json",
-    "preset_file_sha256": "436584c0059807ad2693f40d4e9e0db071377beb3fbfbb7e1d3290e94e7bbd0a",
-    "resolved_style_sha256": "7adf4d94ae473ec79d8c69823306cb803b6394a814bbebf724dfe4c5e6562bf7",
+    "preset_file_sha256": "93836f354a18e030156b6330779d20d6d760ac485b1f2877a84fa5d510dd27ee",
+    "resolved_style_sha256": "8e4e7806d003e455cec4e011be37a98f299d8a8b6608c8ca387db665257e0835",
     "dimensions": [
       1600,
       900
     ],
-    "samples": 128,
+    "samples": 256,
     "thumbnail": "examples/presets/ivory_lime_frosted.png",
-    "thumbnail_sha256": "bae23a213c3231edf5f5eb952eca6b5de2cf002071a17bf86696836a14c118c0",
-    "full_png_sha256": "a0217c843fc820c6bb1a9e5cd856d8c79b3af5f6e4feeac8e36d250bcd3122b7",
+    "thumbnail_sha256": "6e22605ee676b8098448ae12287fef8ae39960e3dc402a06be471a5ef11291a2",
+    "full_png_sha256": "d6bdeee7334a7c531709ca0af1af06410ca27ba1d3a8772519337423b78b7e0a",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -660,7 +660,9 @@
       "biotite": "1.6.0"
     },
     "scene_requested": false,
-    "reference_match": "Style analogue; original structure identity unconfirmed"
+    "reference_match": "Style analogue; original structure identity unconfirmed",
+    "detail": "examples/presets/ivory_lime_frosted_detail.png",
+    "detail_sha256": "ba4d953a812208bf90e9fa8aafbdd83f59ad0b5711ad11aadbafc98c1d9975f9"
   },
   {
     "preset": "mint_sky_assembly",

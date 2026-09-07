@@ -5,7 +5,7 @@
     "filename": "reference_06.png",
     "width": 1600,
     "height": 900,
-    "samples": 128,
+    "samples": 256,
     "save_blend": false
   },
   "renderer": {
@@ -22,13 +22,14 @@
   },
   "camera": {
     "mode": "override",
-    "direction_source": "pymol",
-    "fit": true,
-    "fit_margin": 1.05,
+    "direction_source": "preset",
+    "yaw_deg": 15.65,
+    "pitch_deg": -22.71,
+    "roll_deg": -55,
     "projection": "ORTHO",
-    "shift_x": -0.12,
-    "roll_deg": 170,
-    "yaw_offset_deg": 25
+    "fit": true,
+    "fit_margin": 1.04,
+    "shift_x": -0.16
   },
   "world": {
     "background_type": "gradient",
@@ -42,7 +43,7 @@
     {
       "name": "Key",
       "type": "AREA",
-      "energy": 71.25,
+      "energy": 49.875,
       "relative_vector": [
         -1.7,
         2.2,
@@ -57,7 +58,7 @@
     {
       "name": "Fill",
       "type": "AREA",
-      "energy": 28.5,
+      "energy": 19.95,
       "relative_vector": [
         2,
         -0.4,
@@ -72,7 +73,7 @@
     {
       "name": "Rim",
       "type": "AREA",
-      "energy": 42.75,
+      "energy": 29.924999999999997,
       "relative_vector": [
         0,
         2,
@@ -87,14 +88,14 @@
   ],
   "materials": {
     "pink": {
-      "base_color": "#52DBD2",
-      "roughness": 0.13,
+      "base_color": "#22EDD8",
+      "roughness": 0.24,
       "specular": 0.5,
-      "alpha": 0.78,
-      "transmission": 0.88,
-      "coat": 0.4,
-      "emission_color": "#58E6DE",
-      "emission_strength": 0.15
+      "alpha": 1,
+      "transmission": 0.55,
+      "coat": 0.3,
+      "emission_color": "#22EDD8",
+      "emission_strength": 0.02
     },
     "ligand": {
       "base_color": "#F89816",
@@ -107,28 +108,42 @@
       "rim_strength": 0.03
     },
     "shell": {
-      "base_color": "#EDF0E5",
-      "roughness": 0.18,
-      "specular": 0.5,
-      "alpha": 0.72,
-      "transmission": 0.86,
-      "coat": 0.3,
+      "base_color": "#F2F2E5",
+      "roughness": 0.4,
+      "specular": 0.3,
+      "alpha": 0.85,
+      "transmission": 0.7,
+      "coat": 0.15,
       "frosted": {
-        "noise_scale": 4,
-        "opacity_min": 0.16,
-        "opacity_max": 0.72,
-        "grid_scale": 65,
-        "grid_width": 0.006,
-        "grid_strength": 0.28,
-        "grid_color": "#F8FAF1"
+        "noise_scale": 0.045,
+        "opacity_min": 0.02,
+        "opacity_max": 1,
+        "grid_scale": 1.5,
+        "grid_width": 0.045,
+        "grid_strength": 0,
+        "grid_color": "#F9FBEF",
+        "coordinates": "angstrom"
       }
     },
     "core": {
-      "base_color": "#B5CB63",
-      "roughness": 0.4,
+      "base_color": "#ADC92E",
+      "roughness": 0.5,
       "specular": 0.35,
-      "alpha": 1,
+      "alpha": 0.92,
       "transmission": 0.1
+    },
+    "ivory": {
+      "base_color": "#DCE1D3",
+      "roughness": 0.55,
+      "transmission": 0.2,
+      "alpha": 0.6
+    },
+    "mesh": {
+      "base_color": "#FFFFFF",
+      "roughness": 1,
+      "alpha": 1,
+      "emission_color": "#FFFFFF",
+      "emission_strength": 0.05
     }
   },
   "styles": [
@@ -141,40 +156,48 @@
       },
       "quality": 2,
       "shade_smooth": true,
-      "probe_radius": 2.5,
+      "probe_radius": 1.28,
       "color_by_chain": false,
-      "surface_scale_radius": 4.5,
-      "surface_relaxation_steps": 100
+      "surface_scale_radius": 1.5,
+      "surface_relaxation_steps": 34
     },
     {
       "name": "protein_core",
       "style": "surface",
       "material": "core",
       "selection": {
-        "query": "polymer and not nucleic"
+        "query": "polymer and not nucleic and chain B"
       },
       "quality": 2,
       "shade_smooth": true,
-      "probe_radius": 2.5,
+      "probe_radius": 1.1,
       "color_by_chain": false,
-      "surface_scale_radius": 3.2,
-      "surface_relaxation_steps": 100
+      "surface_scale_radius": 1.15,
+      "surface_relaxation_steps": 30
     },
     {
       "name": "nucleic",
       "style": "cartoon",
       "material": "pink",
       "selection": {
-        "query": "nucleic"
+        "nucleic": true,
+        "chain": [
+          "C",
+          "D"
+        ],
+        "residue_range": [
+          5,
+          12
+        ]
       },
       "quality": 4,
       "shade_smooth": true,
-      "nucleic_radius": 0.8,
+      "nucleic_radius": 2.0,
       "nucleic_width": 0.6,
       "nucleic_thickness": 0.25,
       "base_shape": "Cylinder",
       "color_by_chain": false,
-      "nucleic_base_scale": 0.45
+      "nucleic_base_scale": 0.55
     },
     {
       "name": "ligand",
@@ -187,6 +210,62 @@
       "shade_smooth": true,
       "radius": 0.3,
       "color_by_chain": false
+    },
+    {
+      "name": "protein_ivory",
+      "style": "surface",
+      "material": "ivory",
+      "selection": {
+        "query": "polymer and not nucleic and not chain B"
+      },
+      "quality": 2,
+      "shade_smooth": true,
+      "probe_radius": 1.1,
+      "color_by_chain": false,
+      "surface_scale_radius": 1.15,
+      "surface_relaxation_steps": 30
+    },
+    {
+      "name": "surface_mesh",
+      "style": "surface",
+      "material": "mesh",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "quality": 2,
+      "shade_smooth": true,
+      "probe_radius": 1.28,
+      "color_by_chain": false,
+      "surface_scale_radius": 1.55,
+      "surface_relaxation_steps": 34,
+      "wireframe_width_angstrom": 0.018,
+      "wireframe_spacing_angstrom": 0.8
+    },
+    {
+      "name": "nucleic_mesh",
+      "style": "cartoon",
+      "material": "mesh",
+      "selection": {
+        "nucleic": true,
+        "chain": [
+          "C",
+          "D"
+        ],
+        "residue_range": [
+          5,
+          12
+        ]
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "nucleic_radius": 2.18,
+      "nucleic_width": 0.65,
+      "nucleic_thickness": 0.27,
+      "base_shape": "Cylinder",
+      "color_by_chain": false,
+      "nucleic_base_scale": 0.55,
+      "wireframe_width_angstrom": 0.018,
+      "wireframe_spacing_angstrom": 0.55
     }
   ]
 }

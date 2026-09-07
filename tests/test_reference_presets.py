@@ -104,8 +104,9 @@ def test_cutaway_preset_only_cuts_isolated_surfaces():
         if entry['style'] == 'surface':
             assert entry['ligand_cutout_isolate'] is True
             assert entry['ligand_cutout_selection'] is False
-            assert entry['ligand_cutout_plane_scales']['back'] == 1.2
-            assert entry['ligand_cutout_plane_scales']['bottom'] == 1.0
+            assert entry['ligand_cutout_frame_mode'] == 'camera'
+            assert entry['ligand_cutout_plane_scales']['back'] > 0
+            assert entry['ligand_cutout_plane_scales']['bottom'] < entry['ligand_cutout_plane_scales']['top']
         else:
             assert 'ligand_cutout_radius' not in entry
 
@@ -127,10 +128,42 @@ def test_reference_materials_keep_glow_and_glass_controls_explicit():
     from blender_render.presets import preset_path, required_capabilities
     cutaway = json.loads(preset_path('cyan_mint_cutaway').read_text())
     ligand = cutaway['materials']['ligand']
-    assert ligand['emission_strength'] == 1.5
+    assert ligand['edge_highlight']['color'] == '#FFE5F7'
+    assert ligand['edge_highlight']['strength'] > ligand['emission_strength']
     assert ligand['glow']['threshold'] < 1.0
     assert 'material.fog_glow' in required_capabilities(cutaway)
     glass = json.loads(preset_path('ivory_lime_frosted').read_text())
     assert glass['materials']['shell']['transmission'] >= 0.7
-    assert glass['materials']['shell']['frosted']['grid_width'] <= 0.01
-    assert glass['materials']['pink']['transmission'] >= 0.7
+    assert glass['materials']['shell']['frosted']['coordinates'] == 'angstrom'
+    assert glass['materials']['pink']['transmission'] > 0.5
+    wires = [s for s in glass['styles'] if 'wireframe_width_angstrom' in s]
+    assert {s['style'] for s in wires} == {'surface', 'cartoon'}
+    assert all(s['wireframe_width_angstrom'] > 0 for s in wires)
+    assert 'representation.wire_mesh' in required_capabilities(glass)
+
+
+@pytest.mark.parametrize('edits,match', [
+    ({'power':0}, 'minimum'), ({'strength':-1}, 'minimum'),
+    ({'color':'white'}, 'edge_highlight.color'), ({'spots':True}, 'spots'),
+])
+def test_invalid_edge_highlights_fail_before_render(edits, match):
+    style = base()
+    style['materials']['test'] = {'edge_highlight':{'power':2, 'color':'#FFFFFF', 'strength':1}}
+    style['materials']['test']['edge_highlight'].update(edits)
+    with pytest.raises(core.StyleValidationError, match=match):
+        core.validate_style_document(style)
+
+
+def test_wire_mesh_requires_width_and_positive_spacing():
+    style = base()
+    entry = style['styles'][0]
+    entry['wireframe_spacing_angstrom'] = 1.0
+    with pytest.raises(core.StyleValidationError, match='requires wireframe_width_angstrom'):
+        core.validate_style_document(style)
+    entry['wireframe_width_angstrom'] = 0
+    with pytest.raises(core.StyleValidationError, match='minimum'):
+        core.validate_style_document(style)
+    entry['wireframe_width_angstrom'] = .02
+    entry['wireframe_spacing_angstrom'] = 0
+    with pytest.raises(core.StyleValidationError, match='minimum'):
+        core.validate_style_document(style)

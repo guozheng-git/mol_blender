@@ -428,6 +428,16 @@
               "size": {"type": "integer", "minimum": 2, "maximum": 9}
             }
           },
+          "edge_highlight": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["power", "color", "strength"],
+            "properties": {
+              "power": {"type": "number", "exclusiveMinimum": 0},
+              "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+              "strength": {"type": "number", "minimum": 0}
+            }
+          },
           "paint": {
             "$ref": "#/$defs/paint"
           },
@@ -478,6 +488,10 @@
               "grid_color"
             ],
             "properties": {
+              "coordinates": {
+                "type": "string",
+                "enum": ["generated", "angstrom"]
+              },
               "noise_scale": {
                 "type": "number",
                 "exclusiveMinimum": 0
@@ -546,6 +560,9 @@
               "ribbon",
               "wire"
             ]
+          },
+          "ligand_cutout_roll_deg": {
+            "type": "number"
           },
           "material": {
             "type": "string",
@@ -816,6 +833,14 @@
             "type": "boolean"
           },
           "surface_scale_radius": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "wireframe_width_angstrom": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "wireframe_spacing_angstrom": {
             "type": "number",
             "exclusiveMinimum": 0
           },

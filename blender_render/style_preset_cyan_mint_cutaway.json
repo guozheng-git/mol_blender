@@ -114,20 +114,20 @@
       "rim_strength": 0.03
     },
     "ligand": {
-      "base_color": "#FF149B",
-      "roughness": 0.3,
-      "specular": 0.2,
-      "alpha": 1,
-      "ao_strength": 0.15,
-      "shadow_color": "#FF149B",
-      "highlight_color": "#FF149B",
-      "rim_strength": 0.03,
-      "emission_color": "#FF36BD",
-      "emission_strength": 1.5,
+      "base_color": "#FA12A6",
+      "roughness": 0.35,
+      "specular": 0.3,
+      "emission_color": "#FF39BA",
+      "emission_strength": 0.22,
       "glow": {
-        "strength": 0.5,
-        "threshold": 0.7,
+        "strength": 0.15,
+        "threshold": 0.9,
         "size": 6
+      },
+      "edge_highlight": {
+        "power": 2.5,
+        "color": "#FFE5F7",
+        "strength": 1.4
       }
     },
     "sidechain": {
@@ -181,7 +181,7 @@
       },
       "quality": 4,
       "shade_smooth": true,
-      "radius": 0.3,
+      "radius": 0.42,
       "color_by_chain": false
     },
     {
@@ -213,18 +213,19 @@
       "ligand_cutout_frame_mode": "camera",
       "ligand_cutout_flatten_z": false,
       "ligand_cutout_plane_scales": {
-        "left": 0.85,
-        "right": 0.85,
-        "top": 2.0,
+        "left": 0.95,
+        "right": 0.95,
+        "top": 2.7,
         "bottom": 1.0,
-        "back": 1.2
+        "back": 0.9
       },
       "ligand_cutout_seal_mode": "none",
       "color_by_chain": false,
       "surface_scale_radius": 2.4,
       "surface_relaxation_steps": 25,
       "ligand_cutout_isolate": true,
-      "ligand_cutout_selection": false
+      "ligand_cutout_selection": false,
+      "ligand_cutout_roll_deg": -10
     },
     {
       "name": "surface_green",
@@ -240,18 +241,19 @@
       "ligand_cutout_frame_mode": "camera",
       "ligand_cutout_flatten_z": false,
       "ligand_cutout_plane_scales": {
-        "left": 0.85,
-        "right": 0.85,
-        "top": 2.0,
+        "left": 0.95,
+        "right": 0.95,
+        "top": 2.7,
         "bottom": 1.0,
-        "back": 1.2
+        "back": 0.9
       },
       "ligand_cutout_seal_mode": "none",
       "color_by_chain": false,
       "surface_scale_radius": 2.4,
       "surface_relaxation_steps": 25,
       "ligand_cutout_isolate": true,
-      "ligand_cutout_selection": false
+      "ligand_cutout_selection": false,
+      "ligand_cutout_roll_deg": -10
     }
   ],
   "geometry": {

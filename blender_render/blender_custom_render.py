@@ -1297,15 +1297,9 @@ def _configure_glow_compositor(scene: bpy.types.Scene, style_doc: dict[str, Any]
     if hasattr(glare, "quality"):
         glare.quality = "HIGH"
     if glare.inputs.get("Quality") is not None:
-        try:
-            glare.inputs["Quality"].default_value = "HIGH"
-        except (TypeError, ValueError):
-            pass
+        glare.inputs["Quality"].default_value = "High"
     if glare.inputs.get("Type") is not None:
-        try:
-            glare.inputs["Type"].default_value = "Fog Glow"
-        except (TypeError, ValueError):
-            pass
+        glare.inputs["Type"].default_value = "Fog Glow"
     if glare.inputs.get("Threshold") is not None:
         glare.inputs["Threshold"].default_value = threshold
     elif hasattr(glare, "threshold"):
@@ -1313,17 +1307,12 @@ def _configure_glow_compositor(scene: bpy.types.Scene, style_doc: dict[str, Any]
     if glare.inputs.get("Strength") is not None:
         glare.inputs["Strength"].default_value = strength
     if hasattr(glare, "size"):
-        try:
-            glare.size = size
-        except (TypeError, ValueError):
-            # Blender 5 exposes this legacy property as an enum; the node's
-            # default remains a valid small fog-glow when the enum is absent.
-            pass
+        glare.size = max(6, size)
     if glare.inputs.get("Size") is not None:
-        try:
-            glare.inputs["Size"].default_value = size
-        except (TypeError, ValueError):
-            pass
+        # JSON retains the legacy logarithmic pixel scale. Modern Blender
+        # takes a fraction of the image; passing 6 directly covers the image.
+        dimension = max(scene.render.resolution_x, scene.render.resolution_y)
+        glare.inputs["Size"].default_value = min(1.0, (2.0 ** size) / dimension)
     tree.links.new(layers.outputs["Image"], glare.inputs["Image"])
     try:
         output = tree.nodes.new("CompositorNodeComposite")
@@ -2715,6 +2704,7 @@ def _resolve_cutout_frame_axes(
     interface_center: Vector | None,
     camera_axis: Vector | None,
     flatten_z: bool,
+    camera_up: Vector | None = None,
     allow_preset_fallback: bool = True,
 ) -> tuple[Vector, Vector, Vector, str]:
     axis_mode = str(frame_mode or "preset").strip().lower()
@@ -2745,7 +2735,7 @@ def _resolve_cutout_frame_axes(
         prefer_camera=prefer_camera,
         flatten_z=flatten_z,
     )
-    frame = _orthonormal_frame_from_axis_y(y_axis)
+    frame = _orthonormal_frame_from_axis_y(y_axis, up_hint=camera_up if prefer_camera else None)
     if frame is not None:
         return (frame[0], frame[1], frame[2], axis_mode)
 
@@ -3313,12 +3303,14 @@ def _apply_surface_ligand_cutout_planes(
     mirror: bool,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    camera_up: Vector | None = None,
     width_scale: float = 1.15,
     depth_scale: float = 0.45,
     height_scale: float = 1.15,
     flatten_z: bool = True,
     frame_mode: str = "preset",
     frame_axes_cfg: dict[str, Any] | None = None,
+    frame_roll_deg: float = 0.0,
     planes_enabled_cfg: dict[str, Any] | None = None,
     plane_scales_cfg: dict[str, Any] | None = None,
     seal_mode: str = "boundary_fill",
@@ -3367,9 +3359,13 @@ def _apply_surface_ligand_cutout_planes(
         ligand_anchor=ligand_anchor_world,
         interface_center=interface_center,
         camera_axis=camera_axis,
+        camera_up=camera_up,
         flatten_z=flatten_z,
         allow_preset_fallback=not strict_preset,
     )
+    if frame_roll_deg:
+        rotation = Matrix.Rotation(math.radians(frame_roll_deg), 3, axis_y)
+        axis_x, axis_z = rotation @ axis_x, rotation @ axis_z
     cut_center = ligand_anchor_world.copy()
     if abs(offset_world) > 1e-6:
         cut_center += axis_y * float(offset_world)
@@ -3515,6 +3511,7 @@ def _apply_surface_ligand_cutout(
     mirror: bool,
     interface_center: Vector | None,
     camera_axis: Vector | None = None,
+    camera_up: Vector | None = None,
     width_scale: float = 1.15,
     depth_scale: float = 0.45,
     height_scale: float = 1.15,
@@ -3526,6 +3523,7 @@ def _apply_surface_ligand_cutout(
     cutout_mode: str = "planes",
     frame_mode: str = "preset",
     frame_axes_cfg: dict[str, Any] | None = None,
+    frame_roll_deg: float = 0.0,
     planes_enabled_cfg: dict[str, Any] | None = None,
     plane_scales_cfg: dict[str, Any] | None = None,
     seal_mode: str = "boundary_fill",
@@ -3547,12 +3545,14 @@ def _apply_surface_ligand_cutout(
         mirror=mirror,
         interface_center=interface_center,
         camera_axis=camera_axis,
+        camera_up=camera_up,
         width_scale=width_scale,
         depth_scale=depth_scale,
         height_scale=height_scale,
         flatten_z=flatten_z,
         frame_mode=frame_mode,
         frame_axes_cfg=frame_axes_cfg,
+        frame_roll_deg=frame_roll_deg,
         planes_enabled_cfg=planes_enabled_cfg,
         plane_scales_cfg=plane_scales_cfg,
         seal_mode=seal_mode,
@@ -3562,29 +3562,44 @@ def _apply_surface_ligand_cutout(
     )
 
 
-def _apply_override_camera(
-    scene: bpy.types.Scene,
-    camera: bpy.types.Object,
-    camera_cfg: dict[str, Any],
-    objects: list[bpy.types.Object],
-    style_objects_by_name: dict[str, list[bpy.types.Object]] | None = None,
-    style_centers_by_name: dict[str, Vector] | None = None,
-) -> None:
-    center, radius = _scene_bounds(objects)
-    focus_style = str(camera_cfg.get("focus_style", "")).strip()
-    if focus_style and style_objects_by_name:
-        focus_objects = [
-            obj for obj in style_objects_by_name.get(focus_style, []) if _object_has_renderable_geometry(obj)
-        ]
-        if focus_objects:
-            focus_center, _ = _scene_bounds(focus_objects)
-            center = focus_center
+def _apply_surface_wireframe(obj: bpy.types.Object, width_angstrom: float,
+                             spacing_angstrom: float = 1.0,
+                             camera_forward: Vector | None = None) -> None:
+    """Trace the native surface edges on an isolated object, retaining its material."""
+    # Uniform quad cells follow the curved volume rather than exposing the
+    # triangulation as an irregular net. Only this isolated overlay is remeshed.
+    remesh = obj.modifiers.new("Surface grid cells", "REMESH")
+    remesh.mode = "VOXEL"
+    remesh.voxel_size = spacing_angstrom * .01
+    remesh.use_smooth_shade = True
+    smooth = obj.modifiers.new("Smooth grid on surface", "SMOOTH")
+    smooth.factor = 1.0
+    smooth.iterations = 3
+    if camera_forward is not None:
+        # Glass must show one readable grid, not overlapping front/back nets.
+        # Bake only the overlay's camera-facing cells, as with authored cuts.
+        bpy.context.view_layer.update()
+        evaluated = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        mesh = bpy.data.meshes.new_from_object(evaluated)
+        obj.modifiers.clear()
+        obj.data = mesh
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
+        away = [face for face in bm.faces if (normal_matrix @ face.normal).dot(camera_forward) >= 0]
+        bmesh.ops.delete(bm, geom=away, context='FACES')
+        bm.to_mesh(mesh)
+        bm.free()
+    modifier = obj.modifiers.new("Fine molecular surface mesh", "WIREFRAME")
+    modifier.thickness = width_angstrom * .01
+    modifier.offset = 1.0
+    modifier.use_replace = True
+    modifier.use_even_offset = True
+    modifier.use_boundary = True
 
-    if focus_style and style_centers_by_name and focus_style in style_centers_by_name:
-        center = style_centers_by_name[focus_style]
 
-    distance_scale = float(camera_cfg.get("distance_scale", 3.1))
-    distance = max(0.05, radius * distance_scale)
+def _override_camera_rotation(camera: bpy.types.Object, camera_cfg: dict[str, Any]) -> Matrix:
+    """Resolve orientation once for both camera-relative geometry and the camera."""
     direction_source = str(camera_cfg.get("direction_source", "preset")).strip().lower()
 
     up_hint: Vector | None = None
@@ -3613,15 +3628,39 @@ def _apply_override_camera(
     if direction.length < 1e-8:
         direction = Vector((0.0, -1.0, 0.0))
     direction.normalize()
-    camera.location = center - direction * distance
-    if up_hint is not None and not _orient_camera_with_up(camera, direction, up_hint):
-        _point_camera_at(camera, center)
-    elif up_hint is None:
-        _point_camera_at(camera, center)
-
+    rotation = direction.to_track_quat("-Z", "Y").to_matrix()
+    if up_hint is not None and up_hint.cross(-direction).length > 1e-8:
+        right = up_hint.cross(-direction).normalized()
+        up = (-direction).cross(right).normalized()
+        rotation = Matrix((right, up, -direction)).transposed()
     roll = float(camera_cfg.get("roll_deg", 0.0))
     if roll:
-        camera.rotation_euler.rotate_axis("Z", math.radians(roll))
+        rotation = rotation @ Matrix.Rotation(math.radians(roll), 3, "Z")
+    return rotation
+
+
+def _apply_override_camera(
+    scene: bpy.types.Scene,
+    camera: bpy.types.Object,
+    camera_cfg: dict[str, Any],
+    objects: list[bpy.types.Object],
+    style_objects_by_name: dict[str, list[bpy.types.Object]] | None = None,
+    style_centers_by_name: dict[str, Vector] | None = None,
+) -> None:
+    center, radius = _scene_bounds(objects)
+    focus_style = str(camera_cfg.get("focus_style", "")).strip()
+    if focus_style and style_objects_by_name:
+        focus_objects = [
+            obj for obj in style_objects_by_name.get(focus_style, []) if _object_has_renderable_geometry(obj)
+        ]
+        if focus_objects:
+            center, _ = _scene_bounds(focus_objects)
+    if focus_style and style_centers_by_name and focus_style in style_centers_by_name:
+        center = style_centers_by_name[focus_style]
+    distance = max(0.05, radius * float(camera_cfg.get("distance_scale", 3.1)))
+    rotation = _override_camera_rotation(camera, camera_cfg)
+    direction = rotation @ Vector((0, 0, -1))
+    camera.matrix_world = Matrix.Translation(center - direction * distance) @ rotation.to_4x4()
     data = camera.data
     if "projection" in camera_cfg:
         data.type = camera_cfg["projection"]
@@ -3922,13 +3961,11 @@ def _render(args: argparse.Namespace) -> None:
             )
         except Exception:
             pass
-    cutout_camera_axis = None
-    try:
-        candidate = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, -1.0))
-        if candidate.length > 1e-8:
-            cutout_camera_axis = candidate.normalized()
-    except Exception:
-        cutout_camera_axis = None
+    camera_cfg = style_doc.get("camera", {})
+    cutout_rotation = (_override_camera_rotation(camera, camera_cfg)
+                       if camera_cfg.get("mode") == "override" else camera.matrix_world.to_3x3())
+    cutout_camera_axis = cutout_rotation @ Vector((0, 0, -1))
+    cutout_camera_up = cutout_rotation @ Vector((0, 1, 0))
     if debug_styles and runtime_chain_colors:
         print(f"Bridge Custom: runtime polymer chain colors {runtime_chain_colors}")
 
@@ -4039,7 +4076,8 @@ def _render(args: argparse.Namespace) -> None:
 
         style_load_result = load_result
         style_base_obj = base_obj
-        if isolate_surface_cutout:
+        isolate_wire = "wireframe_width_angstrom" in style_cfg
+        if isolate_surface_cutout or isolate_wire:
             style_object_name = f"BridgeCustom_{style_idx}"
             style_load_result = _load_with_ccd_retry(structure_path, style_object_name)
             _apply_auth_chain_override(style_load_result, structure_path)
@@ -4233,6 +4271,7 @@ def _render(args: argparse.Namespace) -> None:
                                 mirror=cutout_mirror,
                                 interface_center=cutout_center_ref,
                                 camera_axis=cutout_camera_axis,
+                                camera_up=cutout_camera_up,
                                 width_scale=cutout_width_scale,
                                 depth_scale=cutout_depth_scale,
                                 height_scale=cutout_height_scale,
@@ -4244,6 +4283,7 @@ def _render(args: argparse.Namespace) -> None:
                                 cutout_mode=cutout_mode,
                                 frame_mode=cutout_frame_mode,
                                 frame_axes_cfg=cutout_frame_axes_cfg,
+                                frame_roll_deg=float(style_cfg.get("ligand_cutout_roll_deg", 0.0)),
                                 planes_enabled_cfg=cutout_planes_enabled_cfg,
                                 plane_scales_cfg=cutout_plane_scales_cfg,
                                 seal_mode=cutout_seal_mode,
@@ -4268,6 +4308,9 @@ def _render(args: argparse.Namespace) -> None:
                             f"radius={cutout_radius:.3f} offset={effective_cutout_offset:.3f} "
                             f"mirror={int(cutout_mirror)}"
                         )
+        if isolate_wire:
+            _apply_surface_wireframe(style_base_obj, style_cfg["wireframe_width_angstrom"],
+                                    style_cfg.get("wireframe_spacing_angstrom", 1.0), cutout_camera_axis)
         if style_kind_lower == "sticks" and _is_ligand_style(style_cfg):
             runtime_ligand_backend = "mn_native_sticks"
         if _is_polymer_cartoon_style(style_cfg):

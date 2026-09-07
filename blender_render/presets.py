@@ -59,7 +59,7 @@ def required_capabilities(style: dict) -> list[str]:
     if style.get("geometry", {}).get("edge_rounding", {}).get("radius_angstrom", 0) > 0:
         required.add("geometry.edge_rounding")
     for material in style["materials"].values():
-        for field, capability in (("frosted", "material.frosted_grid"), ("color_gradient", "material.color_gradient"), ("color_attribute", "material.attribute_color"), ("glow", "material.fog_glow")):
+        for field, capability in (("frosted", "material.frosted_grid"), ("color_gradient", "material.color_gradient"), ("color_attribute", "material.attribute_color"), ("glow", "material.fog_glow"), ("edge_highlight", "material.edge_highlight")):
             if field in material:
                 required.add(capability)
     if "element_palette" in style.get("geometry", {}):
@@ -74,6 +74,8 @@ def required_capabilities(style: dict) -> list[str]:
         required.add("camera.reference_framing")
     if any("surface_scale_radius" in entry or "surface_relaxation_steps" in entry for entry in style["styles"]):
         required.add("representation.surface_smoothing")
+    if any("wireframe_width_angstrom" in entry for entry in style["styles"]):
+        required.add("representation.wire_mesh")
     if any(entry.get("color_by_chain") is False for entry in style["styles"]):
         required.add("material.uniform_polymer_color")
     if any("nucleic_base_scale" in entry for entry in style["styles"]):

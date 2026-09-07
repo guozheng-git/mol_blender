@@ -1,0 +1,22 @@
+{
+  "surface_cuts": [],
+  "pocket_selections": [],
+  "wire_overlays": [
+    {
+      "object": "BridgeCustom_5",
+      "quad_cells": 16498,
+      "quad_fraction": 1.0,
+      "width_angstrom": 0.018,
+      "spacing_angstrom": 0.8,
+      "original_geometry_unchanged": true
+    },
+    {
+      "object": "BridgeCustom_6",
+      "quad_cells": 3935,
+      "quad_fraction": 1.0,
+      "width_angstrom": 0.018,
+      "spacing_angstrom": 0.55,
+      "original_geometry_unchanged": true
+    }
+  ]
+}

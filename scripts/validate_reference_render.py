@@ -122,7 +122,7 @@ def check_camera(projection, dimensions):
             'explicit_scale_and_focus':True, 'fitted_matrix':[list(row) for row in fitted]}
 
 
-def render_material(config, name):
+def render_material(config, name, shape='plane'):
     reset()
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
@@ -136,7 +136,17 @@ def render_material(config, name):
     scene.render.image_settings.color_mode = 'RGBA'
     scene.view_settings.view_transform = 'Standard'
     render._set_world(scene, {'background_type':'solid','color':'#FFFFFF','strength':1})
-    bpy.ops.mesh.primitive_plane_add(size=2)
+    if shape == 'sphere':
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=96, ring_count=48, radius=.8)
+        for polygon in bpy.context.object.data.polygons:
+            polygon.use_smooth = True
+    elif shape == 'grid':
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, radius=.8)
+        render._apply_surface_wireframe(bpy.context.object, .5, 8.0, Vector((0,0,-1)))
+        cells = bpy.context.object.data.polygons
+        assert cells and all(len(face.vertices)==4 and face.normal.z>=-1e-6 for face in cells)
+    else:
+        bpy.ops.mesh.primitive_plane_add(size=2)
     plane = bpy.context.object
     plane.data.materials.append(render._create_material(name, config))
     camera = bpy.data.objects.new('Camera', bpy.data.cameras.new('Camera'))
@@ -189,5 +199,56 @@ alpha = frosted[8:-8,8:-8,3]
 assert alpha.max() < .52 and alpha.min() < .12 and alpha.max()-alpha.min() > .15
 results['shaders'] = {'gradient_left_rgb':left.tolist(),'gradient_right_rgb':right.tolist(),
                        'frosted_alpha_min':float(alpha.min()),'frosted_alpha_max':float(alpha.max())}
+
+# Camera-relative cuts must use final yaw, pitch and roll, without mutating the
+# saved pose while computing the cut. A later camera fit must use the same frame.
+reset()
+bpy.ops.mesh.primitive_cube_add()
+obj = bpy.context.object
+scene = bpy.context.scene
+camera = bpy.data.objects.new('Camera', bpy.data.cameras.new('Camera'))
+scene.collection.objects.link(camera)
+camera.rotation_euler = (.4, .2, .8)
+bpy.context.view_layer.update()
+before = camera.matrix_world.copy()
+cfg = {'direction_source':'pymol', 'yaw_offset_deg':37, 'pitch_offset_deg':-21,
+       'roll_deg':17, 'fit':True, 'projection':'ORTHO'}
+rotation = render._override_camera_rotation(camera, cfg)
+assert camera.matrix_world == before
+forward, up = rotation @ Vector((0,0,-1)), rotation @ Vector((0,1,0))
+axes = render._resolve_cutout_frame_axes(frame_mode='camera', frame_axes_cfg=None,
+    ligand_anchor=Vector((0,0,0)), interface_center=None, camera_axis=forward,
+    camera_up=up, flatten_z=False)
+assert axes[1].dot(-forward) > .99999 and axes[2].dot(up) > .99999
+render._apply_override_camera(scene, camera, cfg, [obj])
+bpy.context.view_layer.update()
+assert (camera.matrix_world.to_3x3() @ Vector((0,0,-1))).dot(forward) > .99999
+assert (camera.matrix_world.to_3x3() @ Vector((0,1,0))).dot(up) > .99999
+results['camera_cut_frame'] = {'final_forward_and_up_match':True, 'saved_pose_unmutated':True}
+
+rim_config = {'base_color':'#FA12A6', 'emission_color':'#FF39BA', 'emission_strength':.22,
+              'edge_highlight':{'color':'#FFE5F7','power':2.5,'strength':1.4}}
+rim = render_material(rim_config, 'rim', 'sphere')
+plain = render_material({k:v for k,v in rim_config.items() if k!='edge_highlight'}, 'plain', 'sphere')
+# Green increases toward white at the silhouette; pink centers stay pink.
+edge_gain = (rim[28:36,10:13,1]-plain[28:36,10:13,1]).mean()
+center_gain = (rim[28:36,44:52,1]-plain[28:36,44:52,1]).mean()
+assert edge_gain > center_gain + .05, (edge_gain, center_gain)
+assert np.max(np.abs(rim[28:36,44:52,:3]-plain[28:36,44:52,:3])) < .03
+wire = render_material({'base_color':'#FFFFFF','emission_color':'#FFFFFF','emission_strength':1}, 'wire', 'grid')
+assert wire[:,:,3].max() > .8 and wire[:,:,3].min() < .05
+assert .05 < (wire[:,:,3]>.2).mean() < .8
+results['rim_and_mesh'] = {'edge_green_gain':float(edge_gain),'center_green_gain':float(center_gain),
+                           'wire_visible_fraction':float((wire[:,:,3]>.2).mean())}
+scene = bpy.context.scene
+scene.render.resolution_x = 1600
+scene.render.resolution_y = 900
+render._configure_glow_compositor(scene, {'materials':{'test':{'glow':{'size':6,'strength':.15,'threshold':.9}}}})
+tree = getattr(scene, 'compositing_node_group', None) or scene.node_tree
+glare = next(n for n in tree.nodes if n.bl_idname=='CompositorNodeGlare')
+if glare.inputs.get('Size') is not None:
+    assert abs(glare.inputs['Size'].default_value-.04) < 1e-6
+    assert glare.inputs['Quality'].default_value == 'High'
+results['glow'] = {'small_image_fraction':.04, 'high_quality':True}
 (output / 'checks.json').write_text(json.dumps(results,indent=2))
-print('PASS: closed colored cuts, preserved interior, four camera fits, explicit focus/scale, gradient and frosted opacity')
+print('PASS: closed cuts, preserved interior, final camera frame, four fits, shader opacity, continuous rims, visible quad mesh and bounded glow')
