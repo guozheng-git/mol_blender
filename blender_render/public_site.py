@@ -11,9 +11,10 @@ painted materials, and a transparent background.</p>
 or ChatGPT, preview the result, and download a PNG or an editable Blender scene.</p>
 <p>This is a private validation beta. The repository and hosted compute are
 restricted to the owner; public publication and publisher verification are deferred.</p>
-<p>The hosted beta uses GitHub sign-in. Its initial limits are five renders and
-twenty GPU minutes per day, one active job per person, and a maximum image
-dimension of 4096 pixels. Availability is limited by a fixed credit allowance.</p>
+<p>The hosted beta uses GitHub sign-in and allows ten completed renders per UTC
+day. Upload counts and daily GPU minutes have no quota. The verified owner has
+a daily testing exemption. A 4096-pixel maximum image dimension and fixed project
+credit allowance still apply.</p>
 <p><a href="REPO">Installation and source code</a></p>
 <p>The MCP endpoint is <code>/mcp</code>. Directory publication is subject to
 OpenAI review; a custom connection is available for release validation.</p>"""),
@@ -26,10 +27,17 @@ only, without repository or email permissions.</p>
 isolated environment without network access or service credentials. Hosted
 compute and storage use Modal. Credentials are encrypted at rest. Jobs and
 results are checked against their owner.</p>
-<p>Inputs expire after 24 hours; outputs expire 24 hours after completion.
-Temporary conversion and rendering files are removed after each operation.
-Download links expire after fifteen minutes. Anyone given a valid download
-link can use it until expiry. Downloaded copies remain under your control.</p>
+<p>There is no saved structure library. Inputs are temporary and deleted after
+render completion, failure, or cancellation; unused imports expire after five
+minutes. Each result file is deleted after its download response is sent.
+Undelivered files expire fifteen minutes after completion. Downloaded copies
+remain under your control.</p>
+<p>The new data path uses Modal HTTP Servers, which proxy bodies without
+storing them. New inputs, images, scenes, and manifests are kept in temporary
+container storage, outside the persistent authentication/accounting Volume.
+Earlier beta Function calls remain subject to Modal's provider-side retention
+of up to seven days. Existing completed downloads keep their original expiry
+unless explicitly removed.</p>
 <p>Minimal identity, job, timestamp, status, idempotency, and cost records remain
 to enforce quotas and prevent duplicate spending. There is no public gallery.
 The service does not use uploaded structures to train models.</p>

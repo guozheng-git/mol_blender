@@ -52,7 +52,7 @@ The versioned API provides upload, immediate asynchronous submission, status, ca
 
 Each manifest records input hashes and provenance, DSS status, structure format, selected geometry backends, resolved preset, runtime and GPU versions, camera settings, timings, and output checksums. Temporary run directories are cleaned by default.
 
-The shared service allows one active job per account, five renders and twenty GPU minutes per UTC day, 2048-pixel default output, a 4096-pixel maximum dimension, and a ten-minute timeout. It reserves worst-case job costs before dispatch and stops admission when lifetime credits are insufficient or expiring. Inputs and results expire after 24 hours. There is no public gallery. See [privacy](docs/privacy.md) and [terms](docs/terms.md).
+The shared service allows ten completed renders per UTC day, reserving a daily slot for each pending job. Upload counts and daily GPU minutes have no quota. The owner's verified GitHub account is exempt from the daily limit during testing. Output defaults to 2048 pixels, with a 4096-pixel maximum dimension and a ten-minute job timeout. Worst-case costs are reserved before dispatch, including for the testing account; the lifetime budget still applies. Inputs are deleted after rendering, and unused uploads expire after five minutes. Results are deleted after download or fifteen minutes after completion. There is no retained structure library or public gallery. See [privacy](docs/privacy.md) and [terms](docs/terms.md).
 
 ## Development
 

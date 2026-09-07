@@ -34,4 +34,4 @@ blender-render service stop
 
 PyMOL's Python may differ from the Python 3.11 service environment. The exporter is a standalone script and runs in PyMOL's interpreter. Importing the lightweight client does not import Blender or Molecular Nodes.
 
-`figure.png`, `figure.blend`, and `figure.manifest.json` are local downloads and remain until you remove them. The service's retained copies expire after 24 hours. The default preset is still preset 1; `--rough` reduces performance settings without changing its material, colors, geometry, or camera.
+`figure.png`, `figure.blend`, and `figure.manifest.json` are local downloads and remain until you remove them. Service copies are deleted after download, with a fifteen-minute deadline for undelivered files. Inputs are deleted after rendering. The default preset is still preset 1; `--rough` reduces performance settings without changing its material, colors, geometry, or camera.

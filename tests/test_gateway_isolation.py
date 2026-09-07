@@ -50,5 +50,5 @@ def test_modal_startup_failure_stops_deployment(monkeypatch):
     monkeypatch.setattr(modal_app, 'create_gateway', fail)
     monkeypatch.setattr(modal_app, 'stop_current_app', lambda: stopped.append(True))
     with pytest.raises(OSError, match='persistent state unavailable'):
-        modal_app.gateway.get_raw_f()()
+        modal_app.gateway_application()
     assert stopped == [True]

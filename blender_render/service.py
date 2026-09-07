@@ -10,6 +10,7 @@ import math
 import shutil
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
@@ -42,7 +43,9 @@ class HostBackend:
         def monitor():
             while not finished.wait(0.2):
                 if cancelled():
-                    self.worker.stop()
+                    # submit_render holds the socket lock while waiting. Signal
+                    # the process first so cancellation cannot wait for render.
+                    self.worker.interrupt()
                     return
 
         watcher = threading.Thread(target=monitor, daemon=True)
@@ -55,6 +58,7 @@ class HostBackend:
             watcher.join(timeout=2)
 
     def stop(self):
+        self.worker.interrupt()
         self.worker.stop()
 
 
@@ -166,11 +170,14 @@ def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int)
 
 class RenderService:
     def __init__(self, store: JobStore, backend: Backend, *, recover: bool = True):
+        self._imports_guard = threading.Lock()
+        self._imports = {}
         self.store = store
         self.backend = backend
         self.wakeup = threading.Event()
         self.stopping = threading.Event()
         self.thread: threading.Thread | None = None
+        self.cleanup_thread: threading.Thread | None = None
         self.last_activity = time.time()
         if recover:
             self.store.recover_interrupted()
@@ -180,6 +187,8 @@ class RenderService:
             return
         self.thread = threading.Thread(target=self._run, name="blender-render-fifo", daemon=True)
         self.thread.start()
+        self.cleanup_thread = threading.Thread(target=self._maintain, name='blender-render-cleanup', daemon=True)
+        self.cleanup_thread.start()
 
     def stop(self):
         self.stopping.set()
@@ -187,33 +196,79 @@ class RenderService:
         self.backend.stop()
         if self.thread:
             self.thread.join(timeout=10)
+        if self.cleanup_thread:
+            self.cleanup_thread.join(timeout=10)
 
-    def import_payload(self, owner: str, payload: dict, name: str = "structure.cif") -> dict:
-        self.last_activity = time.time()
-        p = self.store.policy
-        data = validate_input(payload, max_atoms=p.max_atoms if p.public else 10000000, max_bytes=p.max_upload_bytes)
-        return self.store.add_input(owner, data, name)
+    def _maintain(self):
+        while not self.stopping.wait(2):
+            try:
+                self.store.cleanup()
+            except Exception:
+                log.exception('Temporary data cleanup failed')
+
+    @contextmanager
+    def _owner_import(self, owner):
+        # Serialize one owner's imports across HTTP and MCP, so simultaneous
+        # retries cannot reserve and launch duplicate paid conversions.
+        with self._imports_guard:
+            entry = self._imports.setdefault(owner, [threading.RLock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._imports_guard:
+                entry[1] -= 1
+                if not entry[1]:
+                    del self._imports[owner]
+
+    def import_payload(self, owner: str, payload: dict, name: str = "structure.cif", *, source_key: str | None = None) -> dict:
+        with self._owner_import(owner):
+            self.last_activity = time.time()
+            p = self.store.policy
+            data = validate_input(payload, max_atoms=p.max_atoms if p.public else 10000000, max_bytes=p.max_upload_bytes)
+            return self.store.add_input(owner, data, name, source_key=source_key)
+
+    def import_file(self, owner: str, data: bytes, suffix: str, name: str, converter) -> dict:
+        if suffix not in {'.pse', '.cif', '.mmcif', '.pdb'}:
+            raise JobError("Choose a .pse, .cif, or .pdb file.")
+        if len(data) > self.store.policy.max_upload_bytes:
+            raise JobError("File is too large.", "too_large", 413)
+        key = suffix + ':' + hashlib.sha256(data).hexdigest()
+        with self._owner_import(owner):
+            existing = self.store.find_source(owner, key)
+            if existing:
+                return existing
+            self.store.reserve_conversion(owner)
+            try:
+                payload = converter(data, suffix)
+            except Exception as exc:
+                raise JobError("The molecular file could not be converted. Attach a valid PSE, CIF, or PDB file.", "invalid_structure", 422) from exc
+            return self.import_payload(owner, payload, name, source_key=key)
 
     def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str) -> dict:
         self.last_activity = time.time()
+        try:
+            client_hash = hashlib.sha256(json.dumps(options, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+        except (TypeError, ValueError) as exc:
+            raise JobError('Render options must be valid JSON.') from exc
+        replay = self.store.submission_replay(owner, input_id, idempotency_key, client_hash)
+        if replay:
+            return replay
         payload = self.store.input(owner, input_id)
         try:
             normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
         except core.StyleValidationError as exc:
             raise JobError(str(exc)) from exc
-        result = self.store.submit(owner, input_id, normalized, idempotency_key)
+        result = self.store.submit(owner, input_id, normalized, idempotency_key, client_hash=client_hash)
         self.wakeup.set()
         return result
 
     def _run(self):
-        last_cleanup = 0.0
         while not self.stopping.is_set():
             try:
                 job = self.store.claim()
                 if not job:
-                    if time.time() - last_cleanup > 300:
-                        self.store.cleanup()
-                        last_cleanup = time.time()
                     self.wakeup.wait(2)
                     self.wakeup.clear()
                     continue
@@ -288,4 +343,7 @@ class RenderService:
         record = next((item for item in result["artifacts"] if item["name"] == name), None)
         if record is None or name not in {"render.png", "render.blend", "manifest.json"}:
             raise JobError("Artifact not found.", "not_found", 404)
-        return self.store.artifacts / identifier / name, record["mime_type"]
+        path = self.store.artifact_root(identifier) / name
+        if not path.is_file():
+            raise JobError('Temporary download is no longer available.', 'expired', 410)
+        return path, record["mime_type"]

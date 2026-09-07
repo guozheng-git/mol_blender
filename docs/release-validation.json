@@ -8,7 +8,7 @@
   "checks": {
     "installed_wheel": {
       "status": "passed",
-      "evidence": "Final wheel installed with declared extras outside the checkout; 15 copied contract tests, packaged assets, runtime diagnostics and actual no-argument PyMOL render passed."
+      "evidence": "Privacy update wheel installed outside the checkout; 32 copied tests passed. Initial milestone also exercised the clean runtime and actual no-argument PyMOL render."
     },
     "clean_mac_runtime": {
       "status": "passed"
@@ -33,7 +33,7 @@
     },
     "public_security": {
       "status": "passed",
-      "evidence": "Ownership, unsafe inputs, expiry and budget tests; live GitHub OAuth, sandbox isolation, raw file imports, and daily quota refusal."
+      "evidence": "104-test suite includes owner isolation, ten-render daily allowance, tester exemption, unsafe inputs, deletion/expiry and budget refusal. Live owner OAuth, empty input storage, and approved old-output deletion verified."
     },
     "sandbox_isolation": {
       "status": "passed"
@@ -49,11 +49,11 @@
     },
     "codex_plugin": {
       "status": "passed",
-      "evidence": "Actual Codex tools rendered and downloaded a result; local-file adapter imported PSE and retrieved an existing render without new GPU dispatch."
+      "evidence": "Both installed adapters discover nine tools and authenticate as the exempt testing owner. The initial milestone also exercised local PSE upload and native result downloads."
     },
     "chatgpt_plugin": {
       "status": "partial",
-      "evidence": "OAuth, discovered tools, declared file object with public URL, live render, native preview, and downloaded Blender scene passed. Browser attachment picker remains unverified because extension upload permission was refused."
+      "evidence": "New HTTP Server connection: OAuth, public file-object render, refreshed native preview, all three download buttons, input deletion, result delivery deletion, and owner exemption passed. Browser attachment picker remains unverified."
     },
     "blend_download": {
       "status": "passed"
@@ -71,5 +71,6 @@
       "evidence": "Deleted research files remain in private Git history. Owner chose to keep the release private; no visibility change is authorized."
     }
   },
-  "report": "release-validation.md"
+  "report": "release-validation.md",
+  "privacy_update_report": "privacy-validation.md"
 }

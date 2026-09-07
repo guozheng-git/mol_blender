@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from starlette.background import BackgroundTask
 
 from .config import VERSION
 from .jobs import JobError
@@ -26,10 +27,10 @@ class Downloads:
         self.base_url = base_url.rstrip("/")
         self.clock = clock
 
-    def url(self, owner: str, job_id: str, name: str, ttl: int = 900) -> str:
+    def url(self, owner: str, job_id: str, name: str, ttl: int = 900, *, preview: bool = False) -> str:
         data = base64.urlsafe_b64encode(json.dumps([owner, job_id, name, int(self.clock()) + ttl], separators=(",", ":")).encode()).decode().rstrip("=")
         signature = hmac.new(self.key, data.encode(), hashlib.sha256).hexdigest()
-        return f"{self.base_url}/download/{data}.{signature}"
+        return f"{self.base_url}/{'preview' if preview else 'download'}/{data}.{signature}"
 
     def verify(self, value: str) -> tuple[str, str, str]:
         try:
@@ -194,6 +195,14 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         data = await body(request)
         return await asyncio.to_thread(service.import_payload, identity, data.get("payload"), data.get("name", "structure.cif"))
 
+    @app.get("/v1/structures")
+    async def structures(identity=Depends(owner)):
+        return await asyncio.to_thread(service.store.list_inputs, identity)
+
+    @app.delete("/v1/structures/{input_id}")
+    async def delete_structure(input_id: str, identity=Depends(owner)):
+        return await asyncio.to_thread(service.store.delete_input, identity, input_id)
+
     @app.post("/v1/files/{format}")
     async def upload_file(format: str, request: Request, identity=Depends(owner)):
         if format not in {"pse", "cif", "mmcif", "pdb"} or converter is None:
@@ -201,12 +210,8 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         data = await request.body()
         if len(data) > service.store.policy.max_upload_bytes:
             raise JobError("File is too large.", "too_large", 413)
-        await asyncio.to_thread(service.store.reserve_conversion, identity)
-        try:
-            payload = await asyncio.to_thread(converter, data, "." + format)
-        except Exception as exc:
-            raise JobError("The molecular file could not be converted. Check that it is a valid PSE, CIF, or PDB file.", "invalid_structure", 422) from exc
-        return await asyncio.to_thread(service.import_payload, identity, payload, "structure." + format)
+        name = request.query_params.get("name") or ("structure." + format)
+        return await asyncio.to_thread(service.import_file, identity, data, "." + format, name, converter)
 
     @app.post("/v1/jobs", status_code=202)
     async def submit(request: Request, identity=Depends(owner)):
@@ -231,15 +236,29 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         return data
 
     @app.get("/v1/jobs/{job_id}/artifacts/{name}")
-    async def artifact(job_id: str, name: str, identity=Depends(owner)):
+    async def artifact(job_id: str, name: str, request: Request, identity=Depends(owner)):
         path, mime = service.artifact(identity, job_id, name)
-        return FileResponse(path, media_type=mime, filename=name)
+        return FileResponse(path, media_type=mime, filename=name,
+            background=None if 'range' in request.headers else BackgroundTask(service.store.artifact_delivered, identity, job_id, name))
+
+    @app.delete("/v1/jobs/{job_id}/result")
+    async def delete_result(job_id: str, identity=Depends(owner)):
+        return await asyncio.to_thread(service.store.delete_result, identity, job_id)
 
     @app.get("/download/{signed}")
-    async def download(signed: str):
+    async def download(signed: str, request: Request):
         identity, identifier, name = downloads.verify(signed)
         path, mime = service.artifact(identity, identifier, name)
-        return FileResponse(path, media_type=mime, filename=name)
+        return FileResponse(path, media_type=mime, filename=name,
+            background=None if 'range' in request.headers else BackgroundTask(service.store.artifact_delivered, identity, identifier, name))
+
+    @app.get("/preview/{signed}")
+    async def preview(signed: str):
+        identity, identifier, name = downloads.verify(signed)
+        if name != 'render.png':
+            raise JobError('Only PNG previews are available.', 'not_found', 404)
+        path, mime = service.artifact(identity, identifier, name)
+        return FileResponse(path, media_type=mime)
 
     @app.post("/v1/admin/drain", dependencies=[Depends(admin)])
     async def drain():

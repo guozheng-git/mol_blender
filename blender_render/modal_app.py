@@ -32,7 +32,12 @@ renderer_image = (modal.Image.debian_slim(python_version="3.11")
 for filename in ("__init__.py", "config.py", "runtime.lock.json", "runtime-requirements.txt", "runtime_install.py", "runtime_initialize.py"):
     renderer_image = renderer_image.add_local_file(package / filename, "/opt/blender_render/" + filename, copy=True)
 renderer_image = (renderer_image.run_commands("python -c 'from blender_render.runtime_install import install; install(root=\"/opt/runtime\")'")
-    .add_local_dir(package, "/opt/blender_render", copy=True, ignore=["__pycache__", "*.pyc"]))
+    .add_local_file(package / "service-requirements.txt", "/tmp/service-requirements.txt", copy=True)
+    # Hide Blender's --target directory from pip's installed-package discovery:
+    # otherwise upgrading an HTTP dependency can uninstall a renderer wheel.
+    .run_commands("PYTHONPATH= python -m pip install --require-hashes --only-binary=:all: -r /tmp/service-requirements.txt")
+    .add_local_dir(package, "/opt/blender_render", copy=True, ignore=["__pycache__", "*.pyc"])
+    .run_commands('/opt/runtime/blender-5.0.1-linux-x64/blender --background --python-use-system-env --python-exit-code 1 --python /opt/blender_render/runtime_initialize.py'))
 
 converter_image = (modal.Image.debian_slim(python_version="3.11")
     .apt_install("python3-pymol", "libgl1")
@@ -41,18 +46,23 @@ converter_image = (modal.Image.debian_slim(python_version="3.11")
 
 volume = modal.Volume.from_name(APP_NAME + "-state", create_if_missing=True)
 controller_secrets = modal.Secret.from_name(APP_NAME + "-credentials")
-_gpu_backend = None
+worker_secrets = modal.Secret.from_name(APP_NAME + "-worker")
 
 
-@app.function(image=renderer_image, gpu="L4", cpu=(4,4), memory=8192, timeout=JOB_TIMEOUT,
-              retries=0, min_containers=0, max_containers=1, scaledown_window=2)
-def render_gpu(request: dict, identifier: str) -> dict:
-    global _gpu_backend
-    from blender_render.service import HostBackend
-    if _gpu_backend is None:
-        _gpu_backend = HostBackend(Path("/tmp/blender-worker"), blender="/opt/runtime/blender-5.0.1-linux-x64/blender", timeout=JOB_TIMEOUT-20)
-    request["job_timeout_seconds"] = JOB_TIMEOUT-20
-    return _gpu_backend.render(request, identifier, lambda: False)
+@app.server(name='gpu', image=renderer_image, gpu='L4', cpu=(4,4), memory=8192,
+            secrets=[worker_secrets], min_containers=0, max_containers=1,
+            target_concurrency=1, scaledown_window=2,
+            startup_timeout=120, exit_grace_period=JOB_TIMEOUT)
+class GPUWorker:
+    @modal.enter()
+    def start(self):
+        from blender_render.worker_http import create_worker
+        self.server, self.thread = start_http(create_worker(os.environ['BLENDER_RENDER_WORKER_TOKEN'], timeout=JOB_TIMEOUT))
+
+    @modal.exit()
+    def stop(self):
+        self.server.should_exit = True
+        self.thread.join(timeout=10)
 
 
 def convert_file(data: bytes, suffix: str) -> dict:
@@ -63,59 +73,47 @@ def convert_file(data: bytes, suffix: str) -> dict:
         include_oidc_identity_token=False)
     try:
         sandbox.filesystem.write_bytes(data, "/tmp/input" + suffix)
-        process = sandbox.exec("/usr/bin/python3", "/opt/export.py", "/tmp/input" + suffix, "/tmp/payload.json")
+        # Keep converter output out of provider logs, including a PSE that
+        # prints its contents. File exchange uses the filesystem API.
+        process = sandbox.exec('/bin/sh', '-c', '/usr/bin/python3 /opt/export.py /tmp/input'+suffix+' /tmp/payload.json >/dev/null 2>&1')
         process.wait()
         if process.returncode:
             raise ValueError("The molecular file could not be converted")
         # Bound the read inside the sandbox, including a malicious session that
         # leaves a process writing the file after its converter exits.
-        reader = sandbox.exec("/usr/bin/head", "-c", str(50 * 1024**2 + 1), "/tmp/payload.json")
-        payload = reader.stdout.read()
+        reader = sandbox.exec('/bin/sh', '-c', '/usr/bin/head -c '+str(50*1024**2+1)+' /tmp/payload.json > /tmp/bounded.json 2>/dev/null')
         reader.wait()
-        if reader.returncode or len(payload.encode()) > 50 * 1024**2:
+        payload = sandbox.filesystem.read_bytes('/tmp/bounded.json')
+        if reader.returncode or len(payload) > 50 * 1024**2:
             raise ValueError("Converted structure is too large")
         return json.loads(payload)
     finally:
         sandbox.terminate()
 
 
-class ModalBackend:
-    paid = True
+def start_http(application):
+    import uvicorn
+    server = uvicorn.Server(uvicorn.Config(application, host='0.0.0.0', port=8000, access_log=False, log_level='warning'))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    return server, thread
 
-    def __init__(self, store):
-        self.store, self.active = store, None
 
-    def render(self, request, identifier, cancelled):
-        # The dispatcher already committed the reservation and running state.
-        call = render_gpu.spawn(request, identifier)
-        self.active = call
-        try:
-            self.store.set_remote_id(identifier, call.object_id)
-            while True:
-                if cancelled():
-                    call.cancel(terminate_containers=True)
-                    raise RuntimeError("Render cancelled")
-                try:
-                    return call.get(timeout=1)
-                except TimeoutError:
-                    continue
-        except BaseException:
-            call.cancel(terminate_containers=True)
-            raise
-        finally:
-            self.active = None
+@app.server(name='gateway', image=controller_image, cpu=(.25,.5), memory=1024,
+            min_containers=1, max_containers=1, unauthenticated=True,
+            volumes={"/state":volume}, secrets=[controller_secrets], startup_timeout=120)
+class Gateway:
+    @modal.enter()
+    def start(self):
+        self.server, self.thread = start_http(gateway_application())
 
+    @modal.exit()
     def stop(self):
-        if self.active:
-            self.active.cancel(terminate_containers=True)
+        self.server.should_exit = True
+        self.thread.join(timeout=10)
 
 
-@app.function(image=controller_image, cpu=(.25,.5), memory=1024, timeout=3600,
-              min_containers=1, max_containers=1,
-              volumes={"/state":volume}, secrets=[controller_secrets])
-@modal.concurrent(max_inputs=64)
-@modal.asgi_app(label=APP_NAME)
-def gateway():
+def gateway_application():
     # A failed database/auth initialization must not leave a paid minimum
     # container restarting indefinitely before the budget monitor exists.
     try:
@@ -153,10 +151,12 @@ def create_gateway():
     if PERSONAL:
         policy = replace(policy, budget_usd=float(os.environ['BLENDER_RENDER_COMPUTE_BUDGET']),
             expires_at=float(os.environ['BLENDER_RENDER_CREDITS_EXPIRE']), max_job_seconds=JOB_TIMEOUT,
-            daily_jobs=100, daily_gpu_seconds=24*3600)
+            daily_jobs=10)
     elif not PUBLIC:
-        policy = replace(policy, daily_jobs=100, daily_gpu_seconds=60000)
-    store = JobStore(Path("/state"), policy, sync=volume.commit)
+        policy = replace(policy, quota_exempt_owners=('github:development',))
+    if APP_NAME == 'blender-render-beta':
+        policy = replace(policy, quota_exempt_owners=('github:11480757',))
+    store = JobStore(Path("/state"), policy, data_root=Path('/tmp/blender-render-data'), sync=volume.commit)
     # $2 remains reserved for the final 24 hours of retention/cleanup. Public
     # operations total at most $30; development control/storage at most $5.
     operations = OperatingBudget(store, cap_usd=float(os.environ['BLENDER_RENDER_OPERATIONS_BUDGET'])-2 if PERSONAL else (28 if PUBLIC else 3))
@@ -174,8 +174,12 @@ def create_gateway():
         from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
         provider = StaticTokenVerifier(tokens={token:{"client_id":"development", "scopes":[], "sub":"development"}})
     downloads = Downloads(os.environ["BLENDER_RENDER_DOWNLOAD_KEY"], url)
-    service = RenderService(store, ModalBackend(store))
-    mcp = create_http(service, auth=provider, downloads=downloads, converter=convert_file)
+    from blender_render.worker_http import HTTPBackend
+    worker_url = modal.Server.from_name(APP_NAME, 'gpu').get_url()
+    service = RenderService(store, HTTPBackend(worker_url, os.environ['BLENDER_RENDER_WORKER_TOKEN'], JOB_TIMEOUT,
+        proxy_key=os.environ['BLENDER_RENDER_PROXY_KEY'], proxy_secret=os.environ['BLENDER_RENDER_PROXY_SECRET']))
+    mcp = create_http(service, auth=provider, downloads=downloads, converter=convert_file,
+        widget_origin=os.environ.get('BLENDER_RENDER_WIDGET_ORIGIN'))
     application = create_app(service, token=token, public_url=url, signing_key=os.environ["BLENDER_RENDER_DOWNLOAD_KEY"], auth_provider=provider, mcp_server=mcp, converter=convert_file)
     if funded:
         operations.monitor(service, stop_current_app)

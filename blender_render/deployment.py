@@ -42,8 +42,18 @@ def deploy(*, development=False, staging_user=None, personal=None, budget_usd=No
     workspace = os.environ.get("MODAL_WORKSPACE") or config.get("modal_workspace")
     if not workspace:
         raise ValueError("Set MODAL_WORKSPACE to your Modal workspace slug before deployment.")
-    expected_url = f"https://{workspace}--{name}.modal.run"
+    previous_url = credentials.get('BLENDER_RENDER_PUBLIC_URL')
+    expected_url = f"https://{workspace}--{name}-gateway.us-east.modal.direct"
     credentials["BLENDER_RENDER_PUBLIC_URL"] = expected_url
+    # Keep a short, dedicated widget identity. ChatGPT maps this origin to a
+    # sandbox hostname; the longer Server origin would exceed 63 characters.
+    credentials['BLENDER_RENDER_WIDGET_ORIGIN'] = os.environ.get('BLENDER_RENDER_WIDGET_ORIGIN') or f'https://{workspace}--{name}.modal.run'
+    credentials.setdefault('BLENDER_RENDER_WORKER_TOKEN', secrets.token_urlsafe(48))
+    if not credentials.get('BLENDER_RENDER_PROXY_KEY'):
+        proxy = modal.Workspace.from_context().proxy_tokens.create()
+        credentials['BLENDER_RENDER_PROXY_KEY'] = proxy.token_id
+        credentials['BLENDER_RENDER_PROXY_SECRET'] = proxy.token_secret
+        write_private(secret_path, json.dumps(credentials))
     if personal:
         operations = min(30, max(3, budget_usd*.2))
         credentials.update(BLENDER_RENDER_COMPUTE_BUDGET=str(budget_usd-operations),
@@ -69,7 +79,7 @@ def deploy(*, development=False, staging_user=None, personal=None, budget_usd=No
     active = json.loads(subprocess.check_output([sys.executable,"-m","modal","app","list","--json"],text=True))
     current = next((row for row in active if row.get("description") == name and row.get("state") != "stopped"), None)
     if current:
-        client = Client(expected_url, credentials["BLENDER_RENDER_ADMIN_TOKEN"], timeout=30)
+        client = Client(previous_url or expected_url, credentials["BLENDER_RENDER_ADMIN_TOKEN"], timeout=30)
         try:
             client.request("POST", "/v1/admin/drain")
             deadline = time.monotonic() + 900
@@ -85,6 +95,10 @@ def deploy(*, development=False, staging_user=None, personal=None, budget_usd=No
                 raise
         subprocess.run([sys.executable,"-m","modal","app","stop",current["app_id"],"--yes"],check=True)
     modal.Secret.objects.create(name + "-credentials", credentials, allow_existing=True)
+    modal.Secret.from_name(name + '-credentials').update(credentials)
+    worker_values = {'BLENDER_RENDER_WORKER_TOKEN':credentials['BLENDER_RENDER_WORKER_TOKEN']}
+    modal.Secret.objects.create(name + '-worker', worker_values, allow_existing=True)
+    modal.Secret.from_name(name + '-worker').update(worker_values)
     env = os.environ.copy()
     env["BLENDER_RENDER_PUBLIC"] = "0" if development else "1"
     env["BLENDER_RENDER_APP_NAME"] = name
@@ -97,11 +111,19 @@ def deploy(*, development=False, staging_user=None, personal=None, budget_usd=No
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         env["PYTHONPATH"] = snapshot
         subprocess.run([sys.executable,"-m","modal","deploy","-m","blender_render.modal_app","--strategy","recreate","--tag",VERSION],env=env,cwd=snapshot,check=True)
-    actual_url = modal.Function.from_name(name,"gateway").get_web_url()
+    actual_url = modal.Server.from_name(name,"gateway").get_url()
     if actual_url.rstrip("/") != expected_url:
         raise RuntimeError("Deployment URL differed from its configured OAuth URL. Keep admission closed and update credentials before use: " + actual_url)
     client = Client(actual_url, credentials["BLENDER_RENDER_ADMIN_TOKEN"], timeout=90)
-    client.request("POST","/v1/admin/resume")
+    deadline = time.monotonic()+180
+    while True:
+        try:
+            client.request("POST","/v1/admin/resume")
+            break
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(2)
     profile = name if personal else ("modal-dev" if development else "modal")
     config.setdefault("profiles",{})[profile] = ({"kind":"https", "url":actual_url, "token_file":str(token_path)} if development
         else {"kind":"https", "url":actual_url, "auth":"oauth", "upload_files":True})

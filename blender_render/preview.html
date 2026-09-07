@@ -15,11 +15,11 @@ function render(result){
  for(const file of result.artifacts){
   if(!['render.png','render.blend','manifest.json'].includes(file.name))continue;
   let url;try{url=new URL(file.download_url);if(url.protocol!=='https:')continue}catch{continue}
-  if(file.name==='render.png'){image.src=url.href;image.hidden=false}
+  if(file.name==='render.png'){let preview=new URL(file.preview_url||url.href);if(preview.protocol==='https:'){image.src=preview.href;image.hidden=false}}
   const button=document.createElement('button');button.textContent={'render.png':'Download PNG','render.blend':'Download Blender scene','manifest.json':'Download manifest'}[file.name];
   button.onclick=()=>{if(window.openai?.openExternal)window.openai.openExternal({href:url.href});else request('ui/open-link',{url:url.href}).catch(()=>{document.getElementById('status').textContent='Ask for fresh download links in the conversation.'})};nav.append(button);
  }
- document.getElementById('status').textContent='Transparent PNG. Download links expire after 15 minutes; files are retained for 24 hours.';
+ document.getElementById('status').textContent='Download promptly. Each file is deleted after download; undelivered files expire 15 minutes after completion. Structure inputs have already been deleted.';
 }
 window.addEventListener('message',event=>{if(event.source!==parent)return;const message=event.data;if(!message||message.jsonrpc!=='2.0')return;if(message.id!==undefined&&pending.has(message.id)){const task=pending.get(message.id);pending.delete(message.id);message.error?task.reject(message.error):task.resolve(message.result)}if(message.method==='ui/notifications/tool-result')render(message.params?.structuredContent)});
 window.addEventListener('openai:set_globals',event=>render(event.detail?.globals?.toolOutput));

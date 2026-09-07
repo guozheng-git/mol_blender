@@ -12,11 +12,11 @@ mark the plugin submitted or approved without the portal's confirmation.
 | Developer | Magnus Bauer |
 | Category | Productivity |
 | Short description | Ray-traced molecular images with saved poses and painted materials. |
-| Website | https://almostscheidplatz--blender-render-beta.modal.run |
-| Privacy | https://almostscheidplatz--blender-render-beta.modal.run/privacy |
-| Terms | https://almostscheidplatz--blender-render-beta.modal.run/terms |
+| Website | https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct |
+| Privacy | https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/privacy |
+| Terms | https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/terms |
 | Support | Repository GitHub issues |
-| MCP | https://almostscheidplatz--blender-render-beta.modal.run/mcp |
+| MCP | https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/mcp |
 | Authentication | GitHub OAuth; `read:user` identity scope |
 | Logo | `plugins/blender-render/assets/molecule.svg` |
 
@@ -28,7 +28,7 @@ Long description:
 > the image in ChatGPT or Codex, then download a transparent PNG, provenance
 > manifest, and optional Blender scene. Use hosted GPU credits, your Mac, or
 > your lab's own compute. The shared beta has daily quotas and a fixed credit
-> allowance; files expire after 24 hours.
+> allowance; inputs are deleted after rendering and results after delivery.
 
 Starter prompts:
 

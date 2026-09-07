@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlencode, quote
 
 
 class ClientError(RuntimeError):
@@ -65,7 +65,13 @@ class Client:
             data = stream.read(50 * 1024**2 + 1)
         if len(data) > 50 * 1024**2:
             raise ClientError("File exceeds the 50 MiB upload limit.")
-        return self.request("POST", "/v1/files/" + suffix, data, raw=True)
+        return self.request("POST", "/v1/files/" + suffix + '?' + urlencode({'name': path.name}), data, raw=True)
+
+    def structures(self):
+        return self.request("GET", "/v1/structures")
+
+    def delete_structure(self, input_id):
+        return self.request("DELETE", "/v1/structures/" + quote(input_id, safe=''))
 
     def submit(self, input_id, options=None, idempotency_key=None):
         return self.request("POST", "/v1/jobs", {"input_id": input_id, "options": options or {}, "idempotency_key": idempotency_key or uuid.uuid4().hex})
@@ -75,6 +81,9 @@ class Client:
 
     def cancel(self, job_id):
         return self.request("POST", "/v1/jobs/" + job_id + "/cancel")
+
+    def delete_result(self, job_id):
+        return self.request("DELETE", "/v1/jobs/" + job_id + "/result")
 
     def wait(self, job_id, timeout=1800, progress=None):
         deadline, previous = time.monotonic() + timeout, None
@@ -86,7 +95,7 @@ class Client:
                 previous = marker
             if state["status"] == "done":
                 return self.request("GET", "/v1/jobs/" + job_id + "/result")
-            if state["status"] in {"failed", "cancelled", "expired"}:
+            if state["status"] in {"failed", "cancelled", "expired", "delivered", "deleted"}:
                 raise ClientError(state.get("error") or "Render " + state["status"])
             time.sleep(.5)
         raise ClientError(f"Render {job_id} is still pending. Reconnect with status/result; do not resubmit.")

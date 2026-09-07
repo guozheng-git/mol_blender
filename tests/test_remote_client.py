@@ -68,3 +68,13 @@ def test_write_png_response(tmp_path: Path):
 def test_decode_png_invalid_payload_raises():
     with pytest.raises(remote_client.RemoteRenderError):
         remote_client.decode_png_bytes({"png_base64": "###notbase64###"})
+
+
+@pytest.mark.parametrize('state', ['delivered', 'deleted'])
+def test_wait_stops_when_privacy_cleanup_removed_result(monkeypatch, state):
+    from blender_render.client import Client, ClientError
+    client = Client('http://127.0.0.1:9000', 'unused')
+    monkeypatch.setattr(client, 'status', lambda _: {'status':state, 'queue_position':0})
+    monkeypatch.setattr('blender_render.client.time.sleep', lambda _: pytest.fail('Terminal job must not keep polling'))
+    with pytest.raises(ClientError, match=state):
+        client.wait('job')

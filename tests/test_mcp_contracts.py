@@ -27,7 +27,7 @@ def test_native_preview_and_stdio_tools(monkeypatch, tmp_path):
     async def run():
         async with MCPClient(create_stdio()) as client:
             tools = {t.name:t for t in await client.list_tools()}
-            assert set(tools) == {'list_presets','import_structure','submit_render','render_status','render_result','cancel_render','available_quota'}
+            assert set(tools) == {'list_presets','list_structures','delete_structure','import_structure','submit_render','render_status','render_result','cancel_render','available_quota'}
             assert tools['submit_render'].annotations.idempotentHint
             result = await client.call_tool('render_result',{'job_id':'job','output_path':str(path)})
             assert any(item.type == 'image' and item.mimeType == 'image/png' for item in result.content)
@@ -53,4 +53,18 @@ def test_chatgpt_declared_file_contract():
             resource=await client.read_resource(uri)
             assert resource[0].mimeType == 'text/html;profile=mcp-app'
             assert resource[0].meta['ui']['csp']['connectDomains'] == []
+    asyncio.run(run())
+
+
+def test_preview_origin_is_separate_from_artifact_network_permissions():
+    endpoint = 'https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct'
+    widget = 'https://almostscheidplatz--blender-render-beta.modal.run'
+    server = create_http(SimpleNamespace(), auth=StaticTokenVerifier(tokens={}),
+        downloads=Downloads('x'*48, endpoint), converter=None, widget_origin=widget)
+    async def run():
+        async with MCPClient(server) as client:
+            resource = (await client.read_resource('ui://blender-render/result-v1.html'))[0]
+            assert resource.meta['ui']['domain'] == widget
+            assert resource.meta['ui']['csp']['resourceDomains'] == [endpoint]
+            assert resource.meta['openai/widgetCSP']['redirect_domains'] == [endpoint]
     asyncio.run(run())

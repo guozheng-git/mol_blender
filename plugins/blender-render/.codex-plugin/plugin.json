@@ -1,6 +1,6 @@
 {
   "name": "blender-render",
-  "version": "0.2.0-beta.1+codex.20260906233717",
+  "version": "0.2.0-beta.1+codex.20260907012708",
   "description": "Ray-trace molecular structures with PyMOL poses, transparent backgrounds, and textured ribbons.",
   "author": {
     "name": "Magnus Bauer",
@@ -27,9 +27,9 @@
       "Read",
       "Write"
     ],
-    "websiteURL": "https://almostscheidplatz--blender-render-beta.modal.run/",
-    "privacyPolicyURL": "https://almostscheidplatz--blender-render-beta.modal.run/privacy",
-    "termsOfServiceURL": "https://almostscheidplatz--blender-render-beta.modal.run/terms",
+    "websiteURL": "https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/",
+    "privacyPolicyURL": "https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/privacy",
+    "termsOfServiceURL": "https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/terms",
     "brandColor": "#216749",
     "composerIcon": "./assets/molecule.svg",
     "logo": "./assets/molecule.svg",

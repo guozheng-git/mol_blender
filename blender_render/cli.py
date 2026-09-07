@@ -23,7 +23,7 @@ def parser():
     commands.add_parser("doctor", help="Check the pinned runtime")
     commands.add_parser("presets", help="List packaged presets")
     login = commands.add_parser("login", help="Sign in to a hosted or lab HTTPS service")
-    login.add_argument("--url", default="https://almostscheidplatz--blender-render-beta.modal.run")
+    login.add_argument("--url", default="https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct")
     login.add_argument("--profile", default="hosted")
     render = commands.add_parser("render", help="Render a PSE, CIF, PDB, or exported payload")
     render.add_argument("input")
@@ -53,6 +53,10 @@ def parser():
         sub.add_argument("--profile", default="local")
         if action == "result":
             sub.add_argument("-o", "--output", default="render.png")
+    structures = commands.add_parser("structures", help="List or delete temporary uploads on a compute profile")
+    structures.add_argument("action", choices=["list", "delete"])
+    structures.add_argument("input_id", nargs="?")
+    structures.add_argument("--profile", default="local")
     service = commands.add_parser("service")
     service.add_argument("action", choices=["start", "stop", "status"])
     service.add_argument("--profile", default="local")
@@ -239,6 +243,12 @@ def execute(args):
         return client.download(job["job_id"], args.output)
     if args.command == "quota":
         return client.request("GET", "/v1/quota")
+    if args.command == "structures":
+        if args.action == 'list':
+            return client.structures()
+        if not args.input_id:
+            raise ValueError("Provide the input_id from blender-render structures list.")
+        return client.delete_structure(args.input_id)
     if args.command == "status":
         return client.status(args.job_id)
     if args.command == "cancel":

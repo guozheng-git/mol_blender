@@ -13,7 +13,7 @@ implementation; they do not maintain another renderer.
 | Rendering | `rendering.py`, `blender_custom_render.py`, `paint.py`, `geometry.py` | One Blender transaction and provenance manifest |
 | Local runtime | `runtime*.py`, `render_worker_manager.py` | Managed install, loopback service, Blender process |
 | HPC | `hpc.py`, `hpc_remote.py`, `hpc_proxy.py` | Allocation, attach, health checks, SSH transport |
-| Modal | `modal_app.py`, `deployment.py` | Isolated conversion, L4 execution, serialized controller |
+| Modal | `modal_app.py`, `worker_http.py`, `deployment.py` | Isolated conversion, transient HTTP L4 execution, serialized controller |
 | Lab HTTPS | `gateway.py`, `auth.py` | Lab-owned OAuth gateway and isolated Apptainer conversion |
 | Plugin | `mcp_server.py`, `preview.html`, `plugins/` | Tool contracts, file adapters, image previews, downloads |
 
@@ -43,11 +43,14 @@ retained according to service policy.
 | Request | Result |
 |---|---|
 | `POST /v1/structures` | Validate an exported payload and return an owned input ID |
+| `GET /v1/structures` | List this owner's temporary pending inputs |
+| `DELETE /v1/structures/{id}` | Delete an unused input; active renders return 409 |
 | `POST /v1/files/{pse,cif,pdb}` | Convert a raw molecular file in the configured sandbox |
 | `POST /v1/jobs` | Commit reservation and return a job ID immediately |
 | `GET /v1/jobs/{id}` | State, queue position, timestamps, cancellation state |
 | `POST /v1/jobs/{id}/cancel` | Cancel queued or running work |
 | `GET /v1/jobs/{id}/result` | Manifest and download metadata |
+| `DELETE /v1/jobs/{id}/result` | Delete completed files and provenance without refunding quota or cost |
 | `GET /v1/jobs/{id}/artifacts/{name}` | Owner-authenticated artifact |
 | `GET /v1/quota` | Remaining user quota and project compute allowance |
 | `GET /health` | Readiness, version, queue depth |
@@ -59,9 +62,19 @@ requires a separate operator token; it cannot impersonate a public user.
 
 The database serializes submission and preserves queue order, owner, timestamps,
 idempotency key, progress state, reservations, and remote execution ID. A restart
-fails an interrupted execution conservatively and resumes pending jobs. Only one
+fails an interrupted execution conservatively and resumes pending jobs whose
+inputs still exist. Modal inputs are ephemeral, so a controller restart can
+instead require a new upload. Only one
 Blender render runs at a time per service. A second PyMOL client attaches to the
-same queue. Cancellation propagates to Blender or the remote function.
+same queue. Cancellation propagates to Blender or the remote HTTP worker.
+
+New Modal inputs and results use temporary container storage. Inputs are deleted
+when their final active job terminates; unused uploads expire after five minutes.
+Each completed download removes that artifact. Undelivered files expire after
+fifteen minutes; range responses and image previews do not consume a download.
+Minimal accounting and idempotency records remain in SQLite, with no embedded
+structure, render options, or full provenance after a job finishes. Explicit
+result deletion is owner-scoped and revokes existing download links.
 
 ## Security and deployment boundaries
 

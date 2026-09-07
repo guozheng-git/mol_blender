@@ -5,7 +5,20 @@ MCP endpoint permits only the owner's GitHub account. Public publication,
 publisher identity verification, and portal submission are deferred by the owner.
 This report records executed evidence; it is not approval for unrestricted admission.
 
-## Executed checks
+## Current privacy update
+
+The follow-up changes the hosted service to ephemeral molecular storage and
+direct HTTP GPU transport. Ordinary accounts receive ten completed renders per
+UTC day; the verified owner has no daily testing quota. Upload-count and daily
+GPU-minute quotas are removed. The $530 project ceiling remains in force.
+See [privacy update validation](privacy-validation.md) for current executed checks.
+
+## Initial beta checks (before the privacy update)
+
+The table below records the original release milestone. Its seven-tool discovery,
+five-render quota, Function transport, and retained-download behavior have been
+superseded by the privacy update; the renderer and cross-platform image comparisons
+remain useful baseline evidence.
 
 | Area | Result |
 |---|---|

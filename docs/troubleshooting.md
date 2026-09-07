@@ -14,8 +14,10 @@
 | Allocation is pending or died | Reconnect to the same profile. Do not submit a second render just because the first job is pending. `attach_only=1` reports an absent service without allocating. |
 | Cannot attach after changing runtime | Stop the existing service before switching versions or SIF images. |
 | HTTP 401 | Reauthenticate, or check the private profile's token file. Do not place bearer tokens in URLs. |
-| HTTP 402/429 | The credit, render, upload, or GPU-minute allowance is exhausted. Use personal compute or wait for the next UTC day for daily limits. Lifetime credits never reset. |
-| Download link expired | Retrieve the result again within the artifact's 24-hour retention window. |
+| HTTP 402/429 | The lifetime credit allowance, ten-render daily quota, or global queue capacity is exhausted. Upload count and daily GPU minutes have no quota. The verified testing owner has no daily render limit; the project budget still applies. |
+| Download link expired or already used | Files are deleted after download or fifteen minutes after completion. Check your downloads; the service does not archive rendered files. |
+| ChatGPT preview shows a DNS error after an endpoint upgrade | Refresh the plugin in ChatGPT settings, then reload the conversation. Operators should configure a short, dedicated widget origin; the Modal HTTP Server URL can make ChatGPT's derived hostname too long. |
+| Temporary input not found | Submit an import within five minutes. Inputs are deleted after rendering or lost when a transient worker restarts. Reimport for a new render, but reuse the original idempotency key when checking an uncertain submission. |
 | PSE conversion isolation is unavailable | Configure the lab host's supported Apptainer namespace isolation. Do not retry an untrusted PSE in the gateway's host Python. |
 | Interrupted service after a paid dispatch | That execution is marked failed and its reservation remains charged. It is not automatically replayed. |
 | Rootless container build reports a GLIBC mismatch | Use the pinned compatible base and a supported Apptainer installation. See the upstream fakeroot guide; do not request host root privileges just to run a render. |

@@ -259,20 +259,20 @@ def test_running_and_queued_cancellation(tmp_path, payload):
 def test_daily_quota_credit_expiry_and_retention(tmp_path, payload):
     now = [1800000000.0]
     store = JobStore(tmp_path, Policy(public=True, ttl_seconds=10), clock=lambda: now[0])
-    source = store.add_input("a", payload)
-    first = store.submit("a", source["input_id"], {}, "one")
-    with pytest.raises(JobError, match="active"):
-        store.submit("a", source["input_id"], {}, "two")
-    store.claim(); store.finish(first["job_id"], seconds=600)
-    second = store.submit("a", source["input_id"], {}, "two")
-    store.claim(); store.finish(second["job_id"], seconds=600)
+    for i in range(10):
+        source = store.add_input('a', payload)
+        job = store.submit('a', source['input_id'], {}, str(i))
+        store.claim(); store.finish(job['job_id'], seconds=600)
+        assert not store.list_inputs('a')['structures']
+    source = store.add_input('a', payload)
     with pytest.raises(JobError, match="daily"):
-        store.submit("a", source["input_id"], {}, "three")
+        store.submit('a', source['input_id'], {}, 'eleven')
+    store.delete_input('a', source['input_id'])
     now[0] += 11
     store.cleanup()
     assert not list(store.inputs.iterdir())
     with pytest.raises(JobError, match="expired"):
-        store.result("a", first["job_id"])
+        store.result('a', job['job_id'])
     now[0] = store.policy.expires_at
     with pytest.raises(JobError, match="expired"):
         store.add_input("a", payload)
@@ -283,6 +283,196 @@ def test_options_cannot_bypass_public_limits(payload):
     for options in ({"width":4097}, {"height":4097}, {"samples":513}, {"raw_view":True}, {"width":True}, {"script":"evil"}, [], {"rough":"false"}):
         with pytest.raises(JobError):
             prepare_options(options, payload, public=True, timeout=600)
+
+
+def test_uploads_have_no_count_quota_and_pending_retries_deduplicate(tmp_path, payload):
+    from concurrent.futures import ThreadPoolExecutor
+    store = JobStore(tmp_path, Policy(public=True))
+    service = RenderService(store, Compute())
+    converted = []
+    def converter(data, suffix):
+        converted.append(data)
+        return {**payload, 'selection': data.decode()}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _: service.import_file('a', b'one', '.pse', 'icon.pse', converter), range(4)))
+    assert len({r['input_id'] for r in responses}) == 1
+    assert converted == [b'one']
+    for i in range(12):
+        service.import_file('a', str(i).encode(), '.pse', 'icon.pse', converter)
+    quota = store.quota('a')
+    assert quota['pending_uploads'] == 13
+    assert quota['renders_remaining_today'] == 10
+    assert quota['upload_slots_remaining'] is None
+    assert quota['conversions_remaining_today'] is None
+    assert quota['estimated_spent_usd'] == pytest.approx(.13)
+    store.close()
+
+
+def test_tester_exemption_keeps_project_budget_and_other_users_limited(tmp_path, payload):
+    store = JobStore(tmp_path, Policy(public=True, quota_exempt_owners=('github:11480757',)))
+    for i in range(12):
+        source = store.add_input('github:11480757', payload)
+        job = store.submit('github:11480757', source['input_id'], {}, str(i))
+        store.claim(); store.finish(job['job_id'], seconds=10)
+    assert store.quota('github:11480757')['renders_remaining_today'] is None
+    assert store.quota('github:11480757')['testing_quota_exempt']
+    assert store.quota('other')['renders_remaining_today'] == 10
+    assert not store.quota('other')['testing_quota_exempt']
+    assert store.quota('github:11480757')['estimated_spent_usd'] > 0
+    with store.transaction() as db:
+        db.execute("UPDATE settings SET value='0' WHERE key='budget_micro'")
+    with pytest.raises(JobError, match='exhausted'):
+        store.add_input('github:11480757', payload)
+    store.close()
+
+
+def test_quota_reserves_queued_slots_but_failure_and_cancel_do_not_count(tmp_path, payload):
+    store = JobStore(tmp_path, Policy(public=True))
+    source = store.add_input('a', payload)
+    jobs = [store.submit('a', source['input_id'], {}, str(i)) for i in range(10)]
+    assert store.quota('a')['renders_remaining_today'] == 0
+    with pytest.raises(JobError, match='daily'):
+        store.submit('a', source['input_id'], {}, 'eleven')
+    store.cancel('a', jobs[-1]['job_id'])
+    store.claim(); store.finish(jobs[0]['job_id'], error='Worker failed', seconds=10)
+    assert store.quota('a')['renders_remaining_today'] == 2
+    store.close()
+
+
+def test_input_privacy_delivery_and_submission_retry_after_deletion(tmp_path, payload):
+    store = JobStore(tmp_path/'state', data_root=tmp_path/'ephemeral')
+    service = RenderService(store, Compute())
+    headers = {'Authorization':'Bearer '+TOKEN}
+    with TestClient(create_app(service, token=TOKEN)) as client:
+        source = client.post('/v1/structures', json={'payload':payload,'name':'icon.pse'}, headers=headers).json()
+        body = {'input_id':source['input_id'],'options':{},'idempotency_key':'once'}
+        job = client.post('/v1/jobs', json=body, headers=headers).json()
+        await_status(store, 'local', job['job_id'], 'done')
+        assert not store.inputs.joinpath(source['input_id']+'.json').exists()
+        assert store.list_inputs('local')['structures'] == []
+        assert client.post('/v1/jobs', json=body, headers=headers).json()['job_id'] == job['job_id']
+        assert client.post('/v1/jobs', json={**body,'options':{'rough':True}}, headers=headers).status_code == 409
+        row = store.db.execute('SELECT result,options FROM jobs WHERE id=?',(job['job_id'],)).fetchone()
+        assert 'manifest' not in json.loads(row['result'])
+        assert row['options'] == '{}'
+        path = '/v1/jobs/'+job['job_id']
+        result = client.get(path+'/result', headers=headers).json()
+        for artifact in result['artifacts']:
+            # Download managers may request chunks before fetching the complete
+            # file. A partial response must not destroy the remaining bytes.
+            partial = client.get(path+'/artifacts/'+artifact['name'], headers={**headers,'Range':'bytes=0-3'})
+            assert partial.status_code == 206
+            assert (store.artifacts/job['job_id']/artifact['name']).exists()
+            response = client.get(path+'/artifacts/'+artifact['name'], headers=headers)
+            assert response.status_code == 200
+            assert not (store.artifacts/job['job_id']/artifact['name']).exists()
+        assert store.get('local', job['job_id'])['status'] == 'delivered'
+        assert client.get(path+'/result', headers=headers).status_code == 410
+        assert not list(store.artifacts.iterdir())
+        assert b'data_test' not in (tmp_path/'state'/'jobs.sqlite3').read_bytes()
+    store.close()
+
+
+def test_list_and_delete_are_owner_scoped_and_protect_active_inputs(tmp_path, payload):
+    store = JobStore(tmp_path)
+    source = store.add_input('a', payload, 'icon.pse')
+    assert store.list_inputs('b')['structures'] == []
+    assert not store.delete_input('b', source['input_id'])['deleted']
+    job = store.submit('a', source['input_id'], {}, 'one')
+    with pytest.raises(JobError, match='active'):
+        store.delete_input('a', source['input_id'])
+    store.cancel('a', job['job_id'])
+    assert store.list_inputs('a')['structures'] == []
+    store.close()
+
+
+def test_result_deletion_removes_legacy_files_and_metadata_without_refund(tmp_path, payload):
+    store = JobStore(tmp_path/'state', Policy(public=True), data_root=tmp_path/'temporary')
+    source = store.add_input('a', payload)
+    job = store.submit('a', source['input_id'], {'selection':'private_selection'}, 'once')
+    identifier = job['job_id']
+    with pytest.raises(JobError, match='active'):
+        store.delete_result('a', identifier)
+    store.claim()
+    store.finish(identifier, result={'artifacts':[], 'bytes':6}, seconds=20)
+    legacy = store.root/'artifacts'/identifier
+    legacy.mkdir(parents=True)
+    for name in ('render.png', 'render.blend', 'manifest.json'):
+        (legacy/name).write_bytes(b'xx')
+    with store.transaction() as db:
+        db.execute('UPDATE jobs SET result=?,options=? WHERE id=?',
+            (json.dumps({'manifest':{'selection':'legacy_private_selection'}}),
+             json.dumps({'selection':'legacy_private_selection'}), identifier))
+    before = store.quota('a')
+    with pytest.raises(JobError) as exc:
+        store.delete_result('b', identifier)
+    assert exc.value.status == 404 and legacy.is_dir()
+    assert store.delete_result('a', identifier) == {'job_id':identifier, 'deleted':True, 'files_deleted':3, 'bytes_deleted':6}
+    assert not legacy.exists()
+    assert store.quota('a') == before
+    row = store.db.execute('SELECT result,options FROM jobs WHERE id=?',(identifier,)).fetchone()
+    assert row['result'] is None and row['options'] == '{}'
+    assert b'legacy_private_selection' not in (store.root/'jobs.sqlite3').read_bytes()
+    assert not store.delete_result('a', identifier)['deleted']
+    with pytest.raises(JobError) as exc:
+        store.result('a', identifier)
+    assert exc.value.status == 410
+    store.close()
+
+
+def test_authenticated_result_deletion_revokes_downloads(tmp_path, payload):
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute())
+    a, b = {'Authorization':'Bearer '+TOKEN}, {'Authorization':'Bearer '+SECOND_TOKEN}
+    with TestClient(create_app(service, token=TOKEN, tokens={TOKEN:'a', SECOND_TOKEN:'b'})) as client:
+        source = service.import_payload('a', payload)
+        job = service.submit('a', source['input_id'], {}, 'once')
+        await_status(store, 'a', job['job_id'], 'done')
+        path = '/v1/jobs/'+job['job_id']+'/result'
+        url = client.get(path, headers=a).json()['artifacts'][0]['download_url']
+        assert client.delete(path).status_code == 401
+        assert client.delete(path, headers=b).status_code == 404
+        response = client.delete(path, headers=a)
+        assert response.status_code == 200 and response.json()['files_deleted'] == 2
+        assert client.get(url).status_code == 410
+        assert not list(store.artifacts.iterdir())
+    store.close()
+
+
+def test_malformed_replay_keys_fail_before_database_or_dispatch(tmp_path, payload):
+    store = JobStore(tmp_path)
+    backend = Compute()
+    service = RenderService(store, backend)
+    source = service.import_payload('local', payload)
+    headers = {'Authorization':'Bearer '+TOKEN}
+    with TestClient(create_app(service, token=TOKEN)) as client:
+        for key in (None, [], {}, 42, '', 'x'*129):
+            response = client.post('/v1/jobs', headers=headers,
+                json={'input_id':source['input_id'], 'idempotency_key':key})
+            assert response.status_code == 400
+        response = client.post('/v1/jobs', headers=headers,
+            json={'input_id':[], 'idempotency_key':'valid'})
+        assert response.status_code == 400
+        assert not backend.calls
+    store.close()
+
+
+def test_abandoned_upload_cleanup_and_new_worker_restart_loses_no_privacy_data(tmp_path, payload):
+    now = [1780000000.]
+    store = JobStore(tmp_path/'state', data_root=tmp_path/'first', clock=lambda:now[0])
+    source = store.add_input('a', payload)
+    now[0] += 301
+    store.cleanup()
+    assert store.list_inputs('a')['structures'] == []
+    source = store.add_input('a', payload)
+    job = store.submit('a', source['input_id'], {}, 'one')
+    store.close()
+    restarted = JobStore(tmp_path/'state', data_root=tmp_path/'second', clock=lambda:now[0])
+    service = RenderService(restarted, Compute())
+    assert restarted.get('a', job['job_id'])['status'] == 'failed'
+    assert restarted.list_inputs('a')['structures'] == []
+    assert service.backend.calls == []
+    restarted.close()
     normal = prepare_options({"save_blend":True}, payload, public=True, timeout=600)
     assert normal["style_doc"]["output"]["width"] == 2048
     assert normal["style_doc"]["output"]["save_blend"] is True

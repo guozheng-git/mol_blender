@@ -11,7 +11,7 @@ codex plugin marketplace add https://github.com/magnusbauer/blender_render
 codex plugin add blender-render@personal
 ```
 
-The included MCP URL is `https://almostscheidplatz--blender-render-beta.modal.run/mcp`. Authenticate with GitHub. The service requests public identity access (`read:user`), not repository access.
+The included MCP URL is `https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/mcp`. Authenticate with GitHub. The service requests public identity access (`read:user`), not repository access.
 
 In ChatGPT developer settings, add the same HTTPS MCP endpoint using OAuth. The plugin directory listing is a separate review process; repository installation and a tested custom MCP connection do not imply directory approval. File-enabled tools declare `openai/fileParams` and accept ChatGPT's `download_url` and `file_id` object. Do not paste a private local filesystem path into the hosted service.
 
@@ -49,10 +49,10 @@ codex mcp add blender-render-files -- /absolute/path/to/blender-render mcp --pro
 The shared HTTPS tool uses ChatGPT's attachment object. The stdio adapter uses a
 local path. Choose the adapter that matches where the input file is available.
 
-Available tools are `import_structure`, `list_presets`, `submit_render`, `render_status`, `render_result`, `cancel_render`, and `available_quota`. Submit once with an idempotency key, poll that job, and retrieve the result. The result includes a native PNG preview and the PNG, optional `.blend`, and manifest downloads.
+Available tools are `import_structure`, `list_structures`, `delete_structure`, `list_presets`, `submit_render`, `render_status`, `render_result`, `cancel_render`, and `available_quota`. Imports are temporary: submit promptly, poll the same job, and retrieve the result. `list_structures` shows pending imports, not a saved library. `delete_structure` removes an unused import early. Inputs are automatically deleted after rendering. The result includes a native PNG preview and PNG, optional `.blend`, and manifest downloads.
 
 ChatGPT additionally displays an MCP Apps preview card with download buttons.
 Its checkerboard indicates transparency; it is not baked into the PNG. Request
-the result again to refresh expired download links while the files are retained.
+the result promptly: each downloaded file is deleted, and undelivered files expire fifteen minutes after completion.
 
 For ChatGPT with private compute, use your lab's authenticated HTTPS gateway as described in [HPC setup](hpc.md). ChatGPT cannot call a laptop's loopback stdio service directly.
