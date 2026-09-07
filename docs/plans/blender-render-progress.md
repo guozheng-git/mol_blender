@@ -110,4 +110,4 @@ Retained baseline evidence (historical, no fresh pixel comparison):
 - No genuine instruction conflict required weakening security or release gates. The requested canonical plan path was supplied without moving the user-owned original.
 - Next bounded task after A: Milestone B's local inspect/validate/save/reuse and fresh-process preview foundation, with source identity and isolated public fixtures. Stop for review before starting it.
 
-Stopped after Milestone A. At the user's follow-up request, this milestone is committed on `codex/milestone-a-json-contracts`, branched from the starting HEAD. The original user-owned `docs/plan/` remains untracked and unchanged. PR threads were read but not modified; no remote push or PR update is included.
+Stopped after Milestone A. At the user's follow-up request, this milestone is committed on `codex/milestone-a-json-contracts`, branched from the starting HEAD. At the user's further request, the original `docs/plan/` is also tracked on this branch, with its contents unchanged and byte-identical to the canonical plan. PR threads were read but not modified; no remote push or PR update is included.
