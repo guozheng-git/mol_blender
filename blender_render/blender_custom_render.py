@@ -94,18 +94,7 @@ def _configure_molecularnodes_import_path() -> None:
 
 
 
-try:
-    from bridge_runner import StyleValidationError, validate_style_document
-except Exception:  # pragma: no cover - blender-only fallback
-    class StyleValidationError(RuntimeError):
-        pass
-
-    def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
-        required = {"version", "output", "renderer", "camera", "world", "lights", "materials", "styles"}
-        missing = sorted(required - set(style_doc))
-        if missing:
-            raise StyleValidationError(f"Missing style keys: {', '.join(missing)}")
-        return style_doc
+from bridge_runner import StyleValidationError, validate_style_document
 
 
 NUCLEIC_RES_NAMES = ("DA", "DT", "DG", "DC", "A", "U", "G", "C")

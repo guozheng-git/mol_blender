@@ -59,31 +59,34 @@ def _suggest_output_name(*, request_doc: dict[str, Any], preset: str, style_doc:
     return "custom_render.png"
 
 
+def _resolved_request(request_doc: dict[str, Any]) -> dict[str, Any]:
+    from blender_render.spec import OPTION_KEYS, resolve_options, style_digest
+    envelope_keys = {"payload", "output_name", "job_timeout_seconds", "style_json", "blend_output", "render_spec"}
+    unknown = set(request_doc) - OPTION_KEYS - envelope_keys
+    if unknown:
+        raise ValueError("Unsupported render options: " + ", ".join(sorted(unknown)))
+    # Current services send a snapshot. Legacy direct callers are translated
+    # into the same resolver once, before any worker or staging activity.
+    if "render_spec" in request_doc:
+        style = _bridge_runner.validate_style_document(request_doc.get("style_doc"))
+        metadata = request_doc["render_spec"]
+        if not isinstance(metadata, dict) or metadata.get("sha256") != style_digest(style):
+            raise _bridge_runner.RunnerError("Resolved render specification hash mismatch")
+        return request_doc
+    options = {key: request_doc[key] for key in OPTION_KEYS if key in request_doc}
+    if request_doc.get("style_json") and "style_doc" not in options:
+        options["style_doc"] = _bridge_runner.load_and_validate_style_json(Path(request_doc["style_json"]).expanduser())
+    if request_doc.get("blend_output"):
+        options["save_blend"] = True
+    resolved = resolve_options(options, request_doc.get("payload", {}), timeout=request_doc.get("job_timeout_seconds", 600))
+    if request_doc.get("output_name"):
+        resolved["output_name"] = request_doc["output_name"]
+    return {**request_doc, **resolved}
+
+
 def _prepare_style_doc(request_doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    preset = str(request_doc.get("preset", "")).strip()
-    style_doc_input = request_doc.get("style_doc")
-    style_json_path_raw = str(request_doc.get("style_json", "")).strip()
-
-    style_doc: dict[str, Any]
-    if isinstance(style_doc_input, dict):
-        style_doc = _bridge_runner.validate_style_document(json.loads(json.dumps(style_doc_input)))
-    elif style_json_path_raw:
-        style_doc = _bridge_runner.load_and_validate_style_json(Path(style_json_path_raw).expanduser().resolve())
-    else:
-        if not preset:
-            preset = "preset_1_interface"
-        style_doc = _bridge_runner.load_and_validate_style_json(_bridge_runner._default_preset_style(preset))
-
-    if _to_bool(request_doc.get("rough", False)):
-        style_doc = _bridge_runner._apply_rough_style_overrides(style_doc)
-    style_doc = _bridge_runner._apply_color_follow_override(style_doc, _to_bool(request_doc.get("color_follow", False)))
-    style_doc = _bridge_runner._apply_raw_view_override(style_doc, enabled=_to_bool(request_doc.get("raw_view", False)))
-    style_doc = _bridge_runner._apply_save_blend_override(
-        style_doc,
-        enabled=_to_bool(request_doc.get("save_blend", False)),
-        blend_output=str(request_doc.get("blend_output", "") or ""),
-    )
-    return preset, style_doc
+    resolved = _resolved_request(request_doc)
+    return resolved.get("preset", ""), resolved["style_doc"]
 
 
 def _process_render_request(*, request_id: str, request_doc: dict[str, Any], state: RenderServerState) -> dict[str, Any]:
@@ -93,7 +96,8 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
         raise _bridge_runner.RunnerError("Request JSON must include object field 'payload'.")
     payload = _bridge_runner.validate_payload_document(payload)
 
-    preset, style_doc = _prepare_style_doc(request_doc)
+    request_doc = _resolved_request(request_doc)
+    preset, style_doc = request_doc.get("preset", ""), request_doc["style_doc"]
     state.log(f"request-style-ready id={request_id} preset={preset or '<style_doc>'}")
 
     keep_temp = _to_bool(request_doc.get("keep_temp", False))
@@ -123,6 +127,11 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
             chosen_structure_path=structure_path,
             style_doc=style_doc,
         )
+
+        manifest = _bridge_runner._load_json(run_manifest_path)
+        manifest["render_spec"] = request_doc["render_spec"]
+        manifest["resolved_preset"] = style_doc
+        _bridge_runner._write_json_atomic(run_manifest_path, manifest)
 
         style_json_path = temp_root / "style.json"
         style_json_path.write_text(json.dumps(style_doc, indent=2), encoding="utf-8")

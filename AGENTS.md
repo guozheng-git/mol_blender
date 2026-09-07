@@ -26,3 +26,5 @@ Service requirements:
 Verify relevant changes with `python -m pytest`. Installation checks must use a built wheel outside the checkout. Actual Mac, HPC, Modal, OAuth, Codex, and ChatGPT checks require executed evidence; mocks do not satisfy those release gates. Use only public structures for examples. Do not commit credentials, personal paths, research sessions, render caches, or generated environments. Preserve upstream notices and corresponding source availability.
 
 Commit coherent milestones. Do not publish an unrestricted service or release until the release report passes every required gate. Publisher portal review is an external gate, not something a local manifest can establish.
+
+Implementation planning: read [the v3 architecture plan](docs/plans/blender-render-v3.md) and [the execution record](docs/plans/blender-render-progress.md) before continuing PR #1. The historical baseline is reference context, not a checkout/reset instruction. Follow the active bounded milestone and preserve the security and executed-validation requirements above.

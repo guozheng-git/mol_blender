@@ -108,71 +108,12 @@ def validate_input(payload: dict, *, max_atoms: int, max_bytes: int) -> dict:
 
 
 def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int) -> dict:
-    if not isinstance(options, dict):
-        raise JobError("Render options must be an object.")
-    allowed = {"preset", "style_doc", "rough", "raw_view", "color_follow", "save_blend", "width", "height", "samples", "transparent_background", "preserve_view", "keep_temp"}
-    unknown = set(options) - allowed
-    if unknown:
-        raise JobError("Unsupported render options: " + ", ".join(sorted(unknown)))
-    for flag in ("rough", "raw_view", "color_follow", "save_blend", "transparent_background", "preserve_view", "keep_temp"):
-        if flag in options and not isinstance(options[flag], bool):
-            raise JobError(flag + " must be a boolean")
-    request = copy.deepcopy(options)
-    if public and request.get("raw_view"):
-        raise JobError("The public service supports ray-traced still images only.")
-    if public and request.get("keep_temp"):
-        raise JobError("Public jobs always clean temporary files.")
-    if "style_doc" in request and not isinstance(request["style_doc"], dict):
-        raise JobError("style_doc must be a preset object.")
-    if "style_doc" not in request:
-        preset = request.get("preset", "preset_1_interface")
-        if preset not in core.PRESET_STYLE_FILENAMES:
-            raise JobError("Unknown preset: " + str(preset))
-        request["style_doc"] = core.load_and_validate_style_json(core._default_preset_style(preset))
+    """Compatibility boundary: all style resolution lives in spec.resolve_options."""
+    from .spec import resolve_options
     try:
-        style = core.validate_style_document(request["style_doc"])
-    except (ValueError, core.StyleValidationError) as exc:
+        return resolve_options(options, payload, public=public, timeout=timeout)
+    except (ValueError, core.RunnerError) as exc:
         raise JobError(str(exc)) from exc
-    output = style["output"]
-    # Input/output paths are never controlled by a remote request.
-    output["filename"] = "render.png"
-    output["format"] = "PNG"
-    output["blend_filename"] = "render.blend"
-    output["save_blend"] = request.get("save_blend", bool(output.get("save_blend", False)))
-    for key in ("width", "height", "samples"):
-        if key in request:
-            value = request.pop(key)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-                raise JobError(key + " must be a positive integer")
-            output[key] = value
-    preserve = request.pop("preserve_view", True)
-    if preserve:
-        viewport = payload["view"].get("viewport_px", [output["width"], output["height"]])
-        if not isinstance(viewport, list) or len(viewport) != 2 or not all(isinstance(x, (int, float)) and 0 < x <= 32768 for x in viewport):
-            raise JobError("Invalid PyMOL viewport dimensions.")
-        width = options.get("width", 2048 if public else output["width"])
-        height = options.get("height", max(1, round(width * viewport[1] / viewport[0])))
-        if public and "width" not in options and "height" not in options:
-            scale = min(1, 2048 / max(width, height))
-            width, height = max(1, round(width * scale)), max(1, round(height * scale))
-        output.update(width=width, height=height)
-        style["camera"] = {"mode": "pymol", "world_scale": 0.01, "preserve_framing": True}
-    if "transparent_background" in request:
-        style["renderer"]["transparent_background"] = request.pop("transparent_background")
-    if public:
-        if max(output["width"], output["height"]) > 4096 or output["samples"] > 512:
-            raise JobError("Free renders are limited to 4096 pixels per dimension and 512 samples.")
-        if style["renderer"]["engine"] != "CYCLES":
-            raise JobError("Public renders use Cycles.")
-        style["renderer"].update(device="GPU", compute_device_type="CUDA", require_gpu=True)
-    request.update(style_doc=core.validate_style_document(style), output_name="render.png", job_timeout_seconds=timeout, keep_temp=bool(request.get("keep_temp", False)))
-    # Omitted defaults and explicit defaults must describe the same paid job.
-    # Preserve the preset name for the renderer's secondary-structure gates.
-    request.setdefault('preset', 'preset_1_interface' if 'style_doc' not in options else '')
-    request['save_blend'] = output['save_blend']
-    for flag in ('rough', 'raw_view', 'color_follow'):
-        request.setdefault(flag, False)
-    return request
 
 
 class RenderService:

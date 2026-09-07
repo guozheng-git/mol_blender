@@ -58,176 +58,14 @@ def _default_tmp_bridge_root() -> Path:
 SESSION_ROOT = _default_session_root()
 TMP_BRIDGE_ROOT = _default_tmp_bridge_root()
 
-PRESET_OUTPUT_FILENAMES: dict[str, str] = {
-    "preset_1_interface": "01_opaque_pastel_ses_interface.png",
-    "preset_2_frosted_blue": "02_saturated_blue_core_frosted_shell.png",
-    "preset_3_black_tubes": "03_pastel_tube_cartoon_black.png",
-    "preset_4_milky_green": "04_milky_white_green_shell_cyan_dna.png",
-    "preset_5_black_interface": "05_black_background_interface.png",
-    "dried_paint_green": "dried_paint_green.png",
-}
+from jsonschema import Draft202012Validator
+from blender_render.presets import PRESET_OUTPUT_FILENAMES, PRESET_STYLE_FILENAMES, preset_path
 
-PRESET_STYLE_FILENAMES: dict[str, str] = {
-    "preset_1_interface": "style_preset_1_opaque_pastel.json",
-    "preset_2_frosted_blue": "style_preset_2_frosted_blue.json",
-    "preset_3_black_tubes": "style_preset_3_black_tubes.json",
-    "preset_4_milky_green": "style_preset_4_milky_green.json",
-    "preset_5_black_interface": "style_preset_5_black_interface.json",
-    "dried_paint_green": "style_preset_dried_paint_green.json",
-}
-
-SUPPORTED_STYLE_KINDS = {
-    "surface",
-    "cartoon",
-    "sticks",
-    "spheres",
-    "ribbon",
-    "wire",
-}
-
-SELECTION_DSL_KEYS = {
-    "polymer",
-    "nucleic",
-    "ligand",
-    "chain",
-    "residue_range",
-    "query",
-    "within_ligand_radius",
-    "exclude_within_ligand_radius",
-    "expand_to_residue",
-}
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
-STYLE_TOP_LEVEL_OPTIONAL_KEYS = {"color_follow"}
-OUTPUT_KEYS = {"format", "width", "height", "samples", "filename", "save_blend", "blend_filename", "raw_view"}
-RENDERER_KEYS = {
-    "engine",
-    "device",
-    "compute_device_type",
-    "transparent_background",
-    "adaptive_sampling",
-    "require_gpu",
-    "exposure",
-    "gamma",
-    "view_transform",
-    "look",
-    "seed",
-    "denoise",
-}
-CAMERA_KEYS = {
-    "mode",
-    "lens_mm",
-    "shift_x",
-    "shift_y",
-    "world_scale",
-    "anchor_model_center",
-    "override_intrinsics",
-    "direction_source",
-    "yaw_offset_deg",
-    "pitch_offset_deg",
-    "yaw_deg",
-    "pitch_deg",
-    "distance_scale",
-    "focus_style",
-    "clip_start",
-    "clip_end",
-}
-WORLD_KEYS = {"background_type", "color", "top_color", "bottom_color", "strength"}
-LIGHT_KEYS = {
-    "name",
-    "type",
-    "energy",
-    "size",
-    "size_scale",
-    "min_size",
-    "color",
-    "location",
-    "rotation_deg",
-    "relative_vector",
-    "distance_scale",
-    "look_at_target",
-    "rotate_with_pymol_yaw",
-}
-MATERIAL_KEYS = {
-    "base_color",
-    "shadow_color",
-    "highlight_color",
-    "roughness",
-    "specular",
-    "transmission",
-    "alpha",
-    "emission_color",
-    "emission_strength",
-    "ao_strength",
-    "rim_strength",
-    "rim_blend",
-    "rim_power",
-    "ao_distance",
-    "coat",
-}
-STYLE_KEYS = {
-    "name",
-    "style",
-    "material",
-    "color",
-    "selection",
-    "fallback_selection",
-    "radius",
-    "quality",
-    "probe_radius",
-    "subdivisions",
-    "thickness",
-    "width",
-    "loop_radius",
-    "shade_smooth",
-    "peptide_cylinders",
-    "peptide_rounded",
-    "peptide_smoothing",
-    "nucleic_thickness",
-    "nucleic_width",
-    "nucleic_radius",
-    "backbone_shape",
-    "base_shape",
-    "base_realize",
-    "color_blur",
-    "sticks_radius",
-    "sticks_quality",
-    "sticks_shade_smooth",
-    "ligand_cutout_radius",
-    "ligand_cutout_offset",
-    "ligand_cutout_auto_side",
-    "ligand_cutout_axis_mode",
-    "ligand_cutout_flatten_z",
-    "ligand_cutout_width_scale",
-    "ligand_cutout_depth_scale",
-    "ligand_cutout_height_scale",
-    "ligand_cutout_one_sided",
-    "ligand_cutout_one_sided_shift_scale",
-    "ligand_cutout_cap_mode",
-    "ligand_cutout_selection",
-    "ligand_cutout_mirror",
-    "ligand_cutout_isolate",
-    "ligand_cutout_mode",
-    "ligand_cutout_frame_mode",
-    "ligand_cutout_frame_axes",
-    "ligand_cutout_planes_enabled",
-    "ligand_cutout_plane_scales",
-    "ligand_cutout_seal_mode",
-    "ligand_cutout_seal_depth_scale",
-    "ligand_cutout_seal_region_scale",
-    "del_solvent",
-}
-COLOR_FOLLOW_KEYS = {"enabled", "mode", "mix", "saturation_boost", "value_boost"}
-LIGAND_CUTOUT_FRAME_AXIS_KEYS = {"x", "y", "z"}
-LIGAND_CUTOUT_PLANE_KEYS = set(PLANE_NAMES)
-
-try:
-    import jsonschema as _jsonschema
-except Exception:  # pragma: no cover - optional dependency
-    _jsonschema = None
-
 
 # Derive accepted keys from the packaged schema instead of duplicating them.
 _SCHEMA = json.loads(STYLE_SCHEMA_PATH.read_text(encoding="utf-8"))
+_STYLE_VALIDATOR = Draft202012Validator(_SCHEMA)
 REQUIRED_STYLE_TOP_KEYS = tuple(_SCHEMA["required"])
 STYLE_TOP_LEVEL_OPTIONAL_KEYS = set(_SCHEMA["properties"]) - set(REQUIRED_STYLE_TOP_KEYS)
 OUTPUT_KEYS = set(_SCHEMA["properties"]["output"]["properties"])
@@ -257,12 +95,10 @@ def _default_custom_script() -> Path:
 
 
 def _default_preset_style(preset: str) -> Path:
-    filename = PRESET_STYLE_FILENAMES.get(preset)
-    if not filename:
-        raise RunnerError(
-            f"Unknown preset {preset!r}. Expected one of: {', '.join(sorted(PRESET_STYLE_FILENAMES))}."
-        )
-    return Path(__file__).resolve().parent / filename
+    try:
+        return preset_path(preset)
+    except ValueError as exc:
+        raise RunnerError(str(exc)) from exc
 
 
 def _new_run_id() -> str:
@@ -410,450 +246,55 @@ def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _validate_selection_dsl(selection: Any, field_path: str, errors: list[str]) -> None:
-    if not isinstance(selection, dict):
-        errors.append(f"'{field_path}' must be an object.")
-        return
-
-    extra_keys = sorted(set(selection) - SELECTION_DSL_KEYS)
-    if extra_keys:
-        errors.append(
-            f"'{field_path}' contains unsupported keys: {', '.join(extra_keys)}. "
-            f"Allowed keys: {', '.join(sorted(SELECTION_DSL_KEYS))}."
-        )
-
-    for key in ("polymer", "nucleic", "ligand"):
-        if key in selection and not isinstance(selection[key], bool):
-            errors.append(f"'{field_path}.{key}' must be boolean.")
-
-    if "chain" in selection:
-        chains = selection["chain"]
-        if isinstance(chains, str):
-            if not chains.strip():
-                errors.append(f"'{field_path}.chain' cannot be empty.")
-        elif isinstance(chains, list):
-            if not chains:
-                errors.append(f"'{field_path}.chain' cannot be empty.")
-            elif not all(isinstance(item, str) and item.strip() for item in chains):
-                errors.append(f"'{field_path}.chain' list must contain non-empty strings.")
-        else:
-            errors.append(f"'{field_path}.chain' must be a string or list of strings.")
-
-    if "residue_range" in selection:
-        value = selection["residue_range"]
-        if not isinstance(value, (list, tuple)) or len(value) != 2:
-            errors.append(f"'{field_path}.residue_range' must be [start, end].")
-        else:
-            try:
-                start = int(value[0])
-                end = int(value[1])
-                if start > end:
-                    errors.append(f"'{field_path}.residue_range' start must be <= end.")
-            except Exception:
-                errors.append(f"'{field_path}.residue_range' values must be integers.")
-
-    if "query" in selection and not isinstance(selection["query"], str):
-        errors.append(f"'{field_path}.query' must be a string.")
-
-    for key in ("within_ligand_radius", "exclude_within_ligand_radius"):
-        if key in selection:
-            try:
-                if float(selection[key]) < 0:
-                    errors.append(f"'{field_path}.{key}' must be >= 0.")
-            except Exception:
-                errors.append(f"'{field_path}.{key}' must be numeric.")
-
-    if "expand_to_residue" in selection and not isinstance(selection.get("expand_to_residue"), bool):
-        errors.append(f"'{field_path}.expand_to_residue' must be boolean.")
-
-
-REQUIRED_STYLE_TOP_KEYS = [
-    "version",
-    "output",
-    "renderer",
-    "camera",
-    "world",
-    "lights",
-    "materials",
-    "styles",
-]
+def _style_error_path(parts) -> str:
+    path = ""
+    for part in parts:
+        path += f"[{part}]" if isinstance(part, int) else ("." if path else "") + str(part)
+    return path or "style"
 
 
 def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
-    import jsonschema
-    errors: list[str] = []
+    """One structural validator; only cross-field semantics are checked below."""
     if not isinstance(style_doc, dict):
         raise StyleValidationError("Style document must be an object")
-    for error in jsonschema.Draft202012Validator(_SCHEMA).iter_errors(style_doc):
-        errors.append(".".join(str(p) for p in error.absolute_path) + ": " + error.message)
     try:
         json.dumps(style_doc, allow_nan=False)
     except (ValueError, TypeError) as exc:
         raise StyleValidationError("Style values must be finite JSON values") from exc
-
-    missing = [key for key in REQUIRED_STYLE_TOP_KEYS if key not in style_doc]
-    if missing:
-        errors.append(f"Missing required top-level keys: {', '.join(missing)}")
-    extra_top = sorted(
-        set(style_doc.keys()) - (set(REQUIRED_STYLE_TOP_KEYS) | STYLE_TOP_LEVEL_OPTIONAL_KEYS)
-    )
-    if extra_top:
-        errors.append(
-            "Style JSON contains unsupported top-level keys: "
-            f"{', '.join(extra_top)}. "
-            f"Allowed top-level keys: {', '.join(sorted(set(REQUIRED_STYLE_TOP_KEYS) | STYLE_TOP_LEVEL_OPTIONAL_KEYS))}."
-        )
-
-    version = style_doc.get("version")
-    if version is not None and not isinstance(version, str):
-        errors.append("'version' must be a string, for example '1.0'.")
-
-    output = style_doc.get("output")
-    if not isinstance(output, dict):
-        errors.append("'output' must be an object.")
-    else:
-        extra_output = sorted(set(output.keys()) - OUTPUT_KEYS)
-        if extra_output:
-            errors.append(
-                "'output' contains unsupported keys: "
-                f"{', '.join(extra_output)}. "
-                f"Allowed keys: {', '.join(sorted(OUTPUT_KEYS))}."
-            )
-        for key in ("width", "height", "samples"):
-            value = output.get(key)
-            if not isinstance(value, int) or value <= 0:
-                errors.append(f"'output.{key}' must be a positive integer.")
-        image_format = output.get("format")
-        if not isinstance(image_format, str) or image_format.upper() not in {"PNG", "JPEG", "TIFF", "OPEN_EXR"}:
-            errors.append("'output.format' must be one of PNG/JPEG/TIFF/OPEN_EXR.")
-        if "save_blend" in output and not isinstance(output.get("save_blend"), bool):
-            errors.append("'output.save_blend' must be boolean when provided.")
-        if "blend_filename" in output:
-            blend_filename = output.get("blend_filename")
-            if not isinstance(blend_filename, str) or not blend_filename.strip():
-                errors.append("'output.blend_filename' must be a non-empty string when provided.")
-        if "raw_view" in output and not isinstance(output.get("raw_view"), bool):
-            errors.append("'output.raw_view' must be boolean when provided.")
-
-    renderer = style_doc.get("renderer")
-    if not isinstance(renderer, dict):
-        errors.append("'renderer' must be an object.")
-    else:
-        extra_renderer = sorted(set(renderer.keys()) - RENDERER_KEYS)
-        if extra_renderer:
-            errors.append(
-                "'renderer' contains unsupported keys: "
-                f"{', '.join(extra_renderer)}. "
-                f"Allowed keys: {', '.join(sorted(RENDERER_KEYS))}."
-            )
-        engine = renderer.get("engine")
-        if not isinstance(engine, str) or engine.upper() not in {"CYCLES", "BLENDER_EEVEE", "EEVEE"}:
-            errors.append("'renderer.engine' must be CYCLES, BLENDER_EEVEE, or EEVEE.")
-
-    camera = style_doc.get("camera")
-    if not isinstance(camera, dict):
-        errors.append("'camera' must be an object.")
-    else:
-        extra_camera = sorted(set(camera.keys()) - CAMERA_KEYS)
-        if extra_camera:
-            errors.append(
-                "'camera' contains unsupported keys: "
-                f"{', '.join(extra_camera)}. "
-                f"Allowed keys: {', '.join(sorted(CAMERA_KEYS))}."
-            )
-
-    world = style_doc.get("world")
-    if not isinstance(world, dict):
-        errors.append("'world' must be an object.")
-    else:
-        extra_world = sorted(set(world.keys()) - WORLD_KEYS)
-        if extra_world:
-            errors.append(
-                "'world' contains unsupported keys: "
-                f"{', '.join(extra_world)}. "
-                f"Allowed keys: {', '.join(sorted(WORLD_KEYS))}."
-            )
-
-    lights = style_doc.get("lights")
-    if not isinstance(lights, list):
-        errors.append("'lights' must be an array.")
-    else:
-        for idx, light in enumerate(lights):
-            if not isinstance(light, dict):
-                errors.append(f"'lights[{idx}]' must be an object.")
-                continue
-            extra_light = sorted(set(light.keys()) - LIGHT_KEYS)
-            if extra_light:
-                errors.append(
-                    f"'lights[{idx}]' contains unsupported keys: {', '.join(extra_light)}. "
-                    f"Allowed keys: {', '.join(sorted(LIGHT_KEYS))}."
-                )
-            light_type = light.get("type")
-            if not isinstance(light_type, str) or light_type.upper() not in {"AREA", "SUN", "POINT", "SPOT"}:
-                errors.append(f"'lights[{idx}].type' must be AREA/SUN/POINT/SPOT.")
-
-    materials = style_doc.get("materials")
-    if not isinstance(materials, dict) or not materials:
-        errors.append("'materials' must be a non-empty object keyed by material name.")
-    else:
-        for mat_name, mat_def in materials.items():
-            if not isinstance(mat_name, str) or not mat_name.strip():
-                errors.append("Material names must be non-empty strings.")
-                continue
-            if not isinstance(mat_def, dict):
-                errors.append(f"'materials.{mat_name}' must be an object.")
-                continue
-            extra_mat_keys = sorted(set(mat_def.keys()) - MATERIAL_KEYS)
-            if extra_mat_keys:
-                errors.append(
-                    f"'materials.{mat_name}' contains unsupported keys: {', '.join(extra_mat_keys)}. "
-                    f"Allowed keys: {', '.join(sorted(MATERIAL_KEYS))}."
-                )
-            base_color = mat_def.get("base_color")
-            if base_color is not None and (
-                not isinstance(base_color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", base_color)
-            ):
-                errors.append(f"'materials.{mat_name}.base_color' must be #RRGGBB.")
-
-    styles = style_doc.get("styles")
-    if not isinstance(styles, list) or not styles:
-        errors.append("'styles' must be a non-empty array.")
-    else:
-        for idx, style in enumerate(styles):
-            field_base = f"styles[{idx}]"
-            if not isinstance(style, dict):
-                errors.append(f"'{field_base}' must be an object.")
-                continue
-            extra_style_keys = sorted(set(style.keys()) - STYLE_KEYS)
-            if extra_style_keys:
-                errors.append(
-                    f"'{field_base}' contains unsupported keys: {', '.join(extra_style_keys)}. "
-                    f"Allowed keys: {', '.join(sorted(STYLE_KEYS))}."
-                )
-
-            for key in ("name", "style", "selection", "material"):
-                if key not in style:
-                    errors.append(f"'{field_base}.{key}' is required.")
-
-            style_name = style.get("name")
-            if style_name is not None and not isinstance(style_name, str):
-                errors.append(f"'{field_base}.name' must be a string.")
-
-            style_kind = style.get("style")
-            if style_kind is not None:
-                if not isinstance(style_kind, str):
-                    errors.append(f"'{field_base}.style' must be a string.")
-                elif style_kind not in SUPPORTED_STYLE_KINDS:
-                    errors.append(
-                        f"'{field_base}.style' must be one of {', '.join(sorted(SUPPORTED_STYLE_KINDS))}."
-                    )
-
-            selection = style.get("selection")
-            if selection is not None:
-                _validate_selection_dsl(selection, f"{field_base}.selection", errors)
-            fallback_selection = style.get("fallback_selection")
-            if fallback_selection is not None:
-                _validate_selection_dsl(fallback_selection, f"{field_base}.fallback_selection", errors)
-
-            material_ref = style.get("material")
-            if isinstance(material_ref, str) and isinstance(materials, dict):
-                if material_ref not in materials:
-                    errors.append(
-                        f"'{field_base}.material' references '{material_ref}', which is not defined in 'materials'."
-                    )
-            elif material_ref is not None and not isinstance(material_ref, str):
-                errors.append(f"'{field_base}.material' must be a string.")
-
-            if "ligand_cutout_radius" in style:
-                try:
-                    if float(style["ligand_cutout_radius"]) < 0:
-                        errors.append(f"'{field_base}.ligand_cutout_radius' must be >= 0.")
-                except Exception:
-                    errors.append(f"'{field_base}.ligand_cutout_radius' must be numeric.")
-            if "ligand_cutout_offset" in style:
-                try:
-                    float(style["ligand_cutout_offset"])
-                except Exception:
-                    errors.append(f"'{field_base}.ligand_cutout_offset' must be numeric.")
-            if "ligand_cutout_auto_side" in style and not isinstance(style.get("ligand_cutout_auto_side"), bool):
-                errors.append(f"'{field_base}.ligand_cutout_auto_side' must be boolean.")
-            if "ligand_cutout_one_sided" in style and not isinstance(style.get("ligand_cutout_one_sided"), bool):
-                errors.append(f"'{field_base}.ligand_cutout_one_sided' must be boolean.")
-            if "ligand_cutout_flatten_z" in style and not isinstance(style.get("ligand_cutout_flatten_z"), bool):
-                errors.append(f"'{field_base}.ligand_cutout_flatten_z' must be boolean.")
-            if "ligand_cutout_isolate" in style and not isinstance(style.get("ligand_cutout_isolate"), bool):
-                errors.append(f"'{field_base}.ligand_cutout_isolate' must be boolean.")
-            if "ligand_cutout_axis_mode" in style:
-                axis_mode = str(style.get("ligand_cutout_axis_mode", "")).strip().lower()
-                if axis_mode not in {"interface", "camera"}:
-                    errors.append(
-                        f"'{field_base}.ligand_cutout_axis_mode' must be one of: interface, camera."
-                    )
-            if "ligand_cutout_cap_mode" in style:
-                cap_mode = str(style.get("ligand_cutout_cap_mode", "")).strip().lower()
-                if cap_mode not in {"panel", "none"}:
-                    errors.append(
-                        f"'{field_base}.ligand_cutout_cap_mode' must be one of: panel, none."
-                    )
-            cutout_mode = str(style.get("ligand_cutout_mode", "planes")).strip().lower()
-            if "ligand_cutout_mode" in style and cutout_mode != "planes":
-                errors.append(f"'{field_base}.ligand_cutout_mode' must be planes.")
-            frame_mode = str(style.get("ligand_cutout_frame_mode", "preset")).strip().lower()
-            if "ligand_cutout_frame_mode" in style and frame_mode not in {"preset", "interface", "camera"}:
-                errors.append(f"'{field_base}.ligand_cutout_frame_mode' must be one of: preset, interface, camera.")
-            if "ligand_cutout_frame_axes" in style:
-                frame_axes = style.get("ligand_cutout_frame_axes")
-                if not isinstance(frame_axes, dict):
-                    errors.append(f"'{field_base}.ligand_cutout_frame_axes' must be an object.")
-                else:
-                    extra_axis_keys = sorted(set(frame_axes.keys()) - LIGAND_CUTOUT_FRAME_AXIS_KEYS)
-                    if extra_axis_keys:
-                        errors.append(
-                            f"'{field_base}.ligand_cutout_frame_axes' contains unsupported keys: "
-                            f"{', '.join(extra_axis_keys)}. "
-                            "Allowed keys: x, y, z."
-                        )
-                    for axis_key in ("x", "y", "z"):
-                        axis_value = frame_axes.get(axis_key)
-                        if axis_value is None:
-                            errors.append(f"'{field_base}.ligand_cutout_frame_axes.{axis_key}' is required.")
-                            continue
-                        if not isinstance(axis_value, (list, tuple)) or len(axis_value) != 3:
-                            errors.append(
-                                f"'{field_base}.ligand_cutout_frame_axes.{axis_key}' must be a numeric 3-tuple."
-                            )
-                            continue
-                        for idx_axis, entry in enumerate(axis_value):
-                            try:
-                                float(entry)
-                            except Exception:
-                                errors.append(
-                                    f"'{field_base}.ligand_cutout_frame_axes.{axis_key}[{idx_axis}]' must be numeric."
-                                )
-            if (
-                cutout_mode == "planes"
-                and frame_mode == "preset"
-                and "ligand_cutout_frame_mode" in style
-                and "ligand_cutout_frame_axes" not in style
-            ):
-                errors.append(
-                    f"'{field_base}.ligand_cutout_frame_axes' is required when "
-                    f"'{field_base}.ligand_cutout_frame_mode' is 'preset'."
-                )
-            if "ligand_cutout_planes_enabled" in style:
-                planes_enabled = style.get("ligand_cutout_planes_enabled")
-                if not isinstance(planes_enabled, dict):
-                    errors.append(f"'{field_base}.ligand_cutout_planes_enabled' must be an object.")
-                else:
-                    extra_plane_enabled = sorted(set(planes_enabled.keys()) - LIGAND_CUTOUT_PLANE_KEYS)
-                    if extra_plane_enabled:
-                        errors.append(
-                            f"'{field_base}.ligand_cutout_planes_enabled' contains unsupported keys: "
-                            f"{', '.join(extra_plane_enabled)}. "
-                            f"Allowed keys: {', '.join(sorted(LIGAND_CUTOUT_PLANE_KEYS))}."
-                        )
-                    for plane_key in sorted(LIGAND_CUTOUT_PLANE_KEYS):
-                        if plane_key in planes_enabled and not isinstance(planes_enabled.get(plane_key), bool):
-                            errors.append(
-                                f"'{field_base}.ligand_cutout_planes_enabled.{plane_key}' must be boolean."
-                            )
-            if "ligand_cutout_plane_scales" in style:
-                plane_scales = style.get("ligand_cutout_plane_scales")
-                if not isinstance(plane_scales, dict):
-                    errors.append(f"'{field_base}.ligand_cutout_plane_scales' must be an object.")
-                else:
-                    extra_plane_scales = sorted(set(plane_scales.keys()) - LIGAND_CUTOUT_PLANE_KEYS)
-                    if extra_plane_scales:
-                        errors.append(
-                            f"'{field_base}.ligand_cutout_plane_scales' contains unsupported keys: "
-                            f"{', '.join(extra_plane_scales)}. "
-                            f"Allowed keys: {', '.join(sorted(LIGAND_CUTOUT_PLANE_KEYS))}."
-                        )
-                    for plane_key in sorted(LIGAND_CUTOUT_PLANE_KEYS):
-                        if plane_key not in plane_scales:
-                            continue
-                        try:
-                            if float(plane_scales[plane_key]) <= 0:
-                                errors.append(
-                                    f"'{field_base}.ligand_cutout_plane_scales.{plane_key}' must be > 0."
-                                )
-                        except Exception:
-                            errors.append(
-                                f"'{field_base}.ligand_cutout_plane_scales.{plane_key}' must be numeric."
-                            )
-            if "ligand_cutout_seal_mode" in style:
-                seal_mode = str(style.get("ligand_cutout_seal_mode", "")).strip().lower()
-                if seal_mode not in {"boundary_fill", "trimmed_panel", "none"}:
-                    errors.append(
-                        f"'{field_base}.ligand_cutout_seal_mode' must be one of: boundary_fill, trimmed_panel, none."
-                    )
-            for key in ("ligand_cutout_seal_depth_scale", "ligand_cutout_seal_region_scale"):
-                if key in style:
-                    try:
-                        if float(style[key]) <= 0:
-                            errors.append(f"'{field_base}.{key}' must be > 0.")
-                    except Exception:
-                        errors.append(f"'{field_base}.{key}' must be numeric.")
-            for key in (
-                "ligand_cutout_width_scale",
-                "ligand_cutout_depth_scale",
-                "ligand_cutout_height_scale",
-            ):
-                if key in style:
-                    try:
-                        if float(style[key]) <= 0:
-                            errors.append(f"'{field_base}.{key}' must be > 0.")
-                    except Exception:
-                        errors.append(f"'{field_base}.{key}' must be numeric.")
-            if "ligand_cutout_one_sided_shift_scale" in style:
-                try:
-                    if float(style["ligand_cutout_one_sided_shift_scale"]) < 0:
-                        errors.append(f"'{field_base}.ligand_cutout_one_sided_shift_scale' must be >= 0.")
-                except Exception:
-                    errors.append(f"'{field_base}.ligand_cutout_one_sided_shift_scale' must be numeric.")
-
-    color_follow = style_doc.get("color_follow")
-    if color_follow is not None:
-        if not isinstance(color_follow, dict):
-            errors.append("'color_follow' must be an object when provided.")
+    errors = []
+    for error in _STYLE_VALIDATOR.iter_errors(style_doc):
+        # Keep the established actionable error paths for compatibility callers.
+        if error.validator == "required" and not error.absolute_path:
+            errors.append("Missing required top-level keys: " + error.message)
         else:
-            extra_cf_keys = sorted(set(color_follow.keys()) - COLOR_FOLLOW_KEYS)
-            if extra_cf_keys:
-                errors.append(
-                    "'color_follow' contains unsupported keys: "
-                    f"{', '.join(extra_cf_keys)}. "
-                    f"Allowed keys: {', '.join(sorted(COLOR_FOLLOW_KEYS))}."
-                )
-            enabled = color_follow.get("enabled")
-            if enabled is not None and not isinstance(enabled, bool):
-                errors.append("'color_follow.enabled' must be boolean when provided.")
-            mode = color_follow.get("mode")
-            if mode is not None and str(mode).strip().lower() not in {"auto", "chain", "class"}:
-                errors.append("'color_follow.mode' must be one of: auto, chain, class.")
-            for key in ("mix", "saturation_boost", "value_boost"):
-                value = color_follow.get(key)
-                if value is not None:
-                    try:
-                        float(value)
-                    except Exception:
-                        errors.append(f"'color_follow.{key}' must be numeric when provided.")
+            errors.append(_style_error_path(error.absolute_path) + ": " + error.message)
 
+    materials = style_doc.get("materials", {})
+    styles = style_doc.get("styles", [])
+    for idx, style in enumerate(styles if isinstance(styles, list) else []):
+        if not isinstance(style, dict):
+            continue
+        prefix = f"styles[{idx}]"
+        reference = style.get("material")
+        if isinstance(reference, str) and isinstance(materials, dict) and reference not in materials:
+            errors.append(f"{prefix}.material references '{reference}', which is not defined in materials")
+        for key in ("selection", "fallback_selection", "ligand_cutout_selection"):
+            selection = style.get(key)
+            bounds = selection.get("residue_range") if isinstance(selection, dict) else None
+            if (isinstance(bounds, list) and len(bounds) == 2
+                    and all(isinstance(v, (int, float)) for v in bounds) and bounds[0] > bounds[1]):
+                errors.append(f"{prefix}.{key}.residue_range start must be <= end")
+        if (style.get("ligand_cutout_mode", "planes") == "planes"
+                and style.get("ligand_cutout_frame_mode") == "preset"
+                and "ligand_cutout_frame_axes" not in style):
+            errors.append(f"{prefix}.ligand_cutout_frame_axes is required when ligand_cutout_frame_mode is preset")
     if errors:
-        bullet = "\n".join(f"- {item}" for item in errors)
-        raise StyleValidationError(f"Style JSON validation failed:\n{bullet}")
-
+        raise StyleValidationError("Style JSON validation failed:\n" + "\n".join("- " + e for e in errors))
     return style_doc
 
 
 def load_and_validate_style_json(path: Path) -> dict[str, Any]:
-    style_doc = _load_json(path)
-    if STYLE_SCHEMA_PATH.exists() and _jsonschema is not None:
-        schema_doc = _load_json(STYLE_SCHEMA_PATH)
-        try:
-            _jsonschema.Draft202012Validator(schema_doc).validate(style_doc)
-        except Exception as exc:  # pragma: no cover - depends on jsonschema availability
-            raise StyleValidationError(f"Schema validation against {STYLE_SCHEMA_PATH} failed: {exc}") from exc
-    return validate_style_document(style_doc)
+    return validate_style_document(_load_json(path))
 
 
 def _ensure_suffix_png(name: str) -> str:
@@ -1354,20 +795,15 @@ def _write_run_manifest(path: Path, payload: dict[str, Any], *, chosen_structure
 
 
 def _is_preset_1_gate_target(*, preset: str | None, style_json_path: str | None, style_doc: dict[str, Any] | None) -> bool:
-    if str(preset or "").strip() == "preset_1_interface":
-        return True
-    raw_style_json = str(style_json_path or "").strip()
-    if raw_style_json:
-        name = Path(raw_style_json).name
-        if name == "style_preset_1_opaque_pastel.json":
-            return True
-    if isinstance(style_doc, dict):
-        output = style_doc.get("output")
-        if isinstance(output, dict):
-            filename = str(output.get("filename", "")).strip()
-            if filename == "01_opaque_pastel_ses_interface.png":
-                return True
-    return False
+    # Compatibility guard for the reference representation, never for a name
+    # or output filename. Colors/materials/camera can change without losing it;
+    # a different representation must not inherit the reference's requirements.
+    if not isinstance(style_doc, dict):
+        return False
+    def layout(doc):
+        return [(entry.get("style"), entry.get("selection")) for entry in _style_entries(doc)]
+    reference = _load_json(_default_preset_style("preset_1_interface"))
+    return layout(style_doc) == layout(reference)
 
 
 def _enforce_preset_1_backend_gates(*, manifest: dict[str, Any], manifest_path: Path) -> None:

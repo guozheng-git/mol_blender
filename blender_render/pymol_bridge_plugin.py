@@ -24,11 +24,11 @@ def try_load_preview(cmd_obj, output_png):
 
 def bridge_render(selection="(all)", preset="preset_1_interface", style_json="", mode="local",
                   output_dir=".", output_name="render.png", rough=0, color_follow=0,
-                  save_blend=0, raw_view=0, state=-1, server_host="", server_port=8765,
+                  save_blend="", raw_view=0, state=-1, server_host="", server_port=8765,
                   server_timeout=1800, profile="", use_apptainer=0, apptainer_image="",
                   blender_exe="", attach=1, attach_only=0, keep_temp=0,
                   width="", height="", samples="", transparent_background="",
-                  blend_output="", _self=None, **legacy):
+                  blend_output="", _self=None, overrides_json="", preserve_view="", **legacy):
     if _self is None:
         from pymol import cmd
     else:
@@ -56,9 +56,18 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
             print("Interactive GPU session ready")
     payload = build_render_payload(cmd, text(selection), int(state), include_color_hints=True)
     options = {"preset": text(preset), "rough": _parse_bool(rough), "color_follow": _parse_bool(color_follow),
-               "save_blend": _parse_bool(save_blend), "raw_view": _parse_bool(raw_view), "keep_temp": _parse_bool(keep_temp)}
+               "raw_view": _parse_bool(raw_view), "keep_temp": _parse_bool(keep_temp)}
     if text(style_json):
         options["style_doc"] = json.loads(Path(text(style_json)).expanduser().read_text())
+        options.pop("preset", None)
+    if text(overrides_json):
+        options["overrides"] = json.loads(Path(text(overrides_json)).expanduser().read_text())
+    if str(save_blend).strip():
+        options["save_blend"] = _parse_bool(save_blend)
+    if text(blend_output):
+        options["save_blend"] = True
+    if str(preserve_view).strip():
+        options["preserve_view"] = _parse_bool(preserve_view)
     for key, value in (("width", width), ("height", height), ("samples", samples)):
         if str(value).strip():
             options[key] = int(value)

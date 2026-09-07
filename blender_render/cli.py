@@ -31,6 +31,9 @@ def parser():
     render.add_argument("--profile", default="local")
     render.add_argument("--preset", default="preset_1_interface")
     render.add_argument("--style-json")
+    render.add_argument("--overrides-json", help="Nested JSON overrides; objects merge, arrays replace")
+    render.add_argument("--preserve-view", action=argparse.BooleanOptionalAction, default=None,
+                        help="Preserve saved pose by default; explicit JSON camera wins")
     render.add_argument("--selection", default="(all)")
     render.add_argument("--pymol-python", default="")
     render.add_argument("--blender", default="")
@@ -42,7 +45,7 @@ def parser():
     render.add_argument("--rough", action="store_true")
     render.add_argument("--transparent", action="store_true", default=None)
     render.add_argument("--color-follow", action="store_true")
-    render.add_argument("--save-blend", action="store_true")
+    render.add_argument("--save-blend", action="store_true", default=None)
     render.add_argument("--no-wait", action="store_true")
     render.add_argument("--idempotency-key")
     render.add_argument("--timeout", type=int, default=1800)
@@ -169,7 +172,8 @@ def execute(args):
         save_config(config)
         return {"status":"signed_in", "profile":args.profile, "url":url}
     if args.command == "presets":
-        return {"presets": list(core.PRESET_STYLE_FILENAMES)}
+        from .presets import catalog
+        return {"presets": list(core.PRESET_STYLE_FILENAMES), "catalog": catalog()}
     if args.command == "profile":
         config = load_config()
         if args.action == "add":
@@ -230,9 +234,12 @@ def execute(args):
         else:
             payload = json.loads(path.read_text()) if path.suffix == ".json" else export_file(path, python=args.pymol_python, selection=args.selection)
             source = client.upload(payload, path.name)
-        options = {k: getattr(args, k) for k in ("preset", "width", "height", "samples", "rough", "color_follow", "save_blend", "keep_temp") if getattr(args, k) is not None}
+        options = {k: getattr(args, k) for k in ("preset", "width", "height", "samples", "rough", "color_follow", "save_blend", "keep_temp", "preserve_view") if getattr(args, k) is not None}
         if args.style_json:
             options["style_doc"] = json.loads(Path(args.style_json).read_text())
+            options.pop("preset", None)
+        if args.overrides_json:
+            options["overrides"] = json.loads(Path(args.overrides_json).read_text())
         if args.transparent is not None:
             options["transparent_background"] = args.transparent
         job = client.submit(source["input_id"], options, args.idempotency_key)
