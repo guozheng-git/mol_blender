@@ -34,6 +34,14 @@ def apply_atom_attributes(molecule, view, style):
     store = getattr(molecule, "store_named_attribute", None)
     if callable(store) and ss_map:
         store(sec, "sec_struct", atype="INT")
+    element_palette = style.get("geometry", {}).get("element_palette")
+    if element_palette:
+        if not callable(store):
+            raise RuntimeError("Molecular Nodes cannot store element colors")
+        element_colors = np.asarray([linear_color(element_palette.get(str(element).upper(), "#808080"))
+                                     for element in array.element], dtype=np.float32)
+        store(element_colors, "ElementColor", atype="FLOAT_COLOR")
+        store(element_colors, "Color", atype="FLOAT_COLOR")
     palette = style.get("geometry", {}).get("secondary_structure_palette")
     follow = style.get("color_follow", {})
     atom_hints = view.get("color_hints", {}).get("atoms", {}) if follow.get("enabled") else {}

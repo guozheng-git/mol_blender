@@ -853,7 +853,9 @@ def _biotite_ccd_target_paths() -> list[Path]:
     targets: list[Path] = []
     override = str(os.getenv("PRESS_BIOTITE_CCD_PATH", "") or "").strip()
     if override:
-        targets.append(Path(override).expanduser())
+        # An explicit request-local cache must not mirror into the installed
+        # addon or the user's shared cache.
+        return [Path(override).expanduser()]
 
     try:
         from biotite.structure.info import ccd as ccd_module  # type: ignore
@@ -1246,11 +1248,26 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
         ramp.color_ramp.elements[1].color = top_color
 
         nt.links.new(coord.outputs["Window"], separate.inputs["Vector"])
-        nt.links.new(separate.outputs["Y"], ramp.inputs["Fac"])
+        direction = world_cfg.get("gradient_direction", [0.0, 1.0])
+        from reference_effects import directional_factor
+        factor = directional_factor(nt, coord.outputs["Window"], [*direction, 0.0])
+        nt.links.new(factor, ramp.inputs["Fac"])
         nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
     else:
         color = _hex_to_rgba(str(world_cfg.get("color", "#DDEAF5")))
         bg.inputs["Color"].default_value = color
+
+    if "ambient_color" in world_cfg or "ambient_strength" in world_cfg:
+        ambient = nt.nodes.new("ShaderNodeBackground")
+        ambient.name = "Ambient illumination"
+        ambient.inputs["Color"].default_value = _hex_to_rgba(world_cfg.get("ambient_color", "#FFFFFF"))
+        ambient.inputs["Strength"].default_value = float(world_cfg.get("ambient_strength", 1.0))
+        light_path = nt.nodes.new("ShaderNodeLightPath")
+        mix = nt.nodes.new("ShaderNodeMixShader")
+        nt.links.new(light_path.outputs["Is Camera Ray"], mix.inputs[0])
+        nt.links.new(ambient.outputs["Background"], mix.inputs[1])
+        nt.links.new(bg.outputs["Background"], mix.inputs[2])
+        nt.links.new(mix.outputs[0], out.inputs["Surface"])
 
 
 def _add_lights(
@@ -1438,6 +1455,8 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         _set_bsdf_input(bsdf, ("Emission Color", "Emission"), _hex_to_rgba(str(emission_color), 1.0))
         _set_bsdf_input(bsdf, ("Emission Strength",), emission_strength)
 
+    from reference_effects import apply_material_effects
+    apply_material_effects(nt, bsdf, cfg, _hex_to_rgba)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 
     if hasattr(material, "blend_method"):
@@ -1806,6 +1825,8 @@ def _native_style_from_cfg(style_cfg: dict[str, Any]) -> Any:
         return mn_styles.StyleSurface(
             quality=int(style_cfg.get("quality", 3)),
             probe_size=float(style_cfg.get("probe_radius", 1.0)),
+            scale_radius=float(style_cfg.get("surface_scale_radius", 1.5)),
+            relaxation_steps=int(style_cfg.get("surface_relaxation_steps", 10)),
             shade_smooth=bool(style_cfg.get("shade_smooth", True)),
             color_blur=int(2 if bool(style_cfg.get("color_blur", False)) else 0),
         )
@@ -1821,8 +1842,18 @@ def _add_style(load_result: Any, style_cfg: dict[str, Any], selection: Any,
                material: bpy.types.Material | None = None) -> Any:
     if not _is_native_mn_molecule(load_result):
         raise RuntimeError("Molecular Nodes 4.5.10 native molecule is required")
-    return load_result.add_style(_native_style_from_cfg(style_cfg), selection=selection,
+    before = {node.as_pointer() for node in load_result.tree.nodes}
+    result = load_result.add_style(_native_style_from_cfg(style_cfg), selection=selection,
         color=None, name=style_cfg.get("name"), material=material)
+    if "nucleic_base_scale" in style_cfg:
+        from reference_effects import scale_nucleic_bases
+        branches = [node for node in load_result.tree.nodes if node.as_pointer() not in before
+                    and getattr(getattr(node, "node_tree", None), "name", "").startswith("Style Cartoon")]
+        if not branches:
+            raise RuntimeError("Molecular Nodes cartoon branch missing for nucleic_base_scale")
+        for branch in branches:
+            scale_nucleic_bases(branch, float(style_cfg["nucleic_base_scale"]))
+    return result
 
 
 
@@ -2641,6 +2672,8 @@ def _resolve_cutout_frame_axes(
         axis_mode = "interface"
 
     prefer_camera = axis_mode == "camera"
+    if prefer_camera and camera_axis is not None:
+        camera_axis = -camera_axis  # Carve toward the viewer, leaving the pocket behind.
     y_axis = _ligand_cutout_axis(
         ligand_anchor,
         interface_center,
@@ -2836,6 +2869,8 @@ def _add_boolean_difference_modifier(
         modifier = target_obj.modifiers.new(name=f"BridgePlaneCut_{uuid.uuid4().hex[:6]}", type="BOOLEAN")
         modifier.operation = "DIFFERENCE"
         modifier.object = cutter_obj
+        if hasattr(modifier, "material_mode"):
+            modifier.material_mode = "TRANSFER"
         if hasattr(modifier, "solver"):
             modifier.solver = "EXACT"
         if hasattr(modifier, "use_hole_tolerant"):
@@ -3332,6 +3367,11 @@ def _apply_surface_ligand_cutout_planes(
         for cutter in cutters:
             _delete_object_if_present(cutter)
         return False
+    # New Boolean cut faces must inherit the surface pigment rather than
+    # Blender's unassigned grey material.
+    cut_material = _ensure_cutout_cap_material(cap_material=cap_material, cap_material_cfg=cap_material_cfg)
+    merged_cutter.data.materials.clear()
+    merged_cutter.data.materials.append(cut_material)
     has_geometry_nodes = False
     try:
         has_geometry_nodes = any(str(getattr(mod, "type", "")).upper() == "NODES" for mod in list(target_obj.modifiers))
@@ -3464,6 +3504,7 @@ def _apply_override_camera(
     camera_cfg: dict[str, Any],
     objects: list[bpy.types.Object],
     style_objects_by_name: dict[str, list[bpy.types.Object]] | None = None,
+    style_centers_by_name: dict[str, Vector] | None = None,
 ) -> None:
     center, radius = _scene_bounds(objects)
     focus_style = str(camera_cfg.get("focus_style", "")).strip()
@@ -3474,6 +3515,9 @@ def _apply_override_camera(
         if focus_objects:
             focus_center, _ = _scene_bounds(focus_objects)
             center = focus_center
+
+    if focus_style and style_centers_by_name and focus_style in style_centers_by_name:
+        center = style_centers_by_name[focus_style]
 
     distance_scale = float(camera_cfg.get("distance_scale", 3.1))
     distance = max(0.05, radius * distance_scale)
@@ -3511,13 +3555,58 @@ def _apply_override_camera(
     elif up_hint is None:
         _point_camera_at(camera, center)
 
+    roll = float(camera_cfg.get("roll_deg", 0.0))
+    if roll:
+        camera.rotation_euler.rotate_axis("Z", math.radians(roll))
     data = camera.data
+    if "projection" in camera_cfg:
+        data.type = camera_cfg["projection"]
     if isinstance(camera_cfg.get("lens_mm"), (int, float)):
         data.lens = float(camera_cfg["lens_mm"])
     if isinstance(camera_cfg.get("shift_x"), (int, float)):
         data.shift_x = float(camera_cfg["shift_x"])
     if isinstance(camera_cfg.get("shift_y"), (int, float)):
         data.shift_y = float(camera_cfg["shift_y"])
+    if camera_cfg.get("fit", False):
+        bpy.context.view_layer.update()
+        inv = camera.matrix_world.inverted()
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        projected = []
+        for obj in {obj.as_pointer(): obj for obj in objects}.values():
+            evaluated = obj.evaluated_get(depsgraph)
+            mesh = evaluated.to_mesh()
+            try:
+                if mesh and mesh.vertices:
+                    coords = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+                    mesh.vertices.foreach_get("co", coords)
+                    matrix = np.asarray(inv @ obj.matrix_world)
+                    projected.append(np.einsum("ij,kj->ki", matrix[:3, :3], coords.reshape(-1, 3)) + matrix[:3, 3])
+            finally:
+                evaluated.to_mesh_clear()
+        if projected:
+            points = np.concatenate(projected)
+            aspect = scene.render.resolution_x / scene.render.resolution_y
+            margin = float(camera_cfg.get("fit_margin", 1.08))
+            data.sensor_fit = "HORIZONTAL"
+            limits = (.5 + data.shift_x, .5 - data.shift_x,
+                      .5 / aspect + data.shift_y, .5 / aspect - data.shift_y)
+            if min(limits) <= 0:
+                raise ValueError("camera.fit requires shifts that keep the focus inside the frame")
+            extent = np.maximum.reduce((points[:, 0] / limits[0], -points[:, 0] / limits[1],
+                                        points[:, 1] / limits[2], -points[:, 1] / limits[3])) * margin
+            if data.type == "ORTHO":
+                data.ortho_scale = float(np.max(extent))
+            else:
+                tangent = math.tan(data.angle_x * .5)
+                required = extent / (2 * tangent) + points[:, 2]
+                delta = float(np.max(required))
+                camera.location += camera.matrix_world.to_quaternion() @ Vector((0, 0, delta))
+                distance += delta
+    if "ortho_scale_angstrom" in camera_cfg:
+        if data.type != "ORTHO":
+            raise ValueError("camera.ortho_scale_angstrom requires camera.projection=ORTHO or an orthographic input view")
+        data.ortho_scale = float(camera_cfg["ortho_scale_angstrom"]) * .01
+        data.sensor_fit = "HORIZONTAL"
     if isinstance(camera_cfg.get("clip_start"), (int, float)):
         data.clip_start = max(1e-6, float(camera_cfg["clip_start"]))
     else:
@@ -3750,6 +3839,7 @@ def _render(args: argparse.Namespace) -> None:
             tree.links.new(mix.outputs["Color"], shadow.inputs[1] if shadow else bsdf.inputs["Base Color"])
     created_objects: list[bpy.types.Object] = []
     style_objects_by_name: dict[str, list[bpy.types.Object]] = {}
+    style_centers_by_name: dict[str, Vector] = {}
     debug_styles = _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False)
     runtime_polymer_backend = "none"
     runtime_ligand_backend = "none"
@@ -3901,6 +3991,9 @@ def _render(args: argparse.Namespace) -> None:
             structure_path=structure_path,
             style_name=style_name,
         )
+        selected_center = _indices_centroid_vector(style_load_result, selection_indices)
+        if selected_center is not None:
+            style_centers_by_name[style_name] = selected_center * .01
         effective_cutout_offset = cutout_offset
         if (
             style_kind_lower == "surface"
@@ -4265,6 +4358,7 @@ def _render(args: argparse.Namespace) -> None:
             camera_cfg,
             created_objects,
             style_objects_by_name=style_objects_by_name,
+            style_centers_by_name=style_centers_by_name,
         )
 
     light_target, light_radius = _scene_bounds(created_objects)

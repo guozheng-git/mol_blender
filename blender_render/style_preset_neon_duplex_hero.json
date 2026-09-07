@@ -1,0 +1,185 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "filename": "reference_08.png",
+    "width": 1600,
+    "height": 900,
+    "samples": 128,
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "view_transform": "Standard",
+    "look": "None",
+    "exposure": 0,
+    "gamma": 1,
+    "denoise": true,
+    "seed": 19
+  },
+  "camera": {
+    "mode": "override",
+    "direction_source": "preset",
+    "yaw_deg": 17.413858446592485,
+    "pitch_deg": -22.432006473625897,
+    "roll_deg": 100.13178095375372,
+    "fit": true,
+    "fit_margin": 1.35,
+    "world_scale": 0.01,
+    "distance_scale": 3.1,
+    "projection": "ORTHO"
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#F2A0EB",
+    "bottom_color": "#77DFF5",
+    "strength": 1,
+    "ambient_color": "#FFFFFF",
+    "ambient_strength": 0.55,
+    "gradient_direction": [
+      -1,
+      1
+    ]
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 92.625,
+      "relative_vector": [
+        -1.7,
+        2.2,
+        3
+      ],
+      "size_scale": 2.8,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 37.050000000000004,
+      "relative_vector": [
+        2,
+        -0.4,
+        3
+      ],
+      "size_scale": 3.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#DDEEFF"
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 55.575,
+      "relative_vector": [
+        0,
+        2,
+        -2
+      ],
+      "size_scale": 2.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    }
+  ],
+  "materials": {
+    "blue": {
+      "base_color": "#00B95C",
+      "roughness": 0.35,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#00CE78",
+      "highlight_color": "#00CE78",
+      "rim_strength": 0.03
+    },
+    "pink": {
+      "base_color": "#9900DA",
+      "roughness": 0.35,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#9900DA",
+      "highlight_color": "#9900DA",
+      "rim_strength": 0.03,
+      "color_gradient": {
+        "colors": [
+          "#078FEA",
+          "#6800EA",
+          "#E116CF",
+          "#058DF1"
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "ligand": {
+      "base_color": "#AE60DA",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#AE60DA",
+      "highlight_color": "#AE60DA",
+      "rim_strength": 0.03
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_blue",
+      "style": "cartoon",
+      "material": "blue",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "nucleic",
+      "style": "cartoon",
+      "material": "pink",
+      "selection": {
+        "query": "nucleic"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "nucleic_radius": 0.8,
+      "nucleic_width": 0.6,
+      "nucleic_thickness": 0.25,
+      "base_shape": "Cylinder",
+      "color_by_chain": false,
+      "nucleic_base_scale": 0.45
+    },
+    {
+      "name": "ligand",
+      "style": "sticks",
+      "material": "ligand",
+      "selection": {
+        "query": "ligand and not resn HOH,WAT,DOD,SOL,NA,K,CL,CA,MG,ZN"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "radius": 0.2,
+      "color_by_chain": false
+    }
+  ]
+}

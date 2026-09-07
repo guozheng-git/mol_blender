@@ -4,9 +4,23 @@ Ray-traced molecular stills from PyMOL, with the saved pose, colors, and transpa
 
 This is the **private 0.2.0b1 beta**. The repository and release artifacts remain private, and the hosted endpoint admits only the owner's GitHub account. Public publication, publisher identity verification, and OpenAI portal submission are deferred at the owner's request. The [validation report](docs/release-validation.md) distinguishes executed checks from remaining release gates.
 
-![Dried green paint on public PDB structure 2TRX](examples/rendered/2trx_dried_paint.png)
-
 The renderer pins **Blender 5.0.1**, **Molecular Nodes 4.5.10**, and **Python 3.11**. Preset 1 remains the default pastel style. `dried_paint_green` adds pigment variation, surface relief, and rounded ribbon edges. Output is a PNG plus a provenance manifest, with an optional `.blend` download. Animation and interactive 3D editing are outside this beta.
+
+## Preset gallery
+
+Choose the identifier beneath an image: `blender_render preset=cyan_mint_cutaway` in PyMOL, or `blender-render render pose.pse --preset cyan_mint_cutaway -o pocket.png` from the CLI. Each name links to its editable JSON. All previews below are actual local Blender renders of public structures.
+
+| | |
+|---|---|
+| **Powder blue rounded**<br>![Powder blue rounded](examples/presets/powder_blue_rounded.png)<br>[`powder_blue_rounded`](blender_render/style_preset_powder_blue_rounded.json)<br>8AW3 · reference 1 · structure analogue | **Cyan / mint cutaway**<br>![Cyan / mint cutaway](examples/presets/cyan_mint_cutaway.png)<br>[`cyan_mint_cutaway`](blender_render/style_preset_cyan_mint_cutaway.json)<br>8EA6 · reference 2 · colored pocket residues |
+| **Pastel duplex, rounded**<br>![Pastel duplex, rounded](examples/presets/pastel_duplex_rounded.png)<br>[`pastel_duplex_rounded`](blender_render/style_preset_pastel_duplex_rounded.json)<br>7PZB · reference 3 | **Pastel duplex, cartoon**<br>![Pastel duplex, cartoon](examples/presets/pastel_duplex_cartoon.png)<br>[`pastel_duplex_cartoon`](blender_render/style_preset_pastel_duplex_cartoon.json)<br>7PZB · reference 4 |
+| **Vivid binding site**<br>![Vivid binding site](examples/presets/vivid_binding_site.png)<br>[`vivid_binding_site`](blender_render/style_preset_vivid_binding_site.json)<br>1AZM · reference 5 · ligand analogue | **Ivory / lime frosted**<br>![Ivory / lime frosted](examples/presets/ivory_lime_frosted.png)<br>[`ivory_lime_frosted`](blender_render/style_preset_ivory_lime_frosted.json)<br>8AW3 · reference 6 · structure analogue |
+| **Mint / sky assembly**<br>![Mint / sky assembly](examples/presets/mint_sky_assembly.png)<br>[`mint_sky_assembly`](blender_render/style_preset_mint_sky_assembly.json)<br>8AA5 · reference 7 | **Neon duplex hero**<br>![Neon duplex hero](examples/presets/neon_duplex_hero.png)<br>[`neon_duplex_hero`](blender_render/style_preset_neon_duplex_hero.json)<br>7PZB · reference 8 |
+| **Pastel (default)**<br>![Pastel (default)](examples/presets/preset_1_interface.png)<br>[`preset_1_interface`](blender_render/style_preset_1_opaque_pastel.json)<br>1SPS · original preset 1 | **Frosted blue**<br>![Frosted blue](examples/presets/preset_2_frosted_blue.png)<br>[`preset_2_frosted_blue`](blender_render/style_preset_2_frosted_blue.json)<br>1SPS · original preset 2 |
+| **Pastel on black**<br>![Pastel on black](examples/presets/preset_3_black_tubes.png)<br>[`preset_3_black_tubes`](blender_render/style_preset_3_black_tubes.json)<br>1SPS · original preset 3 | **Milky green**<br>![Milky green](examples/presets/preset_4_milky_green.png)<br>[`preset_4_milky_green`](blender_render/style_preset_4_milky_green.json)<br>1SPS · original preset 4 |
+| **Black interface**<br>![Black interface](examples/presets/preset_5_black_interface.png)<br>[`preset_5_black_interface`](blender_render/style_preset_5_black_interface.json)<br>1SPS · original preset 5 | **Dried green paint**<br>![Dried green paint](examples/presets/dried_paint_green.png)<br>[`dried_paint_green`](blender_render/style_preset_dried_paint_green.json)<br>1SPS · original green paint |
+
+Presets preserve your saved pose by default. Use `--no-preserve-view` (PyMOL: `preserve_view=0`) to use an authored preset camera. Exact framing depends on the input structure and view. References 1, 5 and 6 are style approximations with unconfirmed original structures. See [reference details and customization](docs/reference-presets.md) and [public gallery provenance](examples/presets/gallery.json).
 
 ## Choose compute
 
@@ -65,7 +79,7 @@ python3.11 -m venv .venv
 
 `blender_render` is the only implementation package. `bridge_runner`, `render_server`, and the PyMOL script remain compatibility entry points. The preset JSON schema and packaged runtime lock are shared by all backends. See [architecture](docs/architecture.md) and [release validation](docs/release-validation.md).
 
-The examples use public PDB structures; accession, source URL, and SHA256 are recorded in `examples/structures.json`.
+The examples use public PDB structures; accession, source URL, and SHA256 are recorded in `examples/structures.json` and `examples/presets/gallery.json`.
 
 ## License and support
 

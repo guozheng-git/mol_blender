@@ -193,6 +193,26 @@
         },
         "preserve_framing": {
           "type": "boolean"
+        },
+        "roll_deg": {
+          "type": "number"
+        },
+        "fit": {
+          "type": "boolean"
+        },
+        "fit_margin": {
+          "type": "number",
+          "minimum": 1
+        },
+        "ortho_scale_angstrom": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "projection": {
+          "enum": [
+            "ORTHO",
+            "PERSP"
+          ]
         }
       }
     },
@@ -220,6 +240,22 @@
           "pattern": "^#[0-9A-Fa-f]{6}$"
         },
         "strength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gradient_direction": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "ambient_color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "ambient_strength": {
           "type": "number",
           "minimum": 0
         }
@@ -384,6 +420,87 @@
           },
           "paint": {
             "$ref": "#/$defs/paint"
+          },
+          "color_attribute": {
+            "type": "string",
+            "enum": [
+              "Color",
+              "ElementColor"
+            ]
+          },
+          "color_gradient": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "colors",
+              "direction"
+            ],
+            "properties": {
+              "colors": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                  "type": "string",
+                  "pattern": "^#[0-9A-Fa-f]{6}$"
+                }
+              },
+              "direction": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "frosted": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "noise_scale",
+              "opacity_min",
+              "opacity_max",
+              "grid_scale",
+              "grid_width",
+              "grid_strength",
+              "grid_color"
+            ],
+            "properties": {
+              "noise_scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "opacity_min": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "opacity_max": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "grid_scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "grid_width": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 0.1
+              },
+              "grid_strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "grid_color": {
+                "type": "string",
+                "pattern": "^#[0-9A-Fa-f]{6}$"
+              }
+            }
           }
         }
       },
@@ -684,6 +801,22 @@
           },
           "peptide_arrows": {
             "type": "boolean"
+          },
+          "color_by_chain": {
+            "type": "boolean"
+          },
+          "surface_scale_radius": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "surface_relaxation_steps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "nucleic_base_scale": {
+            "type": "number",
+            "exclusiveMinimum": 0
           }
         }
       }
@@ -780,6 +913,17 @@
               "type": "string",
               "pattern": "^#[0-9A-Fa-f]{6}$"
             }
+          }
+        },
+        "element_palette": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[A-Z]{1,2}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
           }
         }
       }

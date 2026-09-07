@@ -1,0 +1,169 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "filename": "reference_05.png",
+    "width": 1600,
+    "height": 900,
+    "samples": 128,
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "view_transform": "Standard",
+    "look": "None",
+    "exposure": 0,
+    "gamma": 1,
+    "denoise": true,
+    "seed": 19
+  },
+  "camera": {
+    "mode": "override",
+    "direction_source": "preset",
+    "yaw_deg": -35.6833,
+    "pitch_deg": 63.2124,
+    "roll_deg": 200,
+    "projection": "ORTHO",
+    "ortho_scale_angstrom": 13,
+    "focus_style": "ligand"
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#74C7DF",
+    "bottom_color": "#B2E1D2",
+    "strength": 1,
+    "ambient_color": "#FFFFFF",
+    "ambient_strength": 0.55
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 142.5,
+      "relative_vector": [
+        -1.7,
+        2.2,
+        3
+      ],
+      "size_scale": 2.8,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 57.0,
+      "relative_vector": [
+        2,
+        -0.4,
+        3
+      ],
+      "size_scale": 3.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#DDEEFF"
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 85.5,
+      "relative_vector": [
+        0,
+        2,
+        -2
+      ],
+      "size_scale": 2.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    }
+  ],
+  "materials": {
+    "blue": {
+      "base_color": "#009C7F",
+      "roughness": 0.4,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#00BEA4",
+      "highlight_color": "#00BEA4",
+      "rim_strength": 0.03
+    },
+    "ligand": {
+      "base_color": "#168DF3",
+      "roughness": 0.34,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.08,
+      "shadow_color": "#168DF3",
+      "highlight_color": "#168DF3",
+      "rim_strength": 0.03,
+      "color_attribute": "Color"
+    },
+    "pocket": {
+      "base_color": "#CB580B",
+      "roughness": 0.45,
+      "specular": 0.2
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_blue",
+      "style": "cartoon",
+      "material": "blue",
+      "selection": {
+        "query": "polymer and not nucleic"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "ligand",
+      "style": "sticks",
+      "material": "ligand",
+      "selection": {
+        "query": "ligand and not resn HOH,WAT,DOD,SOL,NA,K,CL,CA,MG,ZN"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "radius": 0.5,
+      "color_by_chain": false
+    },
+    {
+      "name": "pocket_context",
+      "style": "sticks",
+      "material": "pocket",
+      "selection": {
+        "query": "polymer and not nucleic",
+        "within_ligand_radius": 3.5,
+        "expand_to_residue": true
+      },
+      "radius": 0.3,
+      "quality": 4
+    }
+  ],
+  "geometry": {
+    "element_palette": {
+      "C": "#36B9F5",
+      "N": "#0032EA",
+      "O": "#FC007F",
+      "S": "#F5CB00",
+      "P": "#F29331",
+      "F": "#9FE100",
+      "CL": "#9FE100"
+    }
+  }
+}

@@ -130,7 +130,7 @@ def test_additional_validation_is_preserved(mutate, match):
 
 def test_catalog_retains_identifiers_and_describes_real_capabilities():
     entries = catalog()
-    assert len(entries) == 6
+    assert len(entries) == 14
     assert {entry["id"] for entry in entries} == set(core.PRESET_STYLE_FILENAMES)
     for entry in entries:
         assert preset_id(entry["qualified_id"]) == entry["id"]

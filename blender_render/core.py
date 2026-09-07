@@ -275,6 +275,8 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(style, dict):
             continue
         prefix = f"styles[{idx}]"
+        if "nucleic_base_scale" in style and style.get("style") != "cartoon":
+            errors.append(f"{prefix}.nucleic_base_scale requires cartoon style")
         reference = style.get("material")
         if isinstance(reference, str) and isinstance(materials, dict) and reference not in materials:
             errors.append(f"{prefix}.material references '{reference}', which is not defined in materials")
@@ -288,6 +290,27 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                 and style.get("ligand_cutout_frame_mode") == "preset"
                 and "ligand_cutout_frame_axes" not in style):
             errors.append(f"{prefix}.ligand_cutout_frame_axes is required when ligand_cutout_frame_mode is preset")
+    world = style_doc.get("world", {})
+    gradients = [("world.gradient_direction", world.get("gradient_direction"))] if isinstance(world, dict) else []
+    geometry = style_doc.get("geometry", {})
+    for name, material in (materials.items() if isinstance(materials, dict) else []):
+        if not isinstance(material, dict):
+            continue
+        gradient = material.get("color_gradient")
+        if isinstance(gradient, dict):
+            gradients.append((f"materials.{name}.color_gradient.direction", gradient.get("direction")))
+        frosted = material.get("frosted")
+        if isinstance(frosted, dict):
+            low, high = frosted.get("opacity_min"), frosted.get("opacity_max")
+            if isinstance(low, (int, float)) and isinstance(high, (int, float)) and low > high:
+                errors.append(f"materials.{name}.frosted.opacity_min must be <= opacity_max")
+        if material.get("color_attribute") == "ElementColor" and not (isinstance(geometry, dict) and geometry.get("element_palette")):
+            errors.append(f"materials.{name}.color_attribute ElementColor requires geometry.element_palette")
+        if material.get("color_attribute") and gradient:
+            errors.append(f"materials.{name}: choose color_attribute or color_gradient, not both")
+    for path, direction in gradients:
+        if isinstance(direction, list) and direction and all(isinstance(v, (int, float)) for v in direction) and not any(direction):
+            errors.append(f"{path} must be nonzero")
     if errors:
         raise StyleValidationError("Style JSON validation failed:\n" + "\n".join("- " + e for e in errors))
     return style_doc

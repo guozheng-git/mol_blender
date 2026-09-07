@@ -1,0 +1,775 @@
+[
+  {
+    "preset": "preset_1_interface",
+    "description": "Soft opaque pastel cartoons with native ligand sticks.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_1_opaque_pastel.json",
+    "preset_file_sha256": "ed0205d2d9219001cfc83ea5c3cf88bf275706ab7a67e1c811e6d7f3ce02deca",
+    "resolved_style_sha256": "a26dcbbc4c1b5f5519265f4c098081bff42bc33b4e205d2031db91f0f0103bf8",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/preset_1_interface.png",
+    "thumbnail_sha256": "e509bf556e4b848254b54719f1cacbeccba876fff9fe69873dad46ed3cd4031d",
+    "full_png_sha256": "d7d5e2809b9e7ef6ea0e965f8df15ee6d841c2451300bf30bf189882d8148cd9",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "preset_2_frosted_blue",
+    "description": "Saturated blue cartoon core with a frosted surface shell.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_2_frosted_blue.json",
+    "preset_file_sha256": "185e96315f86f2fdffe85bf21f0ac31a55ee4b394db63957385a5b18b9503cf5",
+    "resolved_style_sha256": "aded98f1fa80506c2fe37f1be392a0c857d0a9583499dcbe50ddc9af3aea9b74",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/preset_2_frosted_blue.png",
+    "thumbnail_sha256": "c4c9b1768383be476cfa2e4655358beabd2d55aa0c032431f9047c91ac8205bf",
+    "full_png_sha256": "80ee85303e256cf50b7cbb37c14ecfbda7aa4903028c52d5d4bef8570e93ddbf",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "preset_3_black_tubes",
+    "description": "Pastel ribbons and native sticks on black.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_3_black_tubes.json",
+    "preset_file_sha256": "2117f59ec10a431bb7e93be30b877ec5b55088011cae9ea56fed7258a4a9e083",
+    "resolved_style_sha256": "94d1dafb86bcb0dce443cdf4219e6fdbf2ce334940585a35554c0e8260560d89",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/preset_3_black_tubes.png",
+    "thumbnail_sha256": "f99a3ffdd349981667d2e5956c5d8f3241e1960ac02f69304d76675a349a82db",
+    "full_png_sha256": "8b0d58c29660a7549ce74faa831ab1d2deefebf87b972dd1f4a6be97147490be",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "preset_4_milky_green",
+    "description": "Milky green surface, protein ribbons and cyan nucleic acids.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_4_milky_green.json",
+    "preset_file_sha256": "d8816797d3cf5d8694c3fc1f961861db189a189851f3e535432e6e08e65fc01d",
+    "resolved_style_sha256": "73758072bd3a9cdc5130fba8ab9045bdfc954a0f5b831c0a762c711d888a9620",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/preset_4_milky_green.png",
+    "thumbnail_sha256": "9fb943f4017ba070ef95b6d292ced653518732fad2f558ad49ca28efbdbff068",
+    "full_png_sha256": "ebf16faeef6c832269a75b1b88739c3327390a29825cab8bb5bb0181ff80dbd8",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "preset_5_black_interface",
+    "description": "Cartoon and ligand interface on a black background.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_5_black_interface.json",
+    "preset_file_sha256": "b001d0687c1f6ea2a4aa71ee2efc6c826f2bec32a55075411ee992dec3cf92d9",
+    "resolved_style_sha256": "a7bfdf47c2a2608f8cea561885a7e7f13b90223fb8462409ac2959fcc5be4f1f",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/preset_5_black_interface.png",
+    "thumbnail_sha256": "d0e75e1733aeba667534c2adac98ef49d71d46aaadac492088641a3e0d564bd5",
+    "full_png_sha256": "08fc7059026183725711310ffe812b8b2402202922da9540daa82b672f1a89bd",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "dried_paint_green",
+    "description": "Textured matte green paint with rounded ribbon edges.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_dried_paint_green.json",
+    "preset_file_sha256": "2234f766bf27d00cd983f4b17c0ec9cd5f535722bc38b2a8f50a33d43ed3dd8c",
+    "resolved_style_sha256": "87f9f5dfb1d308444fe079b288fc973f63f2297688828f5e7aa82a3cdb0124cf",
+    "dimensions": [
+      960,
+      720
+    ],
+    "samples": 64,
+    "thumbnail": "examples/presets/dried_paint_green.png",
+    "thumbnail_sha256": "fb4fedfb07a23244aab43ac7274f7589cf405f1438065c7c9e8b5400ff2091d2",
+    "full_png_sha256": "acdfd7336dd95105189b3f72ed9280da62c51127996542f0ae96f7fe6f0d4205",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "powder_blue_rounded",
+    "description": "Powder blue rounded protein with pink nucleic acid on black.",
+    "source_id": "8AW3",
+    "coordinate_url": "https://files.rcsb.org/download/8AW3.cif",
+    "coordinate_sha256": "3afd24514166a5d96ad8687bae916f814ff639bd53d557199a25d7486b728d1d",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        0.14490991830825806,
+        -0.4713420569896698,
+        -0.8699642419815063,
+        -0.08808586746454239,
+        0.8696082234382629,
+        -0.4858216345310211,
+        0.9855161309242249,
+        0.14703191816806793,
+        0.08449625968933105,
+        0.0,
+        0.0,
+        -306.9216613769531,
+        119.13481903076172,
+        124.91986846923828,
+        120.96756744384766,
+        241.9793701171875,
+        371.86395263671875,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_powder_blue_rounded.json",
+    "preset_file_sha256": "cab2987aaa11584994f0c2c6cc048f88c60c693797088fdfcc527f179bb08c6c",
+    "resolved_style_sha256": "a0a6c9401656eb1368c76fbb9bc7e1ed8e4bf69ff0e7c3f7f289c2acc0dbf52d",
+    "dimensions": [
+      1600,
+      1341
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/powder_blue_rounded.png",
+    "thumbnail_sha256": "6c7419f34092ac8534d7282f36cb9ca8ce0a234ea723103f815487e96d090902",
+    "full_png_sha256": "b65acba8c0822be83fb1f0c550c2ae50b9fb32286dbd7d2b6632960b3f9ecd27",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false,
+    "reference_match": "Style analogue; original structure identity unconfirmed"
+  },
+  {
+    "preset": "cyan_mint_cutaway",
+    "description": "Cyan and mint surfaces with clean pocket cuts and intact interior ribbons.",
+    "source_id": "8EA6",
+    "coordinate_url": "https://files.rcsb.org/download/8EA6.cif",
+    "coordinate_sha256": "188430cc43f5a9b1310939d37112cae4d7c4d7f5f5f35d6dd746556228820866",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        0.8204584717750549,
+        -0.3102370500564575,
+        0.4802081286907196,
+        0.39895862340927124,
+        -0.2909282147884369,
+        -0.8695951700210571,
+        0.40948647260665894,
+        0.9050482511520386,
+        -0.11492349207401276,
+        0.0,
+        0.0,
+        -225.53919982910156,
+        6.480480194091797,
+        -16.870067596435547,
+        18.158275604248047,
+        189.8877716064453,
+        261.19061279296875,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        1270,
+        1700
+      ]
+    },
+    "preset_json": "blender_render/style_preset_cyan_mint_cutaway.json",
+    "preset_file_sha256": "562582da77067186a359ee0facfec93b1ac9ac451d632cec1f1af288b42b42a0",
+    "resolved_style_sha256": "29d1f0bbbda2378780dd3208b461a270ca123f5d13f38135488b2d48ec50d442",
+    "dimensions": [
+      1600,
+      1072
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/cyan_mint_cutaway.png",
+    "thumbnail_sha256": "19455f234dd3afbd37bdc9ae66c3e1d0d10d5b5f056327e4f54b1fbbf9ee03ae",
+    "full_png_sha256": "5d04b589e98621c7d9f81ad1e7065da4468a1c204f3e23b2d51b7d1598c47827",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "pastel_duplex_rounded",
+    "description": "Rounded green and blue proteins with pink DNA on black.",
+    "source_id": "7PZB",
+    "coordinate_url": "https://files.rcsb.org/download/7PZB.cif",
+    "coordinate_sha256": "d48ccef75b2df04b139cf0fb0e7f5dcd35fe09e1d62e5bdb2b65f55ddabe1ee6",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        -0.9888423681259155,
+        0.06762229651212692,
+        0.1327427476644516,
+        -0.0056318799033761024,
+        -0.9073760509490967,
+        0.42027658224105835,
+        0.14887243509292603,
+        0.4148373305797577,
+        0.8976337909698486,
+        0.0,
+        0.0,
+        -194.02247619628906,
+        11.050090789794922,
+        12.154590606689453,
+        22.3900146484375,
+        134.95729064941406,
+        253.08761596679688,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        2980,
+        1700
+      ]
+    },
+    "preset_json": "blender_render/style_preset_pastel_duplex_rounded.json",
+    "preset_file_sha256": "de6d02bc491dae4985e6729108f37541115488e7ed81378c70287360490956a3",
+    "resolved_style_sha256": "37aa5658198d66d49ed6fc6ca276adf57362d5e87d0d782b78224a683558c140",
+    "dimensions": [
+      1600,
+      1186
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/pastel_duplex_rounded.png",
+    "thumbnail_sha256": "006f57f0aead79df10418280a4aab12d24eea77715f9dfecac1d3dc1c66a2669",
+    "full_png_sha256": "76efd98fe5299e771daa12daae81493699dcde014665dffea9fd0f01931cd710",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "pastel_duplex_cartoon",
+    "description": "Thin blue and green secondary-structure ribbons with pink DNA.",
+    "source_id": "7PZB",
+    "coordinate_url": "https://files.rcsb.org/download/7PZB.cif",
+    "coordinate_sha256": "d48ccef75b2df04b139cf0fb0e7f5dcd35fe09e1d62e5bdb2b65f55ddabe1ee6",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        -0.9888423681259155,
+        0.06762229651212692,
+        0.1327427476644516,
+        -0.0056318799033761024,
+        -0.9073760509490967,
+        0.42027658224105835,
+        0.14887243509292603,
+        0.4148373305797577,
+        0.8976337909698486,
+        0.0,
+        0.0,
+        -194.02247619628906,
+        11.050090789794922,
+        12.154590606689453,
+        22.3900146484375,
+        134.95729064941406,
+        253.08761596679688,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        2980,
+        1700
+      ]
+    },
+    "preset_json": "blender_render/style_preset_pastel_duplex_cartoon.json",
+    "preset_file_sha256": "134a17f1478907e887b3d0c9dfa96eaae14be39792dfbed77de008f4f2809a42",
+    "resolved_style_sha256": "c131926eeb5ae8e0c541cf1ebb90b5348cf7de30b4ab3e681815ffc442e04d1d",
+    "dimensions": [
+      1600,
+      1302
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/pastel_duplex_cartoon.png",
+    "thumbnail_sha256": "8160a9209ccc72e5fcdd342c2a18c549e9d54731921206d1b66292f89b99bb74",
+    "full_png_sha256": "bbc2818500ab4c6ca09ea73d3ee0201155c8ba6c005a3014f9d89358bf4acf0d",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "vivid_binding_site",
+    "description": "Macro ligand view with vivid element colors and teal cartoon context.",
+    "source_id": "1AZM",
+    "coordinate_url": "https://files.rcsb.org/download/1AZM.cif",
+    "coordinate_sha256": "681a49b3b3f1470786b71090867a2fbe11762b8ff0261d15381501fe0e7ec98b",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        0.9025001525878906,
+        0.19844526052474976,
+        0.382247656583786,
+        -0.15710344910621643,
+        0.9780566096305847,
+        -0.13683487474918365,
+        -0.4010140001773834,
+        0.06344106793403625,
+        0.9138725399971008,
+        0.0,
+        0.0,
+        -160.19203186035156,
+        36.672821044921875,
+        14.706785202026367,
+        -12.875786781311035,
+        126.29661560058594,
+        194.0874481201172,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_vivid_binding_site.json",
+    "preset_file_sha256": "8da7eced5a65e18eaad9c0521de18020750b1a6dd5a6379db9216cbb8c369de7",
+    "resolved_style_sha256": "f4f80bc54af7a3cdc369b0c54a04ecbcbdc03de6dd0e4415e13f750d447da90e",
+    "dimensions": [
+      1600,
+      900
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/vivid_binding_site.png",
+    "thumbnail_sha256": "a1ae091769e4a6de3336de8e043f910bca63a87626669088d39f3726764e8b80",
+    "full_png_sha256": "409af97f775432cf6fbf2a2df705accf7a3cfa791da8fa337bd9eb90bd66c71b",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false,
+    "reference_match": "Style analogue; original structure identity unconfirmed"
+  },
+  {
+    "preset": "ivory_lime_frosted",
+    "description": "Ivory frosted grid shell, lime core and cyan nucleic acids.",
+    "source_id": "8AW3",
+    "coordinate_url": "https://files.rcsb.org/download/8AW3.cif",
+    "coordinate_sha256": "3afd24514166a5d96ad8687bae916f814ff639bd53d557199a25d7486b728d1d",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        0.14490991830825806,
+        -0.4713420569896698,
+        -0.8699642419815063,
+        -0.08808586746454239,
+        0.8696082234382629,
+        -0.4858216345310211,
+        0.9855161309242249,
+        0.14703191816806793,
+        0.08449625968933105,
+        0.0,
+        0.0,
+        -306.9216613769531,
+        119.13481903076172,
+        124.91986846923828,
+        120.96756744384766,
+        241.9793701171875,
+        371.86395263671875,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_ivory_lime_frosted.json",
+    "preset_file_sha256": "878b10b8a5534d61ef426b5aab0336ae8bef85b71c08d57a80a92e0d48e6547b",
+    "resolved_style_sha256": "f212d6c5a4226c5e0babc5577db040094974905cc95a695018b23c444c1ee6bd",
+    "dimensions": [
+      1600,
+      900
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/ivory_lime_frosted.png",
+    "thumbnail_sha256": "25e73716a254047c25920aa6fa91d5ddd12981d46e1fc3bfda20ecc4e0924bf1",
+    "full_png_sha256": "feaae34f6db60b8fd4ef0d8d4f9a984b610daaf9a0f1bf4622a774ed38abcdbf",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false,
+    "reference_match": "Style analogue; original structure identity unconfirmed"
+  },
+  {
+    "preset": "mint_sky_assembly",
+    "description": "Mint and sky protein assembly with purple and pink nucleic acids.",
+    "source_id": "8AA5",
+    "coordinate_url": "https://files.rcsb.org/download/8AA5.cif",
+    "coordinate_sha256": "ad16567b4e7e82380f873676f47d450c5ed80be46b606c3a9f34d3b4e0c22787",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        -0.34897303581237793,
+        -0.9367024302482605,
+        0.02836889773607254,
+        0.9371317028999329,
+        -0.34877660870552063,
+        0.011754069477319717,
+        -0.001116910483688116,
+        0.03068605810403824,
+        0.9995257258415222,
+        0.0,
+        0.0,
+        -415.93499755859375,
+        172.4992218017578,
+        174.8553466796875,
+        165.4330596923828,
+        327.92633056640625,
+        503.94366455078125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        1270,
+        1700
+      ]
+    },
+    "preset_json": "blender_render/style_preset_mint_sky_assembly.json",
+    "preset_file_sha256": "cb7b7e5d1c19341b17aa9f0729d98d5bdf01b1af6d747c16187d95bd7f430756",
+    "resolved_style_sha256": "6c8fd0be3cf7198b3c800ade2366a6063e3e8cb78f0de0a3dc70c7c53045a9ca",
+    "dimensions": [
+      1600,
+      900
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/mint_sky_assembly.png",
+    "thumbnail_sha256": "c12487a10dbf3cae6ab2d4c5f4a5d348bd485c59b179200279e82898adffca06",
+    "full_png_sha256": "8af1bcee9104fe23289f882103c0876101866822eabfd026c2a50e2e9f7740b8",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  },
+  {
+    "preset": "neon_duplex_hero",
+    "description": "Green protein and gradient nucleic acids against a pink-cyan background.",
+    "source_id": "7PZB",
+    "coordinate_url": "https://files.rcsb.org/download/7PZB.cif",
+    "coordinate_sha256": "d48ccef75b2df04b139cf0fb0e7f5dcd35fe09e1d62e5bdb2b65f55ddabe1ee6",
+    "source_pose": "public coordinates with the example view below",
+    "view": {
+      "pymol_view": [
+        -0.9888423681259155,
+        0.06762229651212692,
+        0.1327427476644516,
+        -0.0056318799033761024,
+        -0.9073760509490967,
+        0.42027658224105835,
+        0.14887243509292603,
+        0.4148373305797577,
+        0.8976337909698486,
+        0.0,
+        0.0,
+        -194.02247619628906,
+        11.050090789794922,
+        12.154590606689453,
+        22.3900146484375,
+        134.95729064941406,
+        253.08761596679688,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        2980,
+        1700
+      ]
+    },
+    "preset_json": "blender_render/style_preset_neon_duplex_hero.json",
+    "preset_file_sha256": "f41e4788878acfa0056fff21f5017a6e9694746be5100d333059d56aba280f11",
+    "resolved_style_sha256": "bab093ef70809cd355298cbe80dc9bcb944066782f558d86218c01e9891260d2",
+    "dimensions": [
+      1600,
+      900
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/neon_duplex_hero.png",
+    "thumbnail_sha256": "508c13212290a2f0c142c6d1b71865737705ea2ccd48e5ae5ce47a670bde9ce2",
+    "full_png_sha256": "cf78e9d60238464c77bf1c33d159c8381827465ac6e1fa54c7b0666303b0e23b",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false
+  }
+]

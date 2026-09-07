@@ -5,7 +5,7 @@ import copy
 import json
 from pathlib import Path
 
-# No new visual presets. User/project persistence belongs to the developer loop.
+# Existing preset identifiers stay stable; reference styles use distinct identifiers.
 _PRESETS = (
     ("preset_1_interface", "style_preset_1_opaque_pastel.json", "01_opaque_pastel_ses_interface.png",
      "Soft opaque pastel cartoons with native ligand sticks.", ("pastel",), "clay"),
@@ -19,6 +19,22 @@ _PRESETS = (
      "Cartoon and ligand interface on a black background.", ("black_interface",), "clay"),
     ("dried_paint_green", "style_preset_dried_paint_green.json", "dried_paint_green.png",
      "Textured matte green paint with rounded ribbon edges.", ("green_paint", "dried-paint-green"), "dried_paint"),
+    ('powder_blue_rounded', 'style_preset_powder_blue_rounded.json', 'reference_01.png',
+     'Powder blue rounded protein with pink nucleic acid on black.', ('reference_01',), 'clay'),
+    ('cyan_mint_cutaway', 'style_preset_cyan_mint_cutaway.json', 'reference_02.png',
+     'Cyan and mint surfaces with clean pocket cuts and intact interior ribbons.', ('reference_02',), 'clay'),
+    ('pastel_duplex_rounded', 'style_preset_pastel_duplex_rounded.json', 'reference_03.png',
+     'Rounded green and blue proteins with pink DNA on black.', ('reference_03',), 'clay'),
+    ('pastel_duplex_cartoon', 'style_preset_pastel_duplex_cartoon.json', 'reference_04.png',
+     'Thin blue and green secondary-structure ribbons with pink DNA.', ('reference_04',), 'clay'),
+    ('vivid_binding_site', 'style_preset_vivid_binding_site.json', 'reference_05.png',
+     'Macro ligand view with vivid element colors and teal cartoon context.', ('reference_05',), 'clay'),
+    ('ivory_lime_frosted', 'style_preset_ivory_lime_frosted.json', 'reference_06.png',
+     'Ivory frosted grid shell, lime core and cyan nucleic acids.', ('reference_06',), 'frosted'),
+    ('mint_sky_assembly', 'style_preset_mint_sky_assembly.json', 'reference_07.png',
+     'Mint and sky protein assembly with purple and pink nucleic acids.', ('reference_07',), 'clay'),
+    ('neon_duplex_hero', 'style_preset_neon_duplex_hero.json', 'reference_08.png',
+     'Green protein and gradient nucleic acids against a pink-cyan background.', ('reference_08',), 'clay'),
 )
 DEFAULT_PRESET = "preset_1_interface"
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
@@ -42,6 +58,26 @@ def required_capabilities(style: dict) -> list[str]:
     required.update("material.dried_paint" if "paint" in material else "material.clay" for material in style["materials"].values())
     if style.get("geometry", {}).get("edge_rounding", {}).get("radius_angstrom", 0) > 0:
         required.add("geometry.edge_rounding")
+    for material in style["materials"].values():
+        for field, capability in (("frosted", "material.frosted_grid"), ("color_gradient", "material.color_gradient"), ("color_attribute", "material.attribute_color")):
+            if field in material:
+                required.add(capability)
+    if "element_palette" in style.get("geometry", {}):
+        required.add("geometry.element_palette")
+    world = style.get("world", {})
+    if "gradient_direction" in world:
+        required.add("world.directional_gradient")
+    if "ambient_color" in world or "ambient_strength" in world:
+        required.add("world.separate_illumination")
+    camera = style.get("camera", {})
+    if any(key in camera for key in ("fit", "roll_deg", "ortho_scale_angstrom", "projection")):
+        required.add("camera.reference_framing")
+    if any("surface_scale_radius" in entry or "surface_relaxation_steps" in entry for entry in style["styles"]):
+        required.add("representation.surface_smoothing")
+    if any(entry.get("color_by_chain") is False for entry in style["styles"]):
+        required.add("material.uniform_polymer_color")
+    if any("nucleic_base_scale" in entry for entry in style["styles"]):
+        required.add("representation.nucleic_base_thickness")
     return sorted(required)
 
 

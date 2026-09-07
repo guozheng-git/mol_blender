@@ -1,0 +1,193 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "filename": "reference_04.png",
+    "width": 1600,
+    "height": 1302,
+    "samples": 128,
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "view_transform": "Standard",
+    "look": "None",
+    "exposure": 0,
+    "gamma": 1,
+    "denoise": true,
+    "seed": 19
+  },
+  "camera": {
+    "mode": "override",
+    "direction_source": "preset",
+    "yaw_deg": 17.413858446592485,
+    "pitch_deg": -22.432006473625897,
+    "roll_deg": 100.13178095375372,
+    "fit": true,
+    "fit_margin": 1.08,
+    "world_scale": 0.01,
+    "distance_scale": 3.1,
+    "projection": "ORTHO"
+  },
+  "world": {
+    "background_type": "solid",
+    "color": "#000000",
+    "strength": 0.4,
+    "ambient_color": "#FFFFFF",
+    "ambient_strength": 0.25
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 121.125,
+      "relative_vector": [
+        -1.7,
+        2.2,
+        3
+      ],
+      "size_scale": 2.8,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 48.449999999999996,
+      "relative_vector": [
+        2,
+        -0.4,
+        3
+      ],
+      "size_scale": 3.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#DDEEFF"
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 72.675,
+      "relative_vector": [
+        0,
+        2,
+        -2
+      ],
+      "size_scale": 2.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    }
+  ],
+  "materials": {
+    "blue": {
+      "base_color": "#73C8F2",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#73C8F2",
+      "highlight_color": "#73C8F2",
+      "rim_strength": 0.03
+    },
+    "green": {
+      "base_color": "#68D856",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#68D856",
+      "highlight_color": "#68D856",
+      "rim_strength": 0.03
+    },
+    "pink": {
+      "base_color": "#E172CE",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#E172CE",
+      "highlight_color": "#E172CE",
+      "rim_strength": 0.03
+    },
+    "ligand": {
+      "base_color": "#AE60DA",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#AE60DA",
+      "highlight_color": "#AE60DA",
+      "rim_strength": 0.03
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_blue",
+      "style": "cartoon",
+      "material": "blue",
+      "selection": {
+        "query": "polymer and not nucleic and not chain B,BP1,DP1"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "protein_green",
+      "style": "cartoon",
+      "material": "green",
+      "selection": {
+        "query": "polymer and not nucleic and chain B,BP1,DP1"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "nucleic",
+      "style": "cartoon",
+      "material": "pink",
+      "selection": {
+        "query": "nucleic"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "nucleic_radius": 0.8,
+      "nucleic_width": 0.6,
+      "nucleic_thickness": 0.25,
+      "base_shape": "Cylinder",
+      "color_by_chain": false,
+      "nucleic_base_scale": 0.45
+    },
+    {
+      "name": "ligand",
+      "style": "sticks",
+      "material": "ligand",
+      "selection": {
+        "query": "ligand and not resn HOH,WAT,DOD,SOL,NA,K,CL,CA,MG,ZN"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "radius": 0.3,
+      "color_by_chain": false
+    }
+  ]
+}

@@ -253,7 +253,7 @@ def expand_polymer_styles_for_multichain_palette(
         if not isinstance(style_cfg, dict):
             continue
         style_copy = json.loads(json.dumps(style_cfg))
-        if not style_targets_polymer(style_copy):
+        if not style_targets_polymer(style_copy) or not style_copy.get("color_by_chain", True):
             expanded_styles.append(style_copy)
             continue
 
