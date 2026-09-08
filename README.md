@@ -6,6 +6,8 @@ This is the **private 0.2.0b1 beta**. The repository and release artifacts remai
 
 The renderer pins **Blender 5.0.1**, **Molecular Nodes 4.5.10**, and **Python 3.11**. Preset 1 remains the default pastel style. `dried_paint_green` adds pigment variation, surface relief, and rounded ribbon edges. Output is a PNG plus a provenance manifest, with an optional `.blend` download. Animation and interactive 3D editing are outside this beta.
 
+To extend the engine in a trusted checkout, use the [local developer workflow](docs/developer-workflow.md): edit Python and JSON, preview fresh source, compare images, and save named presets. The depth-of-field example includes separate Python-change and JSON-control checks.
+
 ## Preset gallery
 
 Choose the identifier beneath an image: `blender_render preset=cyan_mint_cutaway` in PyMOL, or `blender-render render pose.pse --preset cyan_mint_cutaway -o pocket.png` from the CLI. Each name links to its editable JSON. All previews below are actual local Blender renders of public structures.

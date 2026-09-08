@@ -65,7 +65,7 @@ def test_saved_pose_default_and_explicit_camera_precedence(bundle):
     assert default["output"]["height"] == round(default["output"]["width"] * .75)
     assert resolve_options({"preserve_view": False}, bundle)["style_doc"]["camera"] == preset()["camera"]
     document = preset()
-    document["camera"].update(mode="override", lens_mm=85, yaw_deg=46, shift_x=.2)
+    document["camera"].update(mode="override", direction_source="preset", lens_mm=85, yaw_deg=46, shift_x=.2)
     # Even explicitly passing the preservation default cannot erase explicit JSON.
     custom = resolve_options({"style_doc": document, "preserve_view": True}, bundle)
     assert custom["style_doc"]["camera"] == document["camera"]
@@ -81,7 +81,7 @@ def test_output_precedence_and_policy(bundle):
     assert request["style_doc"]["output"]["width"] == 800
     assert request["style_doc"]["output"]["height"] == 300
     custom = preset()
-    custom["camera"].update(mode="override", yaw_deg=41)
+    custom["camera"].update(mode="override", direction_source="preset", yaw_deg=41)
     public = resolve_options({"style_doc": custom}, bundle, public=True)
     assert public["style_doc"]["camera"] == custom["camera"]
     assert public["style_doc"]["renderer"]["require_gpu"] is True
@@ -222,7 +222,7 @@ def test_custom_surface_through_adapter_to_worker(adapter, bundle, tmp_path, mon
     monkeypatch.setenv("BLENDER_RENDER_HOME", str(tmp_path / "config"))
     document = surface_style()
     document["output"]["save_blend"] = True  # JSON itself explicitly requests scene
-    document["camera"].update(mode="override", yaw_deg=21, lens_mm=83)
+    document["camera"].update(mode="override", direction_source="preset", yaw_deg=21, lens_mm=83)
     style_file = tmp_path / "style_preset_1_opaque_pastel.json"
     style_file.write_text(json.dumps(document))
     overrides = tmp_path / "overrides.json"
@@ -262,6 +262,41 @@ def test_omitted_and_explicit_defaults_have_one_specification(bundle):
     defaults = {"preset": "preset_1_interface", "rough": False, "raw_view": False,
                 "color_follow": False, "save_blend": False, "keep_temp": False, "preserve_view": True}
     assert resolve_options({}, bundle) == resolve_options(defaults, bundle)
+
+
+def test_absolute_angle_override_selects_consuming_camera(bundle):
+    options = {"preset": "pastel", "preserve_view": True,
+               "overrides": {"camera": {"yaw_deg": 30, "pitch_deg": 12}}}
+    resolved = resolve_options(options, bundle)
+    camera = resolved["style_doc"]["camera"]
+    assert camera["direction_source"] == "preset" and camera["mode"] == "override"
+    full = preset()
+    full["camera"].update(direction_source="preset", yaw_deg=30, pitch_deg=12)
+    assert resolve_options({"style_doc": full}, bundle)["style_doc"] == resolved["style_doc"]
+    options["overrides"]["camera"]["direction_source"] = "pymol"
+    with pytest.raises(core.StyleValidationError, match="direction_source=preset"):
+        resolve_options(options, bundle)
+    full["camera"]["direction_source"] = "pymol"
+    with pytest.raises(core.StyleValidationError, match="direction_source=preset"):
+        resolve_options({"style_doc": full}, bundle)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_color_follow_explicit_false_and_gateway_parity(bundle, enabled):
+    style = preset()
+    style["color_follow"] = {"enabled": True, "mix": 0.37}
+    outer = resolve_options({"style_doc": style, "color_follow": enabled}, bundle)
+    assert outer["style_doc"]["color_follow"] == {"enabled": enabled, "mix": 0.37}
+    forwarded = {k: outer[k] for k in ("style_doc", "rough", "raw_view", "color_follow", "save_blend")}
+    inner = resolve_options(forwarded, bundle)
+    assert inner["render_spec"]["sha256"] == outer["render_spec"]["sha256"]
+    assert style["color_follow"]["enabled"] is True
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_dead_camera_control_is_rejected(value, bundle):
+    with pytest.raises(core.StyleValidationError, match="anchor_model_center"):
+        resolve_options({"overrides": {"camera": {"anchor_model_center": value}}}, bundle)
 
 
 @pytest.mark.parametrize("transport", ["stdio", "http"])

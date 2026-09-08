@@ -132,6 +132,29 @@ def test_private_health_and_compatibility_routes_require_owner(tmp_path, payload
     store.close()
 
 
+def test_legacy_render_uses_shared_options_and_rejects_unknown(tmp_path, payload):
+    store = JobStore(tmp_path)
+    captured = []
+    class Capture(Compute):
+        def render(self, request, *args):
+            captured.append(request)
+            return super().render(request, *args)
+    service = RenderService(store, Capture())
+    headers = {'Authorization': 'Bearer ' + TOKEN}
+    options = {'preset': 'pastel', 'keep_temp': True,
+               'overrides': {'camera': {'yaw_deg': 30}, 'output': {'width': 321}}}
+    with TestClient(create_app(service, token=TOKEN)) as client:
+        result = client.post('/render', headers=headers, json={'payload': payload, **options})
+        assert result.status_code == 200, result.text
+        expected = prepare_options(options, payload, public=False, timeout=600)
+        assert captured[0]['style_doc'] == expected['style_doc']
+        assert captured[0]['keep_temp'] is True
+        result = client.post('/render', headers=headers, json={'payload': payload, 'unknown_option': True})
+        assert result.status_code == 400 and 'unknown_option' in result.text
+        assert len(captured) == 1
+    store.close()
+
+
 def test_raw_file_upload_uses_converter_and_rejects_malformed_before_compute(tmp_path, payload):
     store = JobStore(tmp_path)
     compute = Compute()

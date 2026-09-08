@@ -16,6 +16,7 @@ def parser():
     p = argparse.ArgumentParser(prog="blender-render")
     p.add_argument("--version", action="version", version=VERSION)
     commands = p.add_subparsers(dest="command", required=True)
+    commands.add_parser("dev", help="Trusted local source previews and preset authoring (dev --help)")
     setup = commands.add_parser("setup", help="Configure the local Blender and PyMOL runtimes")
     setup.add_argument("--blender", default="")
     setup.add_argument("--pymol-python", default="")
@@ -295,6 +296,10 @@ def legacy_runner(argv=None):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "dev":
+        from .developer import main as developer_main
+        return developer_main(argv[1:])
     try:
         result = execute(parser().parse_args(argv))
         if result is not None:

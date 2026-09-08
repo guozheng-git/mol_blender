@@ -1,0 +1,90 @@
+{
+  "cases": {
+    "older_controller": {
+      "exit": 0,
+      "controller_schema_sha256": "9ee699aba4ee6e28ed20f96338d3ce50376ffbf7694f3931050d5e484ecb28cd",
+      "source_sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "spec_sha256": "f780752b05800ba1efdf9a3ae7be8983d4aa949b2a3e5a49f7692ff0c6c32bf6",
+      "pid": 82085,
+      "png_sha256": "853fd28ab336ca3c192c86a11016b585117d71f68bcc909e92077b21ddaadafb",
+      "catalog_snapshot": {
+        "id": "user/macro",
+        "sha256": "35cc7882299936b7a6503f722bf94ce40edbd9873feaa71ca98528b2dd0f12cf"
+      }
+    },
+    "builtin_pose": {
+      "exit": 0,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "source_sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "spec_sha256": "7fea0e35872bb53083eb19e629e72853dd64b294883fe1aa62152689b3f7af78",
+      "pid": 82191,
+      "png_sha256": "1b499d4b774a6315251c6eab0b312fe5b299aae3d2310a8af64d51f0786d3cff",
+      "catalog_snapshot": null
+    },
+    "local_pose": {
+      "exit": 0,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "source_sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "spec_sha256": "7fea0e35872bb53083eb19e629e72853dd64b294883fe1aa62152689b3f7af78",
+      "pid": 82261,
+      "png_sha256": "f61b4568727c7eca0f1032fd33241ed0d917b2534df6ac69508f82b37df710bb",
+      "catalog_snapshot": {
+        "id": "user/pastel",
+        "sha256": "c22e4641315c3796a2eb4bf92389cab020cd0d33ed1033b6a37c21bde8140ca3"
+      }
+    },
+    "older_checkout": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "Additional properties are not allowed"
+    },
+    "incompatible_policy": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "cannot discard"
+    },
+    "malformed": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "Expecting property name"
+    },
+    "wrong_id": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "identity/format"
+    },
+    "wrong_digest": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "digest mismatch"
+    },
+    "missing_policy": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "camera_policy"
+    },
+    "invalid_policy": {
+      "exit": 1,
+      "controller_schema_sha256": "8098a4997d5421ec1cfafb07e0228b4a4bb9cd2f8017775757f8ae770d1f5193",
+      "rejected_before_blender": true,
+      "expected_error": "camera_policy"
+    }
+  },
+  "source_sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+  "parity": {
+    "camera_and_spec_equal": true,
+    "resolution": [
+      480,
+      360
+    ],
+    "mean_rgba_difference": 1.4467592592592592e-06,
+    "png_only": true
+  },
+  "controller_test": "Simulated older schema: isolated copy of the installed wheel with only camera.depth_of_field removed from its schema."
+}

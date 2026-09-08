@@ -23,7 +23,8 @@ class _FakeHTTPResponse:
         return self._data
 
 
-def test_legacy_client_uses_async_api_without_resubmission(monkeypatch):
+@pytest.mark.parametrize('explicit', [False, True])
+def test_legacy_client_uses_async_api_without_resubmission(monkeypatch, explicit):
     from blender_render.client import Client
     calls = []
     def request(self, method, path, body=None, *, binary=False):
@@ -46,12 +47,18 @@ def test_legacy_client_uses_async_api_without_resubmission(monkeypatch):
         payload={"view": {"pymol_view": [0.0] * 18}, "cif_text": "data_test\n", "pdb_text": "ATOM 1"},
         preset="preset_1_interface",
         timeout=33,
+        **({'color_follow': False, 'raw_view': False, 'save_blend': False} if explicit else {}),
     )
 
     assert result["status"] == "completed"
     submits = [body for method, path, body in calls if path == '/v1/jobs']
     assert len(submits) == 1
     assert submits[0]['options']['preset'] == 'preset_1_interface'
+    for key in ('color_follow', 'raw_view', 'save_blend'):
+        if explicit:
+            assert submits[0]['options'][key] is False
+        else:
+            assert key not in submits[0]['options']
     assert base64.b64decode(result['png_base64']) == b'pngdata'
 
 

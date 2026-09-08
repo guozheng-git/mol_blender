@@ -62,3 +62,15 @@ def test_interactive_attach_and_options_use_same_command(adapter):
     plugin.blender_render(mode='interactive', profile='lab', attach_only=1, color_follow=1, keep_temp=1, save_blend=1)
     assert adapter[0][1] == 'lab' and adapter[0][2]['attach_only']
     assert all(adapter[2][1][k] for k in ['color_follow','keep_temp','save_blend'])
+
+
+@pytest.mark.parametrize('explicit', [False, True])
+def test_optional_boolean_defaults_do_not_override_json(adapter, explicit):
+    kwargs = {'color_follow': 0, 'raw_view': 0} if explicit else {}
+    plugin.blender_render(**kwargs)
+    options = next(item[1] for item in adapter if item[0] == 'submit')
+    for key in ('color_follow', 'raw_view'):
+        if explicit:
+            assert options[key] is False
+        else:
+            assert key not in options

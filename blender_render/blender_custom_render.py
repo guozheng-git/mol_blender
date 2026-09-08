@@ -3720,6 +3720,23 @@ def _apply_override_camera(
         data.clip_end = max(data.clip_start + 1.0, distance + radius * 6.0)
 
 
+def _configure_depth_of_field(camera: bpy.types.Object, camera_cfg: dict[str, Any]) -> None:
+    """Opt-in photographic focus; MN molecular geometry uses 0.01 BU per angstrom.
+
+    Focus distance is measured along the optical axis from the final camera,
+    independently of the view-transfer world_scale and framing target.
+    """
+    cfg = camera_cfg.get("depth_of_field")
+    camera.data.dof.use_dof = cfg is not None
+    if cfg is None:
+        return
+    if camera.data.type != "PERSP":
+        raise ValueError("camera.depth_of_field requires a perspective camera")
+    camera.data.dof.focus_object = None
+    camera.data.dof.focus_distance = float(cfg["focus_distance_angstrom"]) * 0.01
+    camera.data.dof.aperture_fstop = float(cfg.get("f_stop", 2.8))
+
+
 def _style_result_is_empty(style_result: Any) -> bool:
     if style_result is None:
         return True
@@ -4469,6 +4486,7 @@ def _render(args: argparse.Namespace) -> None:
             style_centers_by_name=style_centers_by_name,
         )
 
+    _configure_depth_of_field(camera, camera_cfg)
     light_target, light_radius = _scene_bounds(created_objects)
     yaw_offset_for_lights = 0.0
     if isinstance(camera_cfg, dict):
@@ -4534,6 +4552,11 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc["camera_matrix_world"] = [list(row) for row in camera.matrix_world]
             manifest_doc["camera_type"] = camera.data.type
             manifest_doc["camera_ortho_scale"] = camera.data.ortho_scale
+            manifest_doc["camera_depth_of_field"] = {
+                "enabled": camera.data.dof.use_dof,
+                "focus_distance_angstrom": camera.data.dof.focus_distance / 0.01,
+                "f_stop": camera.data.dof.aperture_fstop,
+            }
             manifest_doc["resolution"] = [scene.render.resolution_x, scene.render.resolution_y]
             manifest_doc["rounded_objects"] = rounded_objects
             manifest_doc["ligand_backend"] = runtime_ligand_backend

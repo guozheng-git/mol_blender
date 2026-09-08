@@ -48,9 +48,9 @@ def submit_render(
     preset: str = "",
     style_doc: dict[str, Any] | None = None,
     rough: bool = False,
-    raw_view: bool = False,
-    color_follow: bool = False,
-    save_blend: bool = False,
+    raw_view: bool | None = None,
+    color_follow: bool | None = None,
+    save_blend: bool | None = None,
     blend_output: str = "",
     keep_temp: bool = False,
     output_name: str = "",
@@ -58,7 +58,12 @@ def submit_render(
 ) -> dict[str, Any]:
     from .client import Client, ClientError
     client = Client(_normalize_base_url(host, int(port)), os.environ.get("BLENDER_RENDER_TOKEN", ""), timeout)
-    options = dict(rough=bool(rough), raw_view=bool(raw_view), color_follow=bool(color_follow), save_blend=bool(save_blend), keep_temp=bool(keep_temp))
+    options = dict(rough=bool(rough), keep_temp=bool(keep_temp))
+    for key, value in (("raw_view", raw_view), ("color_follow", color_follow), ("save_blend", save_blend)):
+        if value is not None:
+            options[key] = value
+    if blend_output:
+        options["save_blend"] = True
     if style_doc is not None:
         options["style_doc"] = style_doc
     elif preset:

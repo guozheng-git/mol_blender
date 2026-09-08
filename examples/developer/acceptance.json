@@ -1,0 +1,664 @@
+{
+  "cases": {
+    "focus": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "271c51c5c500468790446e5b6bf11f39969cb62cafabbe608fae87a6aa0a34b1",
+        "preset_source": {
+          "kind": "full_json"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "ca9f66b8d23b690a6fc205d178a5d7c8cbe57beb7238de741524b2396daf53af",
+      "png_sha256": "712f3759c18c7da9d14ff8e67ba7116bb8574624c999ebf238f95835c4d14cd8",
+      "cache_hit": false,
+      "pid": 81737,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 81.99999928474426,
+          "f_stop": 0.5
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "json_aperture": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "834554bc07dd9e9cea10afbc1bcf95d9572998f48de016055ae743b45d20e19a",
+        "preset_source": {
+          "kind": "full_json"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "f9b39e3076b4336483dd07162120f212d3ef5f2ee01069645e6804cb89dff929",
+      "png_sha256": "13baee6a289c2fa7b62cefdcef1482b295f1a48a647b1dfc890cdec17c618948",
+      "cache_hit": false,
+      "pid": 81813,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 81.99999928474426,
+          "f_stop": 8.0
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "json_focus": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "b3dea62bc2c979259c78a8823aa007d1943ca0433bb6f643d10bc0b5433c47d0",
+        "preset_source": {
+          "kind": "full_json"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "d7c1a697ec297d96b55205ff162d7e2878c1339c983c5883da095735d6646cfd",
+      "png_sha256": "5d26150c72f5ec967c8c3bad96b99b0cd5ce4fd9a64fdcd1e1d32ff444f587cc",
+      "cache_hit": false,
+      "pid": 81829,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 64.99999761581421,
+          "f_stop": 0.5
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "json_default": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "35e8d13cc804bad026a1b010ca77b606b54743d7a28348ac92ac49074d9067e6",
+        "preset_source": {
+          "kind": "full_json"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "f6a9a28fc5d0342be57bce7be08018eee88102d839d846d1e30181c3954d84ba",
+      "png_sha256": "864c7caed10f80a573f70ef0386c2b88d04516e0066f22571af2c74ce1b42851",
+      "cache_hit": false,
+      "pid": 81887,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 81.99999928474426,
+          "f_stop": 2.799999952316284
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "python_change": {
+      "sha256": "2ea41a411da6345d38a40686a11d8776ea32d41bbfa69afc90122c9c716c8c9e",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "271c51c5c500468790446e5b6bf11f39969cb62cafabbe608fae87a6aa0a34b1",
+        "preset_source": {
+          "kind": "full_json"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "1adf28d89435c9c232d6e27e0682c07d1b726d9e8018231df323afb13ec6a680",
+      "png_sha256": "cac374e72c042ad09d6af2f120faff81020e7c29ca30431df20e508be976347e",
+      "cache_hit": false,
+      "pid": 81973,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 81.99999928474426,
+          "f_stop": 8.0
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "saved_restart": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "271c51c5c500468790446e5b6bf11f39969cb62cafabbe608fae87a6aa0a34b1",
+        "preset_source": {
+          "kind": "user",
+          "id": "user/macro-focus",
+          "revision": 1,
+          "sha256": "d88bde07a62110a61eb7be88a2bbfba93da00f44bd69f27d1989e76d1cabc75c",
+          "camera_policy": "authored"
+        },
+        "required_capabilities": [
+          "camera.depth_of_field",
+          "camera.reference_framing",
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "ca9f66b8d23b690a6fc205d178a5d7c8cbe57beb7238de741524b2396daf53af",
+      "png_sha256": "7f955b2964cc514936a2985a0bd7eae8e53fad50b83600eeb3632a035a5516c0",
+      "cache_hit": false,
+      "pid": 82022,
+      "scene": {
+        "geometry_sha256": "dca7bdae5539f06f4e234952ec5335d1ce5d3f7af23e39abc9426d3afe535f21",
+        "vertices": 73454,
+        "depth_quantiles_angstrom": [
+          60.5911865234375,
+          79.34492874145508,
+          82.2020263671875,
+          84.67473602294922,
+          91.68062591552734
+        ],
+        "camera_matrix": [
+          [
+            0.7286985516548157,
+            -0.6336626410484314,
+            -0.2597499489784241,
+            0.5374575853347778
+          ],
+          [
+            0.603646993637085,
+            0.4151863753795624,
+            0.6806104779243469,
+            1.4469236135482788
+          ],
+          [
+            -0.3234328329563141,
+            -0.6527570486068726,
+            0.6850543022155762,
+            0.8353232145309448
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "camera_type": "PERSP",
+        "depth_of_field": {
+          "enabled": true,
+          "focus_distance_angstrom": 81.99999928474426,
+          "f_stop": 0.5
+        },
+        "resolution": [
+          640,
+          480
+        ],
+        "seed": 7,
+        "samples": 128
+      }
+    },
+    "pastel": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "c0417f8f1b669f3cd9c8a2df34a1a9311caa8445a3ca9fe510f4594a73125997",
+        "preset_source": {
+          "kind": "builtin",
+          "id": "preset_1_interface",
+          "revision": "1",
+          "source_json": "style_preset_1_opaque_pastel.json"
+        },
+        "required_capabilities": [
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "b86211cad2191b656c54b6cfe5fe3f703f0a2b489942b7b49eb189da43256c57",
+      "png_sha256": "497aecd915abc70522f636d7ef1f1303f2064196233e3a11a42e6fc6a3a8cde5",
+      "cache_hit": false,
+      "pid": 82083
+    },
+    "green_paint": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "f93e4a9628fd499bf1c91dabda40215bed234559b847da99709c147a2a8b7de9",
+        "preset_source": {
+          "kind": "builtin",
+          "id": "dried_paint_green",
+          "revision": "1",
+          "source_json": "style_preset_dried_paint_green.json"
+        },
+        "required_capabilities": [
+          "geometry.edge_rounding",
+          "material.dried_paint",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "9802216c76a0a6ff10cbf10248d42ff5dfcd4bf643b354f04102b764872cc5eb",
+      "png_sha256": "2e4624f5c3a751f83fb91d7ac3bf3e29efbe8b3d131ab6deaf8806ceb35966fe",
+      "cache_hit": false,
+      "pid": 82189
+    },
+    "json_palette": {
+      "sha256": "a23861ec92c26e68000f6dcb8bc6b8677253336e3d70503d28fa569b4dcb7b58",
+      "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+      "render_spec": {
+        "schema_version": "1.0",
+        "sha256": "6378bc9696eab3fdb3e1b340c06eafc419fb35f107bbdf288cf825972fcafd6f",
+        "preset_source": {
+          "kind": "builtin",
+          "id": "preset_1_interface",
+          "revision": "1",
+          "source_json": "style_preset_1_opaque_pastel.json"
+        },
+        "required_capabilities": [
+          "material.clay",
+          "representation.cartoon",
+          "representation.spheres",
+          "representation.sticks"
+        ]
+      },
+      "preview_key": "4570a787da1e304e6520869e3b794fe339d31030d7816b1a9404d64a75ffb6b2",
+      "png_sha256": "be7bf7fb3e35944d15820350c5cfc4d319ac367f497cd045b9b81a2a87dfb256",
+      "cache_hit": false,
+      "pid": 82263
+    }
+  },
+  "checks": {
+    "fixed_json_python_change": true,
+    "fixed_python_json_controls": true,
+    "unchanged_geometry_and_camera": true,
+    "distinct_fresh_processes": true,
+    "restarted_saved_preset": true,
+    "legacy_styles_png_only": true,
+    "image_comparisons": {
+      "aperture_mean_difference": 2.3917686631944446,
+      "focus_mean_difference": 3.4347243923611113,
+      "python_vs_equivalent_json": 7.595486111111111e-06,
+      "restart_vs_original": 4.340277777777778e-06,
+      "open_aperture_edge_energy": 4.238912371235065,
+      "closed_aperture_edge_energy": 9.03632228206477
+    }
+  },
+  "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
+  "python_mutation": {
+    "file": "blender_render/blender_custom_render.py",
+    "before": "camera.data.dof.aperture_fstop = float(cfg.get(\"f_stop\", 2.8))",
+    "after": "camera.data.dof.aperture_fstop = float(cfg.get(\"f_stop\", 2.8)) * 16.0",
+    "applied_only_to_temporary_source": true
+  },
+  "references": {
+    "existing_override": {
+      "visual_brief": {
+        "reference": {
+          "sha256": "be7bf7fb3e35944d15820350c5cfc4d319ac367f497cd045b9b81a2a87dfb256",
+          "dimensions": [
+            640,
+            480
+          ]
+        },
+        "observation_source": "developer image inspection",
+        "representations": [
+          "cartoon",
+          "sticks"
+        ],
+        "material_family": "clay",
+        "base_preset": "builtin/preset_1_interface",
+        "palette": [
+          "#729ECC",
+          "#F97BB4"
+        ],
+        "background": "Pale blue gray",
+        "lighting": "Soft highlights",
+        "edges": "Smooth ribbons and round sticks",
+        "composition": "One compact protein and a highlighted ligand",
+        "ligand_treatment": "Pink sticks",
+        "required_capabilities": [],
+        "overrides": {
+          "materials": {
+            "inner_chain_a": {
+              "base_color": "#729ECC"
+            }
+          }
+        }
+      },
+      "preset_decision": {
+        "preset_id": "builtin/preset_1_interface",
+        "preset_revision": "1",
+        "fit": "high",
+        "overrides": {
+          "materials": {
+            "inner_chain_a": {
+              "base_color": "#729ECC"
+            }
+          }
+        },
+        "reasons": [
+          "Developer selected the base after image inspection",
+          "Existing design plus supported parameter overrides"
+        ],
+        "unmatched_features": [],
+        "unsupported_requirements": [],
+        "new_preset_recommended": false,
+        "route": "preset-overrides",
+        "resolved_spec_sha256": "5d620e1dcc738b9feedf9be51a0c25191378b98dc4c7875866ed0fe84b286b9f",
+        "limitations": "Agent observations and a simple catalog rank; no exact-match or automatic vision claim."
+      }
+    },
+    "new_design": {
+      "visual_brief": {
+        "reference": {
+          "sha256": "712f3759c18c7da9d14ff8e67ba7116bb8574624c999ebf238f95835c4d14cd8",
+          "dimensions": [
+            640,
+            480
+          ]
+        },
+        "observation_source": "developer image inspection",
+        "representations": [
+          "cartoon",
+          "sticks"
+        ],
+        "material_family": "clay",
+        "base_preset": "builtin/preset_1_interface",
+        "palette": [
+          "#729ECC",
+          "#F97BB4"
+        ],
+        "background": "Pale blue gray",
+        "lighting": "Soft highlights",
+        "edges": "Smooth ribbons and round sticks",
+        "composition": "Selective focus within a compact protein; other depths are soft",
+        "ligand_treatment": "Pink sticks",
+        "required_capabilities": [
+          "camera.depth_of_field"
+        ],
+        "overrides": {}
+      },
+      "preset_decision": {
+        "preset_id": "builtin/preset_1_interface",
+        "preset_revision": "1",
+        "fit": "low",
+        "overrides": {},
+        "reasons": [
+          "Developer selected the base after image inspection",
+          "Requires a dedicated design"
+        ],
+        "unmatched_features": [
+          "camera.depth_of_field"
+        ],
+        "unsupported_requirements": [],
+        "new_preset_recommended": true,
+        "route": "developer/new-preset",
+        "resolved_spec_sha256": "697417f27f378e92d3a1526ae984349cd6d23228fd5c9fde3a63d9c142e20116",
+        "limitations": "Agent observations and a simple catalog rank; no exact-match or automatic vision claim."
+      }
+    },
+    "origin": "Public-fixture PNG previews generated by this validation run"
+  },
+  "public_fixture": "examples/1sps_pose.pse, exported by the existing CIF-first exporter",
+  "source_head": "8b4b6a828c369961d8e27ba6e16afb2fe2a0eadf",
+  "runtime": {
+    "runtime_versions": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "blender_binary_sha256": "e147a62d4dc3c53ded1361810e16921f88e13938a4f62cfea81fbf1fee2b3b6d",
+    "ccd_sha256": "dffdb3a19600d51854058daecfbc9bd1b94aab413a04e7afed8d4b7670621d47"
+  },
+  "package_files": 75,
+  "runtime_bundled_wheels": 49,
+  "review_images": {
+    "focus.png": "712f3759c18c7da9d14ff8e67ba7116bb8574624c999ebf238f95835c4d14cd8",
+    "deep_focus.png": "13baee6a289c2fa7b62cefdcef1482b295f1a48a647b1dfc890cdec17c618948"
+  }
+}

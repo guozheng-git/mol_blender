@@ -151,9 +151,6 @@
           "type": "number",
           "minimum": 0
         },
-        "anchor_model_center": {
-          "type": "boolean"
-        },
         "override_intrinsics": {
           "type": "boolean"
         },
@@ -171,10 +168,12 @@
           "type": "number"
         },
         "yaw_deg": {
-          "type": "number"
+          "type": "number",
+          "description": "Absolute yaw in degrees; requires mode=override and direction_source=preset. An angle override selects these defaults unless explicitly specified."
         },
         "pitch_deg": {
-          "type": "number"
+          "type": "number",
+          "description": "Absolute pitch in degrees; requires mode=override and direction_source=preset. Use pitch_offset_deg for PyMOL-relative rotation."
         },
         "distance_scale": {
           "type": "number",
@@ -207,6 +206,27 @@
         "ortho_scale_angstrom": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "depth_of_field": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["focus_distance_angstrom"],
+          "description": "Omit to disable. Requires mode=override, projection=PERSP, and a ray-traced output. Focus is measured from the final camera along its optical axis; geometry and framing are unchanged.",
+          "properties": {
+            "focus_distance_angstrom": {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1000000,
+              "description": "Optical-axis distance from the final camera in angstroms (0.01 Blender units per angstrom). Required; independent of camera.world_scale."
+            },
+            "f_stop": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 128,
+              "default": 2.8,
+              "description": "Dimensionless aperture f-number. Smaller values increase defocus."
+            }
+          }
         },
         "projection": {
           "enum": [

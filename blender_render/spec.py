@@ -1,8 +1,9 @@
 """Resolve existing style JSON once before admission; backends consume its snapshot.
 
 Objects merge recursively, arrays replace. Full JSON is authoritative. For named
-presets the saved pose is the default; an explicit camera override or
-preserve_view=False selects the preset camera plus edits. Explicit output values
+presets the saved pose is the default unless catalog policy selects the authored
+camera. Explicit camera JSON wins over preserve_view, which wins over catalog
+policy. preserve_view=False selects the preset camera plus edits. Explicit output values
 beat viewport defaults. Convenience options beat JSON; resource policy runs last.
 """
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import dataclass
 
 from . import core
 from .presets import DEFAULT_PRESET, PRESET_STYLE_FILENAMES, preset_id, required_capabilities
@@ -17,6 +19,22 @@ from .presets import DEFAULT_PRESET, PRESET_STYLE_FILENAMES, preset_id, required
 OPTION_KEYS = frozenset({"preset", "style_doc", "overrides", "rough", "raw_view", "color_follow", "save_blend",
                         "width", "height", "samples", "transparent_background", "preserve_view", "keep_temp"})
 _FLAGS = ("rough", "raw_view", "color_follow", "save_blend", "transparent_background", "preserve_view", "keep_temp")
+
+
+@dataclass(frozen=True)
+class PresetDefinition:
+    """Library-only catalog input, never an accepted render-request field."""
+    identifier: str
+    style_doc: dict
+    source: dict
+    camera_policy: str = "preserve_input"
+
+
+def validate_camera_policy(policy: str, style: dict) -> None:
+    if policy not in ("preserve_input", "authored"):
+        raise ValueError("camera_policy must be preserve_input or authored")
+    if policy == "preserve_input" and "depth_of_field" in style.get("camera", {}):
+        raise ValueError("preserve_input cannot discard camera.depth_of_field; use the authored camera policy")
 
 
 def style_digest(style: dict) -> str:
@@ -50,7 +68,8 @@ def _check_options(options: dict) -> None:
             raise ValueError(key + " must be an object")
 
 
-def resolve_options(options: dict, payload: dict, *, public: bool = False, timeout: int = 600) -> dict:
+def resolve_options(options: dict, payload: dict, *, public: bool = False, timeout: int = 600,
+                    preset_definition: PresetDefinition | None = None) -> dict:
     """Return the existing worker request shape plus immutable-spec metadata.
 
     No files, processes, services or allocations are created here. The caller
@@ -59,22 +78,44 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
     _check_options(options)
     options = copy.deepcopy(options)
     custom = "style_doc" in options
-    identifier = "" if custom else preset_id(options.get("preset") or DEFAULT_PRESET)
-    style = (options["style_doc"] if custom else core.load_and_validate_style_json(core._default_preset_style(identifier)))
     if custom:
-        core.validate_style_document(style)
+        identifier, style, source, policy = "", options["style_doc"], {"kind": "full_json"}, "authored"
+    elif preset_definition is not None:
+        identifier = preset_definition.identifier
+        if options.get("preset") != identifier:
+            raise ValueError("Preset definition identity does not match requested preset")
+        style = copy.deepcopy(preset_definition.style_doc)
+        source = copy.deepcopy(preset_definition.source)
+        policy = preset_definition.camera_policy
+        if policy not in ("preserve_input", "authored"):
+            raise ValueError("camera_policy must be preserve_input or authored")
+    else:
+        identifier = preset_id(options.get("preset") or DEFAULT_PRESET)
+        style = core.load_and_validate_style_json(core._default_preset_style(identifier))
+        source = {"kind": "builtin", "id": identifier, "revision": "1", "source_json": PRESET_STYLE_FILENAMES[identifier]}
+        policy = "preserve_input"
+    core.validate_style_document(style)
     overrides = options.get("overrides", {})
     # Validate the authored document before convenience or policy normalization
     # can hide an invalid/unknown value.
     style = _merge(style, overrides)
+    camera_edits = overrides.get("camera", {})
+    if isinstance(camera_edits, dict) and {"yaw_deg", "pitch_deg"} & camera_edits.keys():
+        # An explicit absolute angle selects its consumer, rather than inheriting
+        # a saved-view direction which would silently ignore the angle.
+        if "direction_source" not in camera_edits:
+            style["camera"]["direction_source"] = "preset"
+        if "mode" not in camera_edits:
+            style["camera"]["mode"] = "override"
     if overrides:
         core.validate_style_document(style)
     explicit_output = set(style["output"]) if custom else set(overrides.get("output", {}))
     explicit_output.update(key for key in ("width", "height", "samples", "save_blend") if key in options)
     explicit_camera = custom or bool(overrides.get("camera"))
     output = style["output"]
-    preserve = options.get("preserve_view", True) and not explicit_camera
+    preserve = options.get("preserve_view", policy == "preserve_input") and not explicit_camera
     if preserve:
+        validate_camera_policy("preserve_input", style)
         viewport = payload.get("view", {}).get("viewport_px", [output["width"], output["height"]])
         if (not isinstance(viewport, list) or len(viewport) != 2
                 or not all(type(v) in (int, float) and 0 < v <= 32768 for v in viewport)):
@@ -93,8 +134,8 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
     output.setdefault("raw_view", False)
     if "transparent_background" in options:
         style["renderer"]["transparent_background"] = options["transparent_background"]
-    if options.get("color_follow"):
-        style = core._apply_color_follow_override(style, True)
+    if "color_follow" in options:
+        style = core._apply_color_follow_override(style, options["color_follow"])
     # Validate the requested resources before rough-mode performance reductions.
     if public:
         if output.get("raw_view"):
@@ -111,14 +152,13 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
     # Transport controls destinations; a style can never choose server paths.
     style["output"].update(filename="render.png", format="PNG", blend_filename="render.blend")
     core.validate_style_document(style)
-    source = ({"kind": "full_json"} if custom else
-              {"kind": "builtin", "id": identifier, "revision": "1", "source_json": PRESET_STYLE_FILENAMES[identifier]})
     return {
         "preset": identifier, "style_doc": style, "output_name": "render.png", "job_timeout_seconds": timeout,
         "keep_temp": options.get("keep_temp", False), "save_blend": style["output"]["save_blend"],
         # Already consumed into JSON. Legacy worker/gateway adapters must not
         # apply rough twice or re-enable options after resolution.
-        "rough": False, "raw_view": style["output"]["raw_view"], "color_follow": False,
+        "rough": False, "raw_view": style["output"]["raw_view"],
+        "color_follow": style.get("color_follow", {}).get("enabled", False),
         "render_spec": {"schema_version": style["version"], "sha256": style_digest(style),
                         "preset_source": source, "required_capabilities": required_capabilities(style)},
     }

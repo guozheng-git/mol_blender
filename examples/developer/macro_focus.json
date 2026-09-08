@@ -1,0 +1,295 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "width": 640,
+    "height": 480,
+    "samples": 128,
+    "filename": "01_opaque_pastel_ses_interface.png",
+    "save_blend": true
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "GPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "adaptive_sampling": false,
+    "exposure": -0.08,
+    "gamma": 0.86,
+    "view_transform": "Standard",
+    "look": "None",
+    "seed": 7
+  },
+  "camera": {
+    "mode": "override",
+    "projection": "PERSP",
+    "direction_source": "pymol",
+    "fit": true,
+    "fit_margin": 1.1,
+    "distance_scale": 3.1,
+    "world_scale": 0.01,
+    "lens_mm": 62,
+    "depth_of_field": {
+      "focus_distance_angstrom": 82,
+      "f_stop": 0.5
+    }
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#C6D6DF",
+    "bottom_color": "#C6D6DF",
+    "strength": 1.0
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 1.0,
+      "size": 4.0,
+      "size_scale": 2.1,
+      "min_size": 1.2,
+      "color": "#FFF7F1",
+      "location": [
+        2.0,
+        -2.7,
+        0.7
+      ],
+      "relative_vector": [
+        2.0,
+        -2.7,
+        0.7
+      ],
+      "rotate_with_pymol_yaw": true,
+      "look_at_target": true
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 8.0,
+      "size": 5.0,
+      "size_scale": 2.73,
+      "min_size": 1.56,
+      "color": "#E7F6FF",
+      "location": [
+        -1.9,
+        -2.1,
+        0.5
+      ],
+      "relative_vector": [
+        -1.9,
+        -2.1,
+        0.5
+      ],
+      "rotate_with_pymol_yaw": true,
+      "look_at_target": true
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 5.0,
+      "size": 3.0,
+      "size_scale": 2.31,
+      "min_size": 1.32,
+      "color": "#F1F5FF",
+      "location": [
+        0.2,
+        2.9,
+        1.0
+      ],
+      "relative_vector": [
+        0.2,
+        2.9,
+        1.0
+      ],
+      "rotate_with_pymol_yaw": true,
+      "look_at_target": true
+    }
+  ],
+  "color_follow": {
+    "enabled": false,
+    "mode": "auto",
+    "mix": 0.65,
+    "saturation_boost": 0.08,
+    "value_boost": 0.03
+  },
+  "materials": {
+    "inner_chain_a": {
+      "base_color": "#4EAAD9",
+      "shadow_color": "#1B6A98",
+      "highlight_color": "#7DCBF0",
+      "roughness": 0.62,
+      "specular": 0.17,
+      "alpha": 0.62,
+      "ao_strength": 0.28,
+      "rim_strength": 0.04
+    },
+    "inner_chain_b": {
+      "base_color": "#66DAB6",
+      "shadow_color": "#2EA57C",
+      "highlight_color": "#94EFCC",
+      "roughness": 0.62,
+      "specular": 0.17,
+      "alpha": 0.7,
+      "ao_strength": 0.28,
+      "rim_strength": 0.04
+    },
+    "ligand_main": {
+      "base_color": "#F97BB4",
+      "shadow_color": "#D95B95",
+      "highlight_color": "#FF9DCA",
+      "roughness": 0.46,
+      "specular": 0.34,
+      "alpha": 1.0,
+      "ao_strength": 0.16,
+      "rim_strength": 0.12,
+      "emission_color": "#FF8BC4",
+      "emission_strength": 0.06
+    },
+    "nucleic_mint": {
+      "base_color": "#86E6DA",
+      "shadow_color": "#53B9AE",
+      "highlight_color": "#B7FFF5",
+      "roughness": 0.42,
+      "specular": 0.24,
+      "alpha": 0.98,
+      "ao_strength": 0.08,
+      "rim_strength": 0.06
+    },
+    "ion_soft": {
+      "base_color": "#B3C5FF",
+      "shadow_color": "#8396CF",
+      "highlight_color": "#D9E2FF",
+      "roughness": 0.36,
+      "specular": 0.42,
+      "alpha": 1.0,
+      "ao_strength": 0.06,
+      "rim_strength": 0.08
+    },
+    "water_soft": {
+      "base_color": "#D9F3FF",
+      "shadow_color": "#AAC9D7",
+      "highlight_color": "#F4FBFF",
+      "roughness": 0.6,
+      "specular": 0.16,
+      "alpha": 0.82,
+      "ao_strength": 0.04,
+      "rim_strength": 0.04
+    }
+  },
+  "styles": [
+    {
+      "name": "chain_a_cartoon",
+      "style": "cartoon",
+      "material": "inner_chain_a",
+      "selection": {
+        "query": "polymer and not nucleic and chain A"
+      },
+      "thickness": 0.44,
+      "width": 1.15,
+      "loop_radius": 0.25,
+      "quality": 5,
+      "peptide_smoothing": 0.9,
+      "peptide_cylinders": false,
+      "peptide_rounded": false,
+      "shade_smooth": true
+    },
+    {
+      "name": "chain_b_cartoon",
+      "style": "cartoon",
+      "material": "inner_chain_b",
+      "selection": {
+        "query": "polymer and not nucleic and chain B"
+      },
+      "thickness": 0.44,
+      "width": 1.15,
+      "loop_radius": 0.25,
+      "quality": 5,
+      "peptide_smoothing": 0.9,
+      "peptide_cylinders": false,
+      "peptide_rounded": false,
+      "shade_smooth": true
+    },
+    {
+      "name": "polymer_other_cartoon",
+      "style": "cartoon",
+      "material": "inner_chain_a",
+      "selection": {
+        "query": "polymer and not nucleic and not chain A and not chain B"
+      },
+      "thickness": 0.44,
+      "width": 1.15,
+      "loop_radius": 0.25,
+      "quality": 5,
+      "peptide_smoothing": 0.9,
+      "peptide_cylinders": false,
+      "peptide_rounded": false,
+      "shade_smooth": true
+    },
+    {
+      "name": "nucleic_cartoon",
+      "style": "cartoon",
+      "material": "nucleic_mint",
+      "selection": {
+        "nucleic": true
+      },
+      "fallback_selection": {
+        "query": "nucleic"
+      },
+      "thickness": 0.18,
+      "width": 0.66,
+      "loop_radius": 0.15,
+      "quality": 5,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_ptr_sticks",
+      "style": "sticks",
+      "material": "ligand_main",
+      "selection": {
+        "query": "resn PTR"
+      },
+      "radius": 0.62,
+      "quality": 8,
+      "sticks_radius": 0.62,
+      "sticks_quality": 8,
+      "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ligand_other_sticks",
+      "style": "sticks",
+      "material": "ligand_main",
+      "selection": {
+        "query": "ligand and not resn PTR and not resn HOH,WAT,DOD,SOL,TIP3,TIP3P and not resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.52,
+      "quality": 5,
+      "sticks_radius": 0.52,
+      "sticks_quality": 5,
+      "sticks_shade_smooth": true,
+      "shade_smooth": true
+    },
+    {
+      "name": "ions_spheres",
+      "style": "spheres",
+      "material": "ion_soft",
+      "selection": {
+        "query": "ligand and resn NA,K,CL,CA,MG,ZN,MN,FE,CU,CO,NI,CD,SR,CS,LI,RB,IOD,BR,F,AL"
+      },
+      "radius": 0.33,
+      "subdivisions": 3,
+      "shade_smooth": true
+    },
+    {
+      "name": "water_spheres",
+      "style": "spheres",
+      "material": "water_soft",
+      "selection": {
+        "query": "resn HOH,WAT,DOD,SOL,TIP3,TIP3P"
+      },
+      "radius": 0.22,
+      "subdivisions": 2,
+      "shade_smooth": true
+    }
+  ]
+}

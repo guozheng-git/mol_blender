@@ -288,9 +288,16 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     @app.post("/render")
     async def legacy_render(request: Request, identity=Depends(owner)):
         data = await body(request)
+        # Strip transport metadata only. The shared resolver validates every
+        # remaining render option, including unknown fields and overrides.
+        options = {k: v for k, v in data.items() if k not in
+                   {"payload", "idempotency_key", "request_timeout_seconds"}}
+        from .spec import _check_options
+        try:
+            _check_options(options)
+        except ValueError as exc:
+            raise JobError(str(exc)) from exc
         source = await asyncio.to_thread(service.import_payload, identity, data.get("payload"))
-        allowed = {"preset", "style_doc", "rough", "raw_view", "color_follow", "save_blend", "width", "height", "samples", "transparent_background", "preserve_view"}
-        options = {k: v for k, v in data.items() if k in allowed}
         job = await asyncio.to_thread(service.submit, identity, source["input_id"], options, data.get("idempotency_key") or secrets.token_hex(16))
         deadline = time.monotonic() + min(float(data.get("request_timeout_seconds", 1800)), 3600)
         while time.monotonic() < deadline:

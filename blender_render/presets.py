@@ -70,6 +70,8 @@ def required_capabilities(style: dict) -> list[str]:
     if "ambient_color" in world or "ambient_strength" in world:
         required.add("world.separate_illumination")
     camera = style.get("camera", {})
+    if "depth_of_field" in camera:
+        required.add("camera.depth_of_field")
     if any(key in camera for key in ("fit", "roll_deg", "ortho_scale_angstrom", "projection")):
         required.add("camera.reference_framing")
     if any("surface_scale_radius" in entry or "surface_relaxation_steps" in entry for entry in style["styles"]):

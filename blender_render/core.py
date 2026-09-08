@@ -292,6 +292,17 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
                 and style.get("ligand_cutout_frame_mode") == "preset"
                 and "ligand_cutout_frame_axes" not in style):
             errors.append(f"{prefix}.ligand_cutout_frame_axes is required when ligand_cutout_frame_mode is preset")
+    camera = style_doc.get("camera", {})
+    if isinstance(camera, dict):
+        if {"yaw_deg", "pitch_deg"} & camera.keys() and (
+                camera.get("mode") != "override" or camera.get("direction_source", "preset") != "preset"):
+            errors.append("camera.yaw_deg/pitch_deg require mode=override and direction_source=preset; use yaw_offset_deg/pitch_offset_deg for PyMOL-relative rotation")
+    if isinstance(camera, dict) and "depth_of_field" in camera:
+        if camera.get("mode") != "override" or camera.get("projection") != "PERSP":
+            errors.append("camera.depth_of_field requires camera.mode=override and camera.projection=PERSP")
+        output = style_doc.get("output", {})
+        if isinstance(output, dict) and output.get("raw_view"):
+            errors.append("camera.depth_of_field is unsupported with output.raw_view")
     world = style_doc.get("world", {})
     gradients = [("world.gradient_direction", world.get("gradient_direction"))] if isinstance(world, dict) else []
     geometry = style_doc.get("geometry", {})
@@ -652,13 +663,13 @@ def _apply_rough_style_overrides(style_doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_color_follow_override(style_doc: dict[str, Any], enabled: bool) -> dict[str, Any]:
-    if not enabled:
+    if not enabled and "color_follow" not in style_doc:
         return style_doc
     styled = json.loads(json.dumps(style_doc))
     cfg = styled.get("color_follow")
     if not isinstance(cfg, dict):
         cfg = {}
-    cfg["enabled"] = True
+    cfg["enabled"] = enabled
     styled["color_follow"] = cfg
     return styled
 

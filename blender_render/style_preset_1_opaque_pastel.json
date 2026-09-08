@@ -24,8 +24,6 @@
     "direction_source": "pymol",
     "focus_style": "ligand_ptr_sticks",
     "distance_scale": 3.1,
-    "yaw_deg": -88.0,
-    "pitch_deg": 8.0,
     "world_scale": 0.014,
     "lens_mm": 62.0,
     "shift_x": 0.0,

@@ -23,8 +23,8 @@ def try_load_preview(cmd_obj, output_png):
 
 
 def bridge_render(selection="(all)", preset="preset_1_interface", style_json="", mode="local",
-                  output_dir=".", output_name="render.png", rough=0, color_follow=0,
-                  save_blend="", raw_view=0, state=-1, server_host="", server_port=8765,
+                  output_dir=".", output_name="render.png", rough=0, color_follow="",
+                  save_blend="", raw_view="", state=-1, server_host="", server_port=8765,
                   server_timeout=1800, profile="", use_apptainer=0, apptainer_image="",
                   blender_exe="", attach=1, attach_only=0, keep_temp=0,
                   width="", height="", samples="", transparent_background="",
@@ -55,8 +55,10 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
         if mode in {"interactive", "slurm", "hpc"}:
             print("Interactive GPU session ready")
     payload = build_render_payload(cmd, text(selection), int(state), include_color_hints=True)
-    options = {"preset": text(preset), "rough": _parse_bool(rough), "color_follow": _parse_bool(color_follow),
-               "raw_view": _parse_bool(raw_view), "keep_temp": _parse_bool(keep_temp)}
+    options = {"preset": text(preset), "rough": _parse_bool(rough), "keep_temp": _parse_bool(keep_temp)}
+    for key, value in (("color_follow", color_follow), ("raw_view", raw_view)):
+        if str(value).strip():
+            options[key] = _parse_bool(value)
     if text(style_json):
         options["style_doc"] = json.loads(Path(text(style_json)).expanduser().read_text())
         options.pop("preset", None)
