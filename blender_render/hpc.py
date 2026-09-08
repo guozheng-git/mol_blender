@@ -104,5 +104,15 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
         raise RuntimeError(f"SSH tunnel could not reach the GPU service; inspect {root / 'tunnel.log'}. Use mode='local' as fallback.")
 
 
+def existing_connection(name):
+    """An unavailable cached tunnel is reported, never repaired by a read."""
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+', name) or name in {'.', '..'}:
+        raise ValueError('Invalid profile name')
+    try:
+        return json.loads((config_root() / 'hpc' / name / 'connection.json').read_text())
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('No existing HPC connection; read-only operations cannot allocate or create a tunnel.') from exc
+
+
 def stop(name, profile):
     return remote(profile, "stop")

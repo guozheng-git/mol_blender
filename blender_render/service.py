@@ -36,6 +36,10 @@ class HostBackend:
             apptainer_image=image, worker_start_timeout=180,
         )
         self.timeout = timeout
+        self.progress = None
+
+    def set_progress(self, callback):
+        self.progress = callback
 
     def render(self, request: dict, job_id: str, cancelled) -> dict:
         from .render_server import RenderServerState, _process_render_request
@@ -53,7 +57,8 @@ class HostBackend:
         watcher.start()
         try:
             return _process_render_request(request_id=job_id, request_doc=request,
-                state=RenderServerState(worker=self.worker, default_job_timeout=self.timeout, cancelled=cancelled))
+                state=RenderServerState(worker=self.worker, default_job_timeout=self.timeout, cancelled=cancelled,
+                    progress=(lambda stage: self.progress(job_id, stage)) if getattr(self, 'progress', None) else None))
         finally:
             finished.set()
             watcher.join(timeout=2)
@@ -117,11 +122,14 @@ def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int)
 
 
 class RenderService:
-    def __init__(self, store: JobStore, backend: Backend, *, recover: bool = True):
+    def __init__(self, store: JobStore, backend: Backend, *, recover: bool = True, converter=None):
         self._imports_guard = threading.Lock()
         self._imports = {}
         self.store = store
         self.backend = backend
+        self.converter = converter
+        if hasattr(backend, 'set_progress'):
+            backend.set_progress(store.stage)
         self.wakeup = threading.Event()
         self.stopping = threading.Event()
         self.thread: threading.Thread | None = None
@@ -200,8 +208,13 @@ class RenderService:
             raise JobError('Render options must be an object.')
         canonical = dict(options)
         canonical.setdefault('preset', 'preset_1_interface')
-        for flag in ('rough', 'raw_view', 'color_follow', 'keep_temp'):
+        for flag in ('rough', 'keep_temp'):
             canonical.setdefault(flag, False)
+        # Omission can preserve a JSON value whereas explicit False disables
+        # it. Do not collapse those different requests during retry lookup.
+        if 'style_doc' not in canonical and not canonical.get('overrides'):
+            for flag in ('raw_view', 'color_follow'):
+                canonical.setdefault(flag, False)
         canonical.setdefault('preserve_view', True)
         if rerender:
             canonical['rerender'] = True
@@ -210,18 +223,56 @@ class RenderService:
         except (TypeError, ValueError) as exc:
             raise JobError('Render options must be valid JSON.') from exc
 
-    def render_file(self, owner, data, suffix, name, converter, options):
-        """One upload-and-submit operation; retries never invent a paid job."""
-        client_hash = self._client_hash(options)
+    def render_file(self, owner, data, suffix, name, converter, options, *, idempotency_key=None,
+                    operation_key=None, rerender=False, selection='(all)'):
+        """Commit the existing queue's handle before conversion or compute."""
+        from .spec import _check_options
+        try:
+            _check_options(options)
+        except ValueError as exc:
+            raise JobError(str(exc)) from exc
+        if type(rerender) is not bool or not isinstance(selection, str) or not selection.strip():
+            raise JobError('Invalid repeat or selection controls')
+        for key in (idempotency_key, operation_key):
+            if key is not None and (not isinstance(key, str) or not 1 <= len(key) <= 128):
+                raise JobError('Operation and transport keys must contain 1 to 128 characters')
+        if rerender and idempotency_key is None and operation_key is None:
+            raise JobError('An explicit repeat requires a stable operation or idempotency key')
+        if suffix not in {'.pse', '.cif', '.mmcif', '.pdb'} or converter is None:
+            raise JobError('This service does not support that file conversion.', 'unsupported', 422)
+        if len(data) > self.store.policy.max_upload_bytes:
+            raise JobError('File is too large.', 'too_large', 413)
+        client_hash = self._client_hash(options, rerender=rerender)
         source_key = suffix + ':' + hashlib.sha256(data).hexdigest()
+        operation_key = operation_key or idempotency_key
+        if selection != '(all)':
+            source_key += ':' + hashlib.sha256(selection.encode()).hexdigest()
+        with self._imports_guard:
+            if self.converter is not None and self.converter is not converter:
+                raise JobError('Converter configuration changed; drain and restart the controller before changing runtime.', 'runtime_conflict', 409)
+            self.converter = converter
         with self._owner_import(owner):
-            existing = self.store.file_replay(owner, source_key, client_hash)
+            existing = self.store.operation_replay(owner, operation_key, client_hash, source_key=source_key)
             if existing:
                 return existing
-            source = self.import_file(owner, data, suffix, name, converter)
-            return self.submit(owner, source['input_id'], options, secrets.token_hex(16))
+            existing = None if rerender else self.store.file_replay(owner, source_key, client_hash)
+            if existing:
+                return existing
+            # Raw bytes are private temporary input, not a StructureBundle.
+            # The dispatcher validates the conversion and resolves once before
+            # entering any compute backend. Restart never repeats live work.
+            source = self.store.add_input(owner, {'source_file': {
+                'suffix': suffix, 'data': base64.b64encode(data).decode(), 'selection': selection}},
+                name, source_key=source_key, raw_file=True)
+            with self.store.lock:
+                key = idempotency_key or operation_key or secrets.token_hex(16)
+                replay = self.store.submission_replay(owner, source['input_id'], key, client_hash, rerender=rerender)
+                job = replay or self.store.submit(owner, source['input_id'], {'prepare_file': options}, key,
+                    client_hash=client_hash, rerender=rerender, operation_key=operation_key)
+            self.wakeup.set()
+            return job
 
-    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, rerender: bool = False) -> dict:
+    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, rerender: bool = False, operation_key=None) -> dict:
         self.last_activity = time.time()
         if not isinstance(rerender, bool):
             raise JobError('rerender must be a boolean')
@@ -229,16 +280,29 @@ class RenderService:
         # Do not let completion delete the input between replay lookup and
         # normalization. This lock contains no network or compute operations.
         with self.store.lock:
+            replay = self.store.operation_replay(owner, operation_key, client_hash, input_id=input_id)
+            if replay:
+                return replay
             legacy_hash = hashlib.sha256(json.dumps(options, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
             replay = self.store.submission_replay(owner, input_id, idempotency_key, client_hash, rerender=rerender, legacy_hash=legacy_hash if not rerender else None)
             if replay:
                 return replay
             payload = self.store.input(owner, input_id)
             try:
-                normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
+                if 'source_file' in payload:
+                    from .spec import _check_options
+                    try:
+                        _check_options(options)
+                    except ValueError as exc:
+                        raise JobError(str(exc)) from exc
+                    normalized = {'prepare_file': options}
+                else:
+                    normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
             except core.StyleValidationError as exc:
                 raise JobError(str(exc)) from exc
-            result = self.store.submit(owner, input_id, normalized, idempotency_key, client_hash=client_hash, rerender=rerender)
+            result = self.store.submit(owner, input_id, normalized, idempotency_key, client_hash=client_hash, rerender=rerender, operation_key=operation_key)
+            if 'prepare_file' not in normalized:
+                self.store.stage(result['job_id'], 'waiting_for_compute')
         self.wakeup.set()
         return result
 
@@ -258,10 +322,30 @@ class RenderService:
     def _execute(self, job: dict):
         started = time.monotonic()
         identifier = job["id"]
+        compute_started = False
         try:
             request = json.loads(job["options"])
-            request["payload"] = self.store.input(job["owner"], job["input_id"])
+            payload = self.store.input(job["owner"], job["input_id"])
+            if 'prepare_file' in request:
+                self.store.stage(identifier, 'conversion')
+                if self.store.cancelled(identifier):
+                    raise RuntimeError('Cancelled before conversion')
+                self.store.reserve_conversion(job['owner'])
+                raw = payload['source_file']
+                if self.converter is None:
+                    raise RuntimeError('File converter unavailable after restart; execution was not retried')
+                kwargs = {'selection': raw['selection']} if raw['selection'] != '(all)' else {}
+                payload = self.converter(base64.b64decode(raw['data'], validate=True), raw['suffix'], **kwargs)
+                p = self.store.policy
+                payload = validate_input(payload, max_atoms=p.max_atoms if p.public else 10000000, max_bytes=p.max_upload_bytes)
+                request = prepare_options(request['prepare_file'], payload, public=p.public, timeout=p.max_job_seconds)
+                self.store.bind_spec(identifier, request)
+            if self.store.cancelled(identifier) or self.stopping.is_set():
+                raise RuntimeError('Cancelled before compute')
+            request['payload'] = payload
             request["payload"]["run_id"] = identifier
+            self.store.stage(identifier, 'waiting_for_compute')
+            compute_started = True
             result = self.backend.render(request, identifier, lambda: self.stopping.is_set() or self.store.cancelled(identifier))
             if self.stopping.is_set():
                 raise RuntimeError("Service stopped during render")
@@ -275,7 +359,7 @@ class RenderService:
             log.exception("Render job %s failed", identifier)
             message = "Render failed. Check structure, preset, and resource limits." if self.store.policy.public else str(exc)
             seconds = self.store.policy.max_job_seconds if getattr(self.backend, "paid", False) else time.monotonic() - started
-            self.store.finish(identifier, error=message, seconds=seconds)
+            self.store.finish(identifier, error=message, seconds=seconds, compute_started=compute_started)
             shutil.rmtree(self.store.artifacts / identifier, ignore_errors=True)
         finally:
             self.last_activity = time.time()

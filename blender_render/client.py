@@ -73,8 +73,28 @@ class Client:
     def delete_structure(self, input_id):
         return self.request("DELETE", "/v1/structures/" + quote(input_id, safe=''))
 
-    def submit(self, input_id, options=None, idempotency_key=None, *, rerender=False):
-        return self.request("POST", "/v1/jobs", {"input_id": input_id, "options": options or {}, "idempotency_key": idempotency_key or uuid.uuid4().hex, "rerender": rerender})
+    def submit(self, input_id, options=None, idempotency_key=None, *, rerender=False, operation_key=None):
+        if rerender and not (idempotency_key or operation_key):
+            raise ClientError('An explicit repeat requires a stable operation or idempotency key')
+        return self.request("POST", "/v1/jobs", {"input_id": input_id, "options": options or {}, "idempotency_key": idempotency_key or uuid.uuid4().hex, "rerender": rerender, 'operation_key': operation_key})
+
+    def render_file(self, path, options=None, idempotency_key=None, *, rerender=False, operation_key=None, selection='(all)'):
+        path = Path(path).expanduser().resolve()
+        if path.suffix.lower() not in {'.pse', '.cif', '.mmcif', '.pdb'}:
+            raise ClientError('Choose a .pse, .cif, or .pdb file.')
+        with path.open('rb') as stream:
+            data = stream.read(50 * 1024**2 + 1)
+        if len(data) > 50 * 1024**2:
+            raise ClientError('File exceeds the 50 MiB upload limit.')
+        settings = json.dumps({'options': options or {}, 'idempotency_key': idempotency_key,
+            'operation_key': operation_key, 'rerender': rerender, 'selection': selection}, allow_nan=False).encode()
+        if len(settings) > 65532:
+            raise ClientError('Render request envelope exceeds 64 KiB.')
+        return self.request('POST', '/v1/render-files/' + path.suffix.lower()[1:] + '?' + urlencode({'name': path.name}),
+            len(settings).to_bytes(4, 'big') + settings + data, raw=True)
+
+    def jobs(self):
+        return self.request('GET', '/v1/jobs')
 
     def status(self, job_id):
         return self.request("GET", "/v1/jobs/" + job_id)
@@ -121,19 +141,47 @@ class Client:
         return {"job_id": job_id, "outputs": paths, "manifest": result["manifest"]}
 
 
-def configured_client(profile="local", **kwargs):
+class ConfiguredClient(Client):
+    """Construction and all reads are inert with respect to service startup."""
+    def __init__(self, profile, read_only, options):
+        self.profile, self.read_only, self.options = profile, read_only, options
+
+    def request(self, method, path, body=None, **kwargs):
+        start = method == 'POST' and (path == '/v1/structures' or path == '/v1/jobs'
+            or path.startswith(('/v1/files/', '/v1/render-files/')))
+        connection = _connect_client(self.profile, read_only=self.read_only or not start, **self.options)
+        return connection.request(method, path, body, **kwargs)
+
+
+def configured_client(profile='local', *, read_only=False, **kwargs):
+    return ConfiguredClient(profile, read_only, kwargs)
+
+
+def start_service(profile='local', **kwargs):
+    """Explicit user start command; generic client construction stays inert."""
+    return _connect_client(profile, read_only=False, **kwargs).request('GET', '/health')
+
+
+def _connect_client(profile="local", *, read_only=False, admission=False, **kwargs):
     from .config import load_config
     if profile in {"local", "apptainer"}:
-        from .runtime import ensure_local
-        connection = ensure_local(**kwargs)
+        from .runtime import ensure_local, existing_local
+        connection = existing_local() if read_only else ensure_local(**kwargs)
     else:
         config = load_config()
         if profile not in config.get("profiles", {}):
             raise ClientError(f"Unknown profile {profile!r}. Run blender-render profile add first.")
         connection = config["profiles"][profile]
         if connection.get("kind") == "hpc":
-            from .hpc import connect
-            connection = connect(profile, connection, **kwargs)
+            if admission:
+                # CLI operations belong to this durable outer queue. Only its
+                # gateway backend may connect/allocate, after admission.
+                from .runtime import ensure_local, existing_local
+                connection = (existing_local(worker_profile=profile) if read_only
+                              else ensure_local(worker_profile=profile, **kwargs))
+            else:
+                from .hpc import connect, existing_connection
+                connection = existing_connection(profile) if read_only else connect(profile, connection, **kwargs)
     if connection.get("auth") == "oauth":
         from .oauth_client import access_token
         return Client(connection["url"], access_token(connection["url"]), timeout=120)

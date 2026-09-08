@@ -3874,6 +3874,7 @@ def _apply_pymol_ss_hints(load_result: Any, view_doc: dict[str, Any]) -> int:
 def _render(args: argparse.Namespace) -> None:
     import time
     import importlib.metadata
+    from blender_render.operation_progress import record_stage, read_stages
     started = time.monotonic()
     style_path = Path(args.style_json).expanduser()
     if not style_path.is_absolute():
@@ -3890,6 +3891,7 @@ def _render(args: argparse.Namespace) -> None:
 
     style_doc = validate_style_document(_load_json(style_path))
     view_doc = _load_json(view_path)
+    record_stage(getattr(args, 'run_manifest', None), 'scene_build')
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -4508,6 +4510,7 @@ def _render(args: argparse.Namespace) -> None:
 
     output_cfg = style_doc.get("output")
     geometry_ready = time.monotonic()
+    record_stage(getattr(args, 'run_manifest', None), 'rendering')
     raw_view = bool(isinstance(output_cfg, dict) and output_cfg.get("raw_view", False))
     if raw_view:
         _render_raw_view(scene)
@@ -4548,6 +4551,7 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc["cycles_device"] = json.loads(scene.get("bridge_device_info", "{}"))
             manifest_doc["timings_seconds"] = {"scene_build": geometry_ready - started, "path_trace": rendered - geometry_ready,
                 "save": time.monotonic() - rendered, "total": time.monotonic() - started}
+            manifest_doc['operation_stages'] = read_stages(run_manifest_path)
             manifest_doc["resolved_preset"] = style_doc
             manifest_doc["camera_matrix_world"] = [list(row) for row in camera.matrix_world]
             manifest_doc["camera_type"] = camera.data.type

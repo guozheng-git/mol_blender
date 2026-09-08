@@ -415,6 +415,11 @@ def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_
     selected = f"({selection}) and enabled" if enabled_only else selection
     objects = cmd_obj.get_object_list(selected) if callable(getattr(cmd_obj, "get_object_list", None)) else []
     provenance = {"enabled_objects": list(objects), "object_transforms": {}}
+    object_state = getattr(cmd_obj, 'get_object_state', None)
+    current_state = getattr(cmd_obj, 'get_state', None)
+    if state == -1 and (callable(object_state) or callable(current_state)):
+        provenance['object_states'] = {
+            name: int(object_state(name) if callable(object_state) else current_state()) for name in objects}
     for name in objects:
         provenance["object_transforms"][name] = list(cmd_obj.get_object_matrix(name) or [])
     if len(objects) <= 1:
@@ -447,6 +452,13 @@ def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_
         temporary.append(combined)
         cmd_obj.set_view(original_view)
         result = _build_single_payload(cmd_obj, combined, 1, include_color_hints=include_color_hints, enabled_only=False)
+        # The UUID belongs only to the temporary PyMOL objects. Preserve the
+        # user's selection/state and stable exported block identity instead.
+        result["selection"], result["state"] = selected, state
+        result["dss"]["selection"] = selected
+        for field in ("cif_text", "pdb_text"):
+            if field in result:
+                result[field] = result[field].replace(combined, "blender_export")
         # PDB cannot faithfully encode namespaced chain identifiers.
         if any(len(value) > 1 for value in mapping.values()):
             result.pop("pdb_text", None)

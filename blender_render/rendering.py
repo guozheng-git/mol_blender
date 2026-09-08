@@ -21,6 +21,7 @@ class RenderServerState:
     default_job_timeout: float = 600
     verbose: bool = False
     cancelled: Any = None
+    progress: Any = None
 
     def log(self, message):
         logging.getLogger(__name__).debug(message)
@@ -166,6 +167,7 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
                 output_png=output_png,
                 run_manifest=run_manifest_path,
                 timeout=job_timeout,
+                **({'progress': state.progress} if state.progress else {}),
             )
 
         try:

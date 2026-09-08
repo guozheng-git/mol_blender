@@ -52,6 +52,9 @@ class Policy:
 
 
 class JobStore:
+    STAGES = ('validation', 'conversion', 'waiting_for_compute', 'scene_build',
+              'rendering', 'result_ready', 'delivery', 'failed', 'cancelled')
+
     def __init__(self, root: Path, policy: Policy | None = None, *, data_root: Path | None = None, sync: Callable[[], None] | None = None, clock=time.time):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -101,6 +104,12 @@ class JobStore:
         for column in ('render_fingerprint', 'source_key'):
             if column not in columns:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
+        for column, definition in (('stage', "TEXT NOT NULL DEFAULT 'validation'"),
+                                   ('stage_history', "TEXT NOT NULL DEFAULT '[]'"),
+                                   ('operation_key', 'TEXT'), ('input_sha256', 'TEXT')):
+            if column not in columns:
+                self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' ' + definition)
+        self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS logical_operations ON jobs(owner,operation_key)')
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS submission_keys (
           owner TEXT NOT NULL, key TEXT NOT NULL, input_id TEXT NOT NULL,
@@ -261,9 +270,10 @@ class JobStore:
             db.execute("DELETE FROM inputs WHERE id=? AND owner=?", (identifier, owner))
         return {"input_id": identifier, "deleted": True}
 
-    def add_input(self, owner: str, payload: dict, name: str = "structure.cif", *, source_key: str | None = None) -> dict:
+    def add_input(self, owner: str, payload: dict, name: str = "structure.cif", *, source_key: str | None = None, raw_file: bool = False) -> dict:
         data = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()
-        if len(data) > self.policy.max_upload_bytes:
+        limit = self.policy.max_upload_bytes * 4 // 3 + 65536 if raw_file else self.policy.max_upload_bytes
+        if len(data) > limit:
             raise JobError("Structure exceeds the upload size limit.", "too_large", 413)
         now = self.clock()
         identifier = secrets.token_hex(16)
@@ -309,13 +319,31 @@ class JobStore:
         return {**self._public_job(row), 'reused': True}
 
     def file_replay(self, owner, source_key, client_hash):
-        """Reuse a recent operation without retaining its molecular input."""
+        """Recover an operation, never permission to replace an expired render."""
         with self.lock:
             row = self.db.execute("""SELECT * FROM jobs WHERE owner=? AND source_key=?
-                AND client_request_hash=? AND (state IN ('queued','running') OR finished>?)
+                AND client_request_hash=?
                 ORDER BY submitted,id LIMIT 1""",
-                (owner, source_key, client_hash, self.clock()-self.policy.ttl_seconds)).fetchone()
+                (owner, source_key, client_hash)).fetchone()
             return self._reused_job(row) if row else None
+
+    def operation_replay(self, owner, operation_key, client_hash, *, input_id=None, source_key=None):
+        if operation_key is None:
+            return None
+        if not isinstance(operation_key, str) or not 1 <= len(operation_key) <= 128:
+            raise JobError('operation_key must contain 1 to 128 characters')
+        with self.lock:
+            row = self.db.execute('SELECT * FROM jobs WHERE owner=? AND operation_key=?', (owner, operation_key)).fetchone()
+            if row:
+                same_input = input_id is None or row['input_id'] == input_id
+                if not same_input:
+                    source = self.db.execute('SELECT content_sha256 FROM inputs WHERE id=? AND owner=?', (input_id, owner)).fetchone()
+                    same_input = bool(source and source['content_sha256'] == row['input_sha256'])
+                if (row['client_request_hash'] != client_hash
+                        or not same_input
+                        or source_key is not None and row['source_key'] != source_key):
+                    raise JobError('Operation already exists with a different request; recover it instead of creating a hidden preview.', 'operation_conflict', 409)
+                return self._reused_job(row)
 
     def submission_replay(self, owner, input_id, key, client_hash, *, rerender=False, legacy_hash=None):
         if not isinstance(key, str) or not 1 <= len(key) <= 128:
@@ -338,7 +366,7 @@ class JobStore:
                     return self._reused_job(row)
             return None
 
-    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, client_hash: str | None = None, rerender: bool = False) -> dict:
+    def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, client_hash: str | None = None, rerender: bool = False, operation_key: str | None = None) -> dict:
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
             raise JobError("Provide an idempotency key of 1 to 128 characters.")
         encoded = json.dumps(options, sort_keys=True, allow_nan=False, separators=(",", ":"))
@@ -346,6 +374,9 @@ class JobStore:
         now = self.clock()
         identifier = secrets.token_hex(16)
         with self.transaction() as db:
+            replay = self.operation_replay(owner, operation_key, client_hash, input_id=input_id)
+            if replay:
+                return replay
             alias = db.execute("SELECT * FROM submission_keys WHERE owner=? AND key=?", (owner, idempotency_key)).fetchone()
             if alias:
                 if alias["request_hash"] != request_hash:
@@ -356,9 +387,7 @@ class JobStore:
             fingerprint = hashlib.sha256((source['content_sha256'] + encoded).encode()).hexdigest()
             if not rerender:
                 existing = db.execute("""SELECT * FROM jobs WHERE owner=? AND render_fingerprint=?
-                    AND (state IN ('queued','running') OR (state='done' AND result_expires>?)
-                         OR (state IN ('delivered','deleted','failed','cancelled') AND finished>?))
-                    ORDER BY submitted,id LIMIT 1""", (owner, fingerprint, now, now-self.policy.ttl_seconds)).fetchone()
+                    ORDER BY submitted,id LIMIT 1""", (owner, fingerprint)).fetchone()
                 if existing:
                     self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, existing['id'])
                     if existing['input_id'] != input_id and not db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (input_id,)).fetchone():
@@ -377,20 +406,63 @@ class JobStore:
             db.execute("INSERT INTO jobs(id,owner,input_id,idempotency_key,request_hash,options,state,submitted,reserved) VALUES (?,?,?,?,?,?,'queued',?,?)", (identifier, owner, input_id, idempotency_key, request_hash, encoded, now, reservation))
             db.execute("UPDATE jobs SET session_id=?,submitted_by=?,client_request_hash=?,render_fingerprint=?,source_key=? WHERE id=?", (self.session_id,owner,client_hash,fingerprint,source['source_key'],identifier))
             self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, identifier)
+            db.execute('UPDATE jobs SET operation_key=?,stage_history=?,input_sha256=? WHERE id=?',
+                       (operation_key, json.dumps([{'stage': 'validation', 'at': now}]), source['content_sha256'], identifier))
         return self.get(owner, identifier)
+
+    def _stage(self, db, identifier, stage):
+        if stage not in self.STAGES:
+            raise ValueError('Unsupported operation stage: ' + stage)
+        row = db.execute('SELECT stage,stage_history FROM jobs WHERE id=?', (identifier,)).fetchone()
+        if row and row['stage'] != stage:
+            if self.STAGES.index(stage) < self.STAGES.index(row['stage']):
+                return
+            history = json.loads(row['stage_history'])
+            history.append({'stage': stage, 'at': self.clock()})
+            db.execute('UPDATE jobs SET stage=?,stage_history=? WHERE id=?', (stage, json.dumps(history), identifier))
+
+    def stage(self, identifier, stage):
+        with self.transaction() as db:
+            row = db.execute('SELECT state FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if row and row['state'] in ('queued', 'running'):
+                self._stage(db, identifier, stage)
+
+    def bind_spec(self, identifier, request):
+        """Bind the one resolved snapshot after deferred file conversion."""
+        with self.transaction() as db:
+            db.execute("UPDATE jobs SET options=? WHERE id=? AND state='running'",
+                       (json.dumps(request, sort_keys=True, allow_nan=False), identifier))
+
+    def recent(self, owner):
+        with self.lock:
+            return {'jobs': [self._public_job(row) for row in self.db.execute(
+                'SELECT * FROM jobs WHERE owner=? ORDER BY submitted DESC,rowid DESC LIMIT 50', (owner,))]}
 
     def _public_job(self, row) -> dict:
         position = 0
         if row["state"] == "queued":
             position = self.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND (submitted<? OR (submitted=? AND rowid <= (SELECT rowid FROM jobs WHERE id=?)))", (row["submitted"], row["submitted"], row["id"])).fetchone()[0]
         pending = row['state'] in {'queued', 'running'}
-        return {"job_id": row["id"], "status": row["state"], "queue_position": position,
+        status, error = row['state'], row['error']
+        available = None
+        if status == 'done':
+            artifacts = json.loads(row['result'] or '{}').get('artifacts', [])
+            available = bool(artifacts) and all((self.artifact_root(row['id']) / item['name']).is_file() for item in artifacts)
+            if not available or row['result_expires'] is not None and row['result_expires'] <= self.clock():
+                status, available = 'expired', False
+                error = 'Render artifacts unavailable; recovery does not authorize another render.'
+        stage = {'failed': 'failed', 'cancelled': 'cancelled', 'delivered': 'delivery'}.get(row['state'], row['stage'])
+        if stage == 'validation' and row['state'] == 'done':
+            stage = 'result_ready'  # Legacy terminal row; no fabricated timing.
+        return {"job_id": row["id"], "operation_id": row["id"], "status": status, "queue_position": position,
+                "stage": stage, "stage_history": json.loads(row['stage_history']),
+                "result_available": available,
                 "session_id": row["session_id"], "submitted_by": row["submitted_by"],
                 "submitted_at": row["submitted"], "started_at": row["started"], "finished_at": row["finished"],
-                "cancel_requested": bool(row["cancel_requested"]), "error": row["error"],
+                "cancel_requested": bool(row["cancel_requested"]), "error": error,
                 "estimated_cost_usd": row["charged"] / 1_000_000,
                 "expires_at": row['result_expires'],
-                "next_action": 'render_status' if pending else ('render_result' if row['state']=='done' else 'stop'),
+                "next_action": 'render_status' if pending else ('render_result' if status=='done' else 'stop'),
                 "poll_after_seconds": 5 if pending else None,
                 "reused": False}
 
@@ -413,6 +485,8 @@ class JobStore:
             if row['result_expires'] is not None and row['result_expires'] <= self.clock():
                 raise JobError("Render artifacts have expired.", "expired", 410)
             data = json.loads(row["result"])
+            if any(not (self.artifact_root(identifier) / item['name']).is_file() for item in data['artifacts']):
+                raise JobError('Render artifacts are unavailable; recovery never starts a replacement render.', 'artifact_unavailable', 410)
             if 'manifest' not in data:
                 manifest = self.artifact_root(identifier) / 'manifest.json'
                 data['manifest'] = json.loads(manifest.read_text()) if manifest.is_file() else {}
@@ -473,12 +547,13 @@ class JobStore:
                 raise JobError("Job not found.", "not_found", 404)
             if row["state"] == "queued":
                 db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Render cancelled by a user or operator request.' WHERE id=?", (self.clock(), identifier))
+                self._stage(db, identifier, 'cancelled')
             elif row["state"] == "running":
                 db.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (identifier,))
             self._release_finished_inputs(db)
         return self.get(owner, identifier)
 
-    def finish(self, identifier: str, *, result: dict | None = None, error: str | None = None, seconds: float = 0):
+    def finish(self, identifier: str, *, result: dict | None = None, error: str | None = None, seconds: float = 0, compute_started: bool = True):
         with self.transaction() as db:
             row = db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
             if not row or row["state"] != "running":
@@ -487,9 +562,12 @@ class JobStore:
             if state == 'cancelled':
                 error = 'Render cancelled by a user or operator request.'
             seconds = max(0, min(float(seconds), self.policy.max_job_seconds))
-            charged = min(row["reserved"], math.ceil((seconds + self.policy.startup_seconds) * self.policy.usd_per_second * 1_000_000)) if self.policy.public else 0
+            charged = min(row["reserved"], math.ceil((seconds + self.policy.startup_seconds) * self.policy.usd_per_second * 1_000_000)) if self.policy.public and compute_started else 0
+            if not compute_started:
+                seconds = 0
             record = {k: v for k, v in (result or {}).items() if k != 'manifest'}
             db.execute("UPDATE jobs SET state=?,finished=?,charged=?,gpu_seconds=?,result=?,error=?,rendered=?,result_expires=?,options='{}' WHERE id=?", (state, self.clock(), charged, seconds, json.dumps(record) if state == "done" else None, error, int(state == 'done'), self.clock()+self.policy.ttl_seconds if state=='done' else None, identifier))
+            self._stage(db, identifier, 'result_ready' if state == 'done' else state)
             self._release_finished_inputs(db)
 
     def _release_finished_inputs(self, db):
@@ -507,6 +585,7 @@ class JobStore:
             artifact = next((a for a in result['artifacts'] if a['name'] == name), None)
             if not artifact:
                 return
+            self._stage(db, identifier, 'delivery')
             (self.artifact_root(identifier) / name).unlink(missing_ok=True)
             result['artifacts'] = [a for a in result['artifacts'] if a['name'] != name]
             result['bytes'] = sum(a['size'] for a in result['artifacts'])
@@ -518,11 +597,15 @@ class JobStore:
 
     def recover_interrupted(self):
         with self.transaction() as db:
+            interrupted = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='running'")]
             # Never retry an unknown paid execution or refund its reservation.
             db.execute("UPDATE jobs SET state='failed',finished=?,charged=reserved,gpu_seconds=?,options='{}',error='Service interrupted. Execution was not retried; submit a new request.' WHERE state='running'", (self.clock(), self.policy.max_job_seconds))
+            for identifier in interrupted:
+                self._stage(db, identifier, 'failed')
             for row in db.execute("SELECT id,input_id FROM jobs WHERE state='queued'").fetchall():
                 if not self.input_path(row['input_id']).is_file():
                     db.execute("UPDATE jobs SET state='failed',finished=?,options='{}',error='Temporary input lost on restart; upload again.' WHERE id=?", (self.clock(), row['id']))
+                    self._stage(db, row['id'], 'failed')
             self._release_finished_inputs(db)
 
     def drain(self):
@@ -536,7 +619,10 @@ class JobStore:
     def cancel_pending(self):
         """Close queued work when operating funds no longer cover execution."""
         with self.transaction() as db:
+            queued = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='queued'")]
             db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Service operating budget exhausted' WHERE state='queued'", (self.clock(),))
+            for identifier in queued:
+                self._stage(db, identifier, 'cancelled')
             self._release_finished_inputs(db)
 
     def cleanup(self):

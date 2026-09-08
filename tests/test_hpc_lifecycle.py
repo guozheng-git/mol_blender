@@ -26,6 +26,19 @@ def test_completing_allocation_is_not_a_warm_session(tmp_path, monkeypatch):
     assert len(commands) == 1  # No service probe can make a dying allocation ready.
 
 
+def test_absent_status_does_not_create_registry_or_allocate(tmp_path, monkeypatch, capsys):
+    root = tmp_path / 'absent'
+    monkeypatch.setattr(hpc_remote.sys, 'argv', ['hpc_remote', 'status'])
+    monkeypatch.setattr(hpc_remote.sys, 'stdin', io.StringIO(json.dumps({'profile': {'registry': str(root)}})))
+    def forbidden(*a, **kw):
+        raise AssertionError('Status started a process')
+    monkeypatch.setattr(hpc_remote.subprocess, 'run', forbidden)
+    monkeypatch.setattr(hpc_remote.subprocess, 'Popen', forbidden)
+    hpc_remote.main()
+    assert json.loads(capsys.readouterr().out) == {'status': 'absent'}
+    assert not root.exists()
+
+
 def test_replacement_waits_for_previous_writer_and_preserves_its_token(tmp_path, monkeypatch, capsys):
     registry(tmp_path)
     profile = {"registry":str(tmp_path), "remote_root":str(tmp_path), "remote_python":"python"}

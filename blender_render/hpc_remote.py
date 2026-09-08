@@ -83,6 +83,12 @@ def main():
     data = json.load(sys.stdin)
     profile = data["profile"]
     root = Path(profile["registry"]).expanduser()
+    if action == 'status':
+        # A read must not create a registry or enter allocation/repair logic.
+        state = check_session(root)
+        state.pop('token', None)
+        print(json.dumps(state))
+        return
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (root / "registry.lock").open("a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)

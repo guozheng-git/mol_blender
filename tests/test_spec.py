@@ -230,7 +230,7 @@ def test_custom_surface_through_adapter_to_worker(adapter, bundle, tmp_path, mon
     worker, resolved = CaptureWorker(), []
     class Client:
         def upload(self, *args): return {"input_id": "input"}
-        def submit(self, identifier, options, *args):
+        def submit(self, identifier, options, *args, **kwargs):
             request = prepare_options(options, bundle, public=False, timeout=120)
             resolved.append(request)
             self.result = rendering._process_render_request(request_id="surface", request_doc={"payload": bundle, **request},

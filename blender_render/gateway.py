@@ -23,15 +23,30 @@ class GatewayBackend:
 
     def __init__(self, store, profile):
         self.store, self.profile, self.active = store, profile, None
+        self.progress = None
+
+    def set_progress(self, callback):
+        self.progress = callback
 
     def render(self, request, identifier, cancelled):
-        client = configured_client(self.profile)
-        source = client.upload(request['payload'])
-        options = {key: request[key] for key in ('style_doc','rough','raw_view','color_follow','save_blend') if key in request}
-        # The gateway already resolved camera framing and output dimensions.
-        options['preserve_view'] = False
-        job = client.submit(source['input_id'], options, 'gateway-' + identifier)
-        self.store.set_remote_id(identifier, job['job_id'])
+        if cancelled():
+            raise RuntimeError('Lab render cancelled before child connection')
+        with self.store.lock:
+            row = self.store.db.execute('SELECT remote_id FROM jobs WHERE id=?', (identifier,)).fetchone()
+            child_id = row['remote_id'] if row else None
+        client = configured_client(self.profile, read_only=bool(child_id))
+        if child_id:
+            job = {'job_id': child_id}
+        else:
+            source = client.upload(request['payload'])
+            if cancelled():
+                raise RuntimeError('Lab render cancelled before child submission')
+            options = {key: request[key] for key in ('style_doc','rough','raw_view','color_follow','save_blend') if key in request}
+            # The gateway already resolved camera framing and output dimensions.
+            options['preserve_view'] = False
+            job = client.submit(source['input_id'], options, 'gateway-' + identifier,
+                                rerender=True, operation_key='gateway-' + identifier)
+            self.store.set_remote_id(identifier, job['job_id'])
         self.active = client, job['job_id']
         deadline = time.monotonic() + request.get('job_timeout_seconds', 1800)
         try:
@@ -40,6 +55,8 @@ class GatewayBackend:
                     client.cancel(job['job_id'])
                     raise RuntimeError('Lab render cancelled or timed out')
                 state = client.status(job['job_id'])
+                if self.progress and state.get('stage') in {'waiting_for_compute', 'scene_build', 'rendering'}:
+                    self.progress(identifier, state['stage'])
                 if state['status'] == 'done':
                     result = client.request('GET', '/v1/jobs/' + job['job_id'] + '/result')
                     response = {'status':'completed', 'manifest':result['manifest'],
@@ -52,8 +69,10 @@ class GatewayBackend:
                         if hashlib.sha256(data).hexdigest() != artifact['sha256']:
                             raise RuntimeError('Lab worker artifact checksum mismatch')
                         response['png_base64' if name == 'render.png' else 'blend_base64'] = base64.b64encode(data).decode()
+                    if 'png_base64' not in response or request.get('save_blend') and 'blend_base64' not in response:
+                        raise RuntimeError('Lab worker artifact unavailable; no replacement render was submitted')
                     return response
-                if state['status'] in {'failed','cancelled','expired'}:
+                if state['status'] in {'failed','cancelled','expired','delivered','deleted'}:
                     raise RuntimeError(state.get('error') or 'Lab render ' + state['status'])
                 time.sleep(.5)
         except BaseException:

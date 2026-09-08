@@ -271,6 +271,7 @@ def test_running_and_queued_cancellation(tmp_path, payload):
     service.start()
     try:
         await_status(store, "a", first["job_id"], "running")
+        assert service.backend.entered.wait(1)
         store.cancel("a", first["job_id"])
         final = await_status(store, "a", first["job_id"], "cancelled")
         assert final['error'] == 'Render cancelled by a user or operator request.'
@@ -409,7 +410,7 @@ def test_one_call_file_retries_do_not_reconvert_after_input_deletion(tmp_path, p
         results = list(pool.map(render, range(4)))
     identifier = results[0]['job_id']
     assert {r['job_id'] for r in results} == {identifier}
-    assert converted == [b'public fixture']
+    assert converted == []  # Durable job precedes conversion.
     service.start()
     try:
         await_status(store, 'a', identifier, 'done')
@@ -423,11 +424,14 @@ def test_one_call_file_retries_do_not_reconvert_after_input_deletion(tmp_path, p
         assert service.backend.calls == [identifier]
     finally:
         service.stop()
-    # A later explicit request may render again after the short delivery window.
+    # Expiry is not authorization. Only an explicit repeat creates a new job.
     now[0] += 901
     store.cleanup()
-    assert render(None)['job_id'] != identifier
-    assert len(converted) == 2
+    assert render(None)['job_id'] == identifier
+    repeated = service.render_file('a', b'public fixture', '.cif', 'test.cif', converter, {},
+                                   rerender=True, operation_key='additional-render')
+    assert repeated['job_id'] != identifier
+    assert len(converted) == 1
     store.close()
 
 

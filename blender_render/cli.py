@@ -49,6 +49,8 @@ def parser():
     render.add_argument("--save-blend", action="store_true", default=None)
     render.add_argument("--no-wait", action="store_true")
     render.add_argument("--idempotency-key")
+    render.add_argument('--operation-key', help='Stable key for one logical request across retries')
+    render.add_argument('--rerender', action='store_true', help='Explicit additional render; requires a stable key')
     render.add_argument("--timeout", type=int, default=1800)
     for action in ("status", "result", "cancel", "quota"):
         sub = commands.add_parser(action)
@@ -71,6 +73,8 @@ def parser():
     serve.add_argument("--token-file", type=Path, required=True)
     serve.add_argument("--blender", default="")
     serve.add_argument("--image", default="")
+    serve.add_argument('--pymol-python', default='')
+    serve.add_argument('--worker-profile', default='', help='Dispatch admitted jobs through a configured HPC profile')
     serve.add_argument("--idle-timeout", type=int, default=900)
     serve.add_argument("--mcp", action="store_true")
     serve.add_argument("--job-timeout", type=int, default=1800)
@@ -105,7 +109,7 @@ def serve(args):
     import uvicorn
     from .api import create_app
     from .jobs import JobStore, Policy
-    from .runtime import file_lock
+    from .runtime import file_lock, LocalFileConverter
     from .service import HostBackend, RenderService
     if args.host not in {"127.0.0.1", "::1", "localhost"}:
         raise ValueError("Bind the private service to loopback. Use SSH forwarding or a TLS/OAuth gateway for remote clients.")
@@ -113,7 +117,12 @@ def serve(args):
     with file_lock(args.root / "service.lock", blocking=False):
         store = JobStore(args.root, Policy(max_job_seconds=args.job_timeout))
         store.resume()
-        service = RenderService(store, HostBackend(args.root / "worker", blender=args.blender, image=args.image, timeout=args.job_timeout))
+        if args.worker_profile:
+            from .gateway import GatewayBackend
+            backend = GatewayBackend(store, args.worker_profile)
+        else:
+            backend = HostBackend(args.root / "worker", blender=args.blender, image=args.image, timeout=args.job_timeout)
+        service = RenderService(store, backend, converter=LocalFileConverter(args.pymol_python))
         mcp = None
         if args.mcp:
             from .mcp_server import create_private_http
@@ -157,7 +166,9 @@ def execute(args):
             from .runtime_install import install
             config.update(install(config.get("blender", "")))
         save_config(config)
-        check = diagnose()
+        # Setup is an explicit runtime operation. Ordinary doctor/status calls
+        # keep diagnose's read-only default and never launch Blender.
+        check = diagnose(probe=True)
         if not check["matches_lock"]:
             raise RuntimeError("Runtime does not match the release lock: " + json.dumps(check["mismatches"]))
         return {"status": "configured", **check, "pymol_command": "run " + str(Path(__file__).with_name("pymol_bridge_plugin.py"))}
@@ -200,15 +211,8 @@ def execute(args):
     from .client import configured_client
     if args.command == "service":
         if args.action == "status":
-            if args.profile != "local":
-                profile = load_config().get('profiles',{}).get(args.profile,{})
-                if profile.get('kind') == 'hpc':
-                    from .hpc import remote
-                    result = remote(profile, 'status')
-                    result.pop('token', None)
-                    return result
             try:
-                client = configured_client(args.profile, attach_only=True)
+                client = configured_client(args.profile, read_only=True)
                 return client.request('GET','/health')
             except (RuntimeError, OSError):
                 return {'status':'stopped'}
@@ -223,18 +227,12 @@ def execute(args):
         if args.action == "stop":
             from .hpc import stop
             return stop(args.profile, load_config()["profiles"][args.profile])
-        client = configured_client(args.profile)
-        return client.request("GET", "/health")
-    client = configured_client(args.profile, blender=getattr(args,'blender',''), image=getattr(args,'image',''))
+        from .client import start_service
+        return start_service(args.profile)
+    client = configured_client(args.profile, admission=True, blender=getattr(args,'blender',''),
+                               image=getattr(args,'image',''), pymol_python=getattr(args,'pymol_python',''))
     if args.command == "render":
-        from .runtime import export_file
         path = Path(args.input).expanduser()
-        profile = load_config().get("profiles", {}).get(args.profile, {})
-        if profile.get("upload_files") and path.suffix != ".json":
-            source = client.upload_file(path)
-        else:
-            payload = json.loads(path.read_text()) if path.suffix == ".json" else export_file(path, python=args.pymol_python, selection=args.selection)
-            source = client.upload(payload, path.name)
         options = {k: getattr(args, k) for k in ("preset", "width", "height", "samples", "rough", "color_follow", "save_blend", "keep_temp", "preserve_view") if getattr(args, k) is not None}
         if args.style_json:
             options["style_doc"] = json.loads(Path(args.style_json).read_text())
@@ -243,8 +241,18 @@ def execute(args):
             options["overrides"] = json.loads(Path(args.overrides_json).read_text())
         if args.transparent is not None:
             options["transparent_background"] = args.transparent
-        job = client.submit(source["input_id"], options, args.idempotency_key)
-        print("Job " + job["job_id"], file=sys.stderr)
+        if args.rerender and not (args.operation_key or args.idempotency_key):
+            raise ValueError('--rerender requires --operation-key or --idempotency-key; retain that key for retries')
+        identity = {'operation_key': args.operation_key, 'rerender': args.rerender}
+        if path.suffix.lower() == '.json':
+            # An already exported StructureBundle needs no conversion. It joins
+            # the same durable job queue; never also submit it as a raw file.
+            source = client.upload(json.loads(path.read_text()), path.name)
+            job = client.submit(source['input_id'], options, args.idempotency_key, **identity)
+        else:
+            job = client.render_file(path, options, args.idempotency_key,
+                                     selection=args.selection, **identity)
+        print("Job " + job["job_id"], file=sys.stderr, flush=True)
         if args.no_wait:
             return job
         client.wait(job["job_id"], timeout=args.timeout, progress=lambda s: print(f"{s['status']} (queue position {s['queue_position']})", file=sys.stderr))

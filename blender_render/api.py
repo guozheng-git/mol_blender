@@ -105,6 +105,9 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     app = FastAPI(title="Blender Render", version=VERSION, lifespan=lifespan)
     app.state.service = service
     app.state.downloads = downloads
+    converter = converter or service.converter
+    if converter is not None:
+        service.converter = converter
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def homepage():
@@ -190,6 +193,15 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         from .core import PRESET_STYLE_FILENAMES
         return {"presets": list(PRESET_STYLE_FILENAMES)}
 
+    @app.get('/v1/capabilities')
+    async def capabilities(identity=Depends(owner)):
+        from .presets import catalog
+        from .config import runtime_versions
+        return {'version': VERSION, 'required_runtime': runtime_versions(), 'runtime_verified': False,
+                'capabilities': sorted(set().union(*(set(p['required_capabilities']) for p in catalog()))
+                                       | {'camera.depth_of_field'}),
+                'limitation': 'Installed controller declaration, not a live compute probe.'}
+
     @app.post("/v1/structures")
     async def upload(request: Request, identity=Depends(owner)):
         data = await body(request)
@@ -216,7 +228,30 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     @app.post("/v1/jobs", status_code=202)
     async def submit(request: Request, identity=Depends(owner)):
         data = await body(request)
-        return await asyncio.to_thread(service.submit, identity, data.get("input_id", ""), data.get("options", {}), data.get("idempotency_key", ""), rerender=data.get('rerender', False))
+        return await asyncio.to_thread(service.submit, identity, data.get("input_id", ""), data.get("options", {}), data.get("idempotency_key", ""), rerender=data.get('rerender', False), operation_key=data.get('operation_key'))
+
+    @app.post('/v1/render-files/{format}', status_code=202)
+    async def render_file(format: str, request: Request, identity=Depends(owner)):
+        # Four-byte JSON-envelope length, envelope, then bounded raw file bytes.
+        # Avoid base64 expansion and proxy-dependent large HTTP headers.
+        raw = await request.body()
+        try:
+            size = int.from_bytes(raw[:4], 'big')
+            if not 0 < size <= 65532 or len(raw) < 4 + size:
+                raise ValueError()
+            settings = json.loads(raw[4:4 + size])
+            allowed = {'options', 'idempotency_key', 'operation_key', 'rerender', 'selection'}
+            if not isinstance(settings, dict) or set(settings) - allowed:
+                raise ValueError()
+        except ValueError as exc:
+            raise JobError('Invalid render request envelope') from exc
+        return await asyncio.to_thread(service.render_file, identity, raw[4 + size:], '.' + format,
+            request.query_params.get('name', 'structure.' + format), converter,
+            settings.pop('options', {}), **settings)
+
+    @app.get('/v1/jobs')
+    async def recent_jobs(identity=Depends(owner)):
+        return service.store.recent(identity)
 
     @app.get("/status/{job_id}")
     @app.get("/v1/jobs/{job_id}")

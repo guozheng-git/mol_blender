@@ -522,3 +522,185 @@ Keep the existing modules and contracts. Start only after a separate instruction
 | C5. Responsiveness, selection and timings | Shared service/client submission and existing input adapters | Normal submission returns a durable handle before long preparation; raw-upload selection is honored; one request creates one operation; no unconditional quota/catalog calls; sanitized timings distinguish conversion, queue/startup, scene build, render and delivery. |
 
 Do not mix all five steps with a deployment or file-tree migration. C1 is the proposed first bounded task. **A/B closure assessment complete; all changes remain uncommitted for review, and C has not begun.**
+
+## Milestone C1 — operation lifecycle and idempotency
+
+Starting branch: `codex/execution-reliability`, committed A/B checkpoint
+`815e3dffdf34de0451a2903021c620ef07d82827` (`complete JSON render bridge and developer workbench`).
+The release worktree was clean. The separate `blender_bridge` master checkout was
+not modified. Read the contributor guide, v3 plan, progress history and checkpoint
+implementation diff. No nested AGENTS was found. The user's C1 request explicitly
+includes early handles, read-only access, gateway mapping, worker admission and
+stages, extending the narrower historical C1 decomposition above.
+
+**C1 is ready for review at the requested fake/local acceptance boundary.** The
+initial implementation stopped when automatic approval review blocked the CLI
+routing/start edits. The user subsequently explicitly authorized those source
+changes with fake-only validation; the closure work below completes them. No
+blocked edit was bypassed before that authorization. No MCP tool/schema/preset
+selection changes were made. No Slurm, Modal, shared service, credentials or paid
+compute were used. Changes remain uncommitted. Real runtime release gates are
+not asserted by this assessment.
+
+### Implemented state-machine changes
+
+- Reuse the existing SQLite FIFO, job IDs, cost ledger and resolver. Add optional
+  logical `operation_key` independently of transport aliases; explicit repeats
+  remain `rerender=True`. Preserve the operation after artifact expiry/deletion,
+  instead of automatically creating a replacement after the old TTL.
+- Add durable raw-file admission through `RenderService.render_file` and
+  `POST /v1/render-files/{format}`. Commit the job before deferred conversion;
+  validate its StructureBundle and bind resolved JSON before backend entry.
+  A cancelled conversion continues holding the FIFO slot until it returns.
+- Preserve omission versus explicit false in retry hashes when JSON contains
+  the effect controls; this prevents identity lookup bypassing A's resolver.
+- Normalize only exporter-owned UUID names; preserve original selection/state
+  and actual active object states as well as transforms/coordinates/colors/DSS/view.
+- Map distinct gateway outer jobs to distinct children; reuse persisted child IDs
+  and stable child keys after response loss. Fail on consumed/missing requested
+  artifacts rather than treating those children as completed usable output.
+- Move HTTP worker admission release into the execution thread's finalizer. Wait
+  for actual Blender process exit before giving up worker ownership. Timeout or
+  request cancellation cannot release an alive worker, and late completion releases
+  admission once.
+- Add compact stages with timestamped transitions and worker stage journaling.
+  Status, owner-scoped recent operations, catalog/capability lookup and configured
+  client reads do not start compute. Absent cached connections report limitations.
+  `doctor` is passive; explicit setup can still probe the runtime.
+
+Detailed API and compatibility notes: [operation lifecycle](../operation-lifecycle.md).
+Preset JSON, schema, resolver semantics and A/B developer capabilities remain
+unchanged. The shared Blender source change only records stage boundaries; no new
+image effect was implemented and no new Blender image equivalence is claimed.
+
+### Executed evidence
+
+All commands used the existing release `.venv/bin/python`, with
+`PYTHONDONTWRITEBYTECODE=1`, `BLENDER_RENDER_HOME=/private/tmp/blender-c1/home`,
+`PYMOL_BRIDGE_SESSION_ROOT=/private/tmp/blender-c1/sessions` and
+`PYMOL_BRIDGE_TMP_ROOT=/private/tmp/blender-c1/runs`. Tests create isolated stores,
+fake processes and in-process HTTP clients. No real remote destination is contacted.
+
+| Exact command (after the environment assignments above) | Executed result |
+|---|---|
+| `.venv/bin/python -m pytest -q -p no:cacheprovider` before edits | **241 passed, four inherited warnings, 5.32s**; `baseline.log`. No pre-existing test failures. |
+| Same full-suite command, first implementation check | **239 passed, two failed, five warnings**; `intermediate.log`. Old raw-file test expected synchronous conversion; a test-created HostBackend omitted the new optional progress attribute. Both corrected. The fifth warning was the latter test thread error, not inherited. |
+| `.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_operation_lifecycle.py tests/test_jobs_api.py tests/test_worker_http.py` | Initial **43 passed, one failed, four warnings**; `focused-1.log`. The existing cancellation assertion raced preparation versus actual worker entry; it now waits for the worker-entry event. |
+| Full-suite command after those corrections | **256 passed, four inherited warnings, 4.93s**; `suite-2.log`. |
+| Full-suite command after database migration, existing-read, killed-process and stage-forwarding coverage | **260 passed, four inherited warnings, 5.11s**; `suite-3.log`. |
+| `.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_operation_lifecycle.py tests/test_jobs_api.py tests/test_worker_http.py tests/test_hpc_lifecycle.py` | **53 passed, four inherited warnings, 3.26s**; `focused-final.log`. This preceded the final raw-input compatibility/cancellation-stage edits. |
+| `.venv/bin/python -m pytest -q -p no:cacheprovider` after final raw-input, key-validation, cancellation-stage and converter-configuration edits | **262 passed, four inherited warnings, 5.28s**; `suite-final.log`. No remaining test failures. |
+| `git diff --check` | **Passed**, no whitespace errors. Reviewed the final client, gateway and worker-admission diff; the explicit-start compatibility gap below remains, so this is not a clean C1 closure. |
+
+Logs above are under `/private/tmp/blender-c1`. The tests prove one reservation /
+dispatch on concurrent retries, explicit repeats, durable admission before a gated
+converter, queued restart, no backend dispatch after conversion cancellation or
+invalid JSON, distinct gateway children and same-child recovery, no new operation
+on missing output, absence of read-side startup, stable temporary names and
+significant scientific fields, late timeout/cancellation release, and live delivery
+of fake worker stage events before its response.
+
+### C1 acceptance boundary and unresolved work
+
+| Required outcome | Current classification |
+|---|---|
+| Separate operation identity from content recovery | **Proven in unit/service/API tests.** Stable operation keys reject changed-input/options reuse; explicit repeats get distinct IDs. Consumer propagation of keys remains an adapter responsibility. |
+| Durable handle before conversion/allocation/cold-start/render | **Proven in service/file API and CLI fake integration.** Molecular files enter durable admission; HPC CLI uses a local outer controller and deferred GatewayBackend. The fake server test observes handle return, then conversion, then allocation. JSON bundles enter the same queue without conversion. |
+| Read-only operations do not start compute | **Proven for shared-client/API/CLI reads and passive diagnostics using fakes and audit guards.** Unreachable/stopped compute is reported. Explicit local/HPC `service start` alone selects the mocked startup/allocation path and returns the compatible health result. |
+| Stable multi-object identity with scientific changes significant | **Proven by exporter/identity regressions with fake PyMOL.** No fresh real PyMOL export was executed; historical fingerprints are not migrated. |
+| Correct nested gateway identity and available artifacts | **Proven with an isolated fake child service.** No real gateway/allocation tested. |
+| Retain admission while cancelled/timed-out work is alive; late release once | **Proven with gated fake HTTP workers, request cancellation and a fake non-exiting Blender process.** No real process-kill stress test executed. |
+| Compact operation stages | **Implemented and fake/local journal forwarding executed.** Actual Blender and remote live timing streams are not claimed. |
+
+The previously blocked **C1** CLI routing and explicit-start compatibility work is
+now implemented and executed with fakes. `--no-wait` performs one logical admission
+and no status/result retrieval. Waiting uses the admitted ID. A simulated lost
+response after commit followed by fresh argument parsing and a changed transport
+key recovers the same operation; explicit repeats get distinct IDs. Local `serve`
+configures the deferred trusted-user converter. No remaining C1 implementation
+gap is identified within this requested scope; real runtime checks remain unverified.
+
+After C1 review, proposed **C2**: profile-specific standard Slurm launch, runtime
+compatibility negotiation, raw-selection adapter parity and authorized real worker
+cancellation/timing verification. Proposed **C3**: delivery receipts and partial
+download resume, preserved results across controller replacement and explicit
+artifact acknowledgement/retention policy. C1's missing-artifact guard does not
+solve file recovery or partial downloads. No C2/C3 work, installed-host UI validation,
+deployment or publication was started.
+
+### Authorized CLI closure — 2026-09-08
+
+Exact files changed in this follow-up (the prior C1 diff is preserved):
+
+- `blender_render/cli.py`: raw-file admission, operation/repeat flags, flushed
+  handle reporting, deferred service converter/backend wiring, explicit start and
+  attach-only status. Removed the CLI synchronous raw import/export route.
+- `blender_render/client.py`: explicit `start_service`; opt-in CLI admission
+  routing to the local outer controller for HPC profiles. Generic construction
+  remains lazy; existing gateway child connections remain direct.
+- `blender_render/runtime.py`: isolated controller roots, launch arguments for
+  worker profile/interpreter, deferred trusted local conversion and interpreter
+  mismatch rejection. Existing process launchers are reused, not executed here.
+- `tests/test_cli_operation_routing.py`: 22 focused cases, including parameterized
+  read-only paths, durable service integration, interrupted response, explicit
+  start, fake controller launch and ordered deferred gateway dispatch.
+- `tests/test_spec.py`: existing adapter fake accepts additive identity keywords;
+  its rendering/camera/artifact assertions are unchanged.
+- `tests/c1_boundary_guard.py`: opt-in reproducible pytest audit guard. Any actual
+  subprocess/spawn/system call, socket connect/bind or DNS resolution fails the
+  run, including an attempt caught by application code. Only the two named
+  pre-existing A/B child-process tests are skipped under this guard.
+- `docs/operation-lifecycle.md` and this progress file: routing, trust boundaries,
+  compatibility, executed evidence and acceptance status.
+
+All commands ran in the release checkout. The initial 20-case CLI run used the
+environment assignments documented above and
+`.venv/bin/python -m pytest -q -p no:cacheprovider tests/test_cli_operation_routing.py`:
+**20 passed, two inherited warnings, 0.58s**. After adding the controller wiring
+cases, the temporary `/private/tmp/blender-c1/c1_boundary_guard.py` was used with
+`PYTHONPATH=/private/tmp/blender-c1` and the focused command below: **115 passed,
+four warnings, 3.66s**, `closure-focused.log`.
+
+The first guarded full-suite command (same prefix, no test paths) reported
+**282 passed, two failures, four warnings, 5.25s**, `closure-suite.log`.
+The guard prevented, before execution, two pre-existing test process attempts:
+Git metadata in `test_snapshot_tracks_python_and_assets` and a second interpreter
+in `test_save_restart_reuse_and_revision`. These are fake-only constraint failures,
+not new production regressions. No attempted child process ran. With those two
+tests explicitly skipped, the temporary guard run with `-rs` reported **282 passed,
+two skipped, four warnings, 5.17s**, `closure-suite-fake-only.log`. No other check
+was skipped. The repository guard now reproduces this boundary without changing
+the ordinary A/B tests.
+
+Final reproducible commands (shell `pipefail` enabled when teeing the logs):
+
+```sh
+export PYTHONPATH=tests PYTHONDONTWRITEBYTECODE=1
+export BLENDER_RENDER_HOME=/private/tmp/blender-c1/home
+export PYMOL_BRIDGE_SESSION_ROOT=/private/tmp/blender-c1/sessions
+export PYMOL_BRIDGE_TMP_ROOT=/private/tmp/blender-c1/runs
+.venv/bin/python -m pytest -q -p no:cacheprovider -p c1_boundary_guard tests/test_cli_operation_routing.py tests/test_operation_lifecycle.py tests/test_jobs_api.py tests/test_worker_http.py tests/test_hpc_lifecycle.py tests/test_spec.py
+.venv/bin/python -m pytest -q -rs -p no:cacheprovider -p c1_boundary_guard
+git diff --check
+```
+
+- Focused: **115 passed, four inherited warnings, 3.45s**;
+  `/private/tmp/blender-c1/closure-focused-repo-guard.log`.
+- Full eligible repository suite: **282 passed, two explicitly skipped, four
+  inherited warnings, 5.32s**; `closure-suite-repo-guard.log` in the same directory.
+- Both final runs reported `C1 audit: real process/network boundary attempts = []`.
+  Test fixtures additionally reject unmocked `ensure_local`, `hpc.connect`,
+  `hpc.remote`, local export and Blender startup. SSH/qlogin/srun/scancel and Modal
+  are unreachable through these guarded boundaries. Only in-process fake servers,
+  fake workers, temporary files and mocked startup functions were used. The test
+  runner and read-only Git inspection are not application service/compute launches.
+- Final diff review found no competing CLI raw-file upload/submit fallback, no
+  read-side call to startup or SSH, and no changes to renderer/preset/camera/artifact
+  semantics in this follow-up. `git diff --check` passed.
+
+Every C1 criterion in the table is proven at the authorized fake/local boundary.
+No installed-wheel contract run, real process-kill test, Blender preview, HPC/Modal
+execution or remote timing stream was run here. The two A/B child-process checks
+remain unverified on this final source under the task's restrictions; their earlier
+executed evidence is not replaced by mocks. No C2/C3 implementation, commit,
+deployment or publication was performed. Stop here for C1 review.

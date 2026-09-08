@@ -37,8 +37,25 @@ def write_private(path, data):
     os.replace(temp, path)
 
 
-def ensure_local(*, blender="", image="", attach_only=False, **ignored):
-    root = config_root() / "local"
+def controller_root(worker_profile=''):
+    if worker_profile:
+        import re
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', worker_profile):
+            raise ValueError('Invalid worker profile name')
+        return config_root() / 'controllers' / worker_profile
+    return config_root() / 'local'
+
+
+def existing_local(*, worker_profile=''):
+    """Read cached connection only. Never start, repair, probe or allocate."""
+    try:
+        return json.loads((controller_root(worker_profile) / 'session.json').read_text())
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('No existing controller; read-only access cannot start it.') from exc
+
+
+def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', pymol_python='', **ignored):
+    root = controller_root(worker_profile)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     state_file = root / "session.json"
     from .client import Client
@@ -51,6 +68,8 @@ def ensure_local(*, blender="", image="", attach_only=False, **ignored):
                 raise RuntimeError("A previous service version is running. Run blender-render service stop before upgrading.")
             if image and state.get("image", "") != image:
                 raise RuntimeError("Local service uses a different runtime. Stop it before switching Apptainer images.")
+            if pymol_python and state.get('pymol_python', '') != pymol_python:
+                raise RuntimeError('Local controller uses a different PyMOL runtime. Stop it before switching interpreters.')
             return state
         except RuntimeError as exc:
             from .client import ClientError
@@ -72,13 +91,18 @@ def ensure_local(*, blender="", image="", attach_only=False, **ignored):
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
         state = {"url": f"http://127.0.0.1:{port}", "token_file": str(token_file), "version": VERSION,
-                 "session_id": secrets.token_hex(12), "started_at": time.time(), "image": image}
+                 "session_id": secrets.token_hex(12), "started_at": time.time(), "image": image,
+                 'pymol_python': pymol_python}
         command = [python, "-m", "blender_render.cli", "serve", "--port", str(port), "--root", str(root), "--token-file", str(token_file), "--idle-timeout", "900"]
         executable = blender or config.get("blender", "")
         if executable:
             command += ["--blender", executable]
         if image:
             command += ["--image", image]
+        if worker_profile:
+            command += ['--worker-profile', worker_profile]
+        if pymol_python:
+            command += ['--pymol-python', pymol_python]
         env = os.environ.copy()
         env["BLENDER_RENDER_SESSION_ID"] = state["session_id"]
         with (root / "service.log").open("a") as log:
@@ -98,6 +122,25 @@ def ensure_local(*, blender="", image="", attach_only=False, **ignored):
         raise RuntimeError(f"Local service startup timed out. See {root / 'service.log'}")
 
 
+class LocalFileConverter:
+    """Deferred conversion of the authenticated local user's trusted files.
+
+    Never install this converter on a public upload service; those require the
+    existing isolated converter. Uses the same export as the former CLI path.
+    """
+    def __init__(self, python=''):
+        self.python = python
+
+    def __call__(self, data, suffix, *, selection='(all)'):
+        import tempfile
+        if suffix not in {'.pse', '.cif', '.mmcif', '.pdb'}:
+            raise ValueError('Unsupported molecular file')
+        with tempfile.TemporaryDirectory(prefix='blender-admitted-export-') as root:
+            path = Path(root) / ('structure' + suffix)
+            path.write_bytes(data)
+            return export_file(path, python=self.python, selection=selection)
+
+
 def export_file(path, *, python="", selection="(all)"):
     import tempfile
     config = load_config()
@@ -110,9 +153,14 @@ def export_file(path, *, python="", selection="(all)"):
         return json.loads(destination.read_text())
 
 
-def diagnose(blender=""):
+def diagnose(blender="", *, probe=False):
     from .core import _detect_host_blender_executable
     blender = blender or load_config().get("blender") or _detect_host_blender_executable()
+    if not probe:
+        from .config import runtime_versions
+        return {'blender_executable': blender, 'exists': Path(blender).is_file() if blender else False,
+                'expected_versions': runtime_versions(), 'runtime_verified': False,
+                'limitation': 'Read-only inspection; use explicit setup to execute a runtime probe.'}
     env = os.environ.copy()
     site = load_config().get("runtime_site", str(config_root() / "runtime" / "site"))
     env["PYTHONPATH"] = site + os.pathsep + env.get("PYTHONPATH", "")

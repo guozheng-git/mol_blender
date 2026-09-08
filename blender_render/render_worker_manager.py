@@ -305,6 +305,12 @@ class PersistentBlenderWorker:
                     except Exception:
                         pass
 
+        while process.poll() is None:
+            # A killed process is still alive until wait confirms its exit.
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._log('worker-exit-wait admission-retained')
         self._process = None
         self._close_logs_locked()
         if self.socket_path.exists():
@@ -353,6 +359,7 @@ class PersistentBlenderWorker:
         output_png: Path,
         run_manifest: Path,
         timeout: float,
+        progress=None,
     ) -> dict[str, Any]:
         request_payload = {
             "action": "render_job",
@@ -365,6 +372,22 @@ class PersistentBlenderWorker:
 
         with self._lock:
             self._ensure_started_locked()
+            from blender_render.operation_progress import read_stages, stage_path
+            stage_path(run_manifest).unlink(missing_ok=True)
+            completed = threading.Event()
+            seen = 0
+            def report():
+                nonlocal seen
+                if progress:
+                    stages = read_stages(run_manifest)
+                    for item in stages[seen:]:
+                        progress(item['stage'])
+                    seen = len(stages)
+            def watch():
+                while not completed.wait(.1):
+                    report()
+            watcher = threading.Thread(target=watch, daemon=True)
+            watcher.start()
             self._log(
                 "worker-render-submit "
                 f"structure={structure_path} output={output_png} timeout={float(timeout):.1f}s"
@@ -377,6 +400,10 @@ class PersistentBlenderWorker:
                 self.interrupt()
                 self._stop_locked()
                 raise
+            finally:
+                completed.set()
+                watcher.join()
+                report()
 
         status = str(response.get("status", "")).strip().lower()
         if status != "completed":

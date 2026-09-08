@@ -62,12 +62,17 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
             payload['keep_temp'] = False
             payload['job_timeout_seconds'] = timeout-20
             def run():
-                with tempfile.TemporaryDirectory(prefix='blender-render-worker-') as root:
-                    backend = factory(Path(root))
-                    try:
-                        return backend.render(payload, job_id, flag.is_set)
-                    finally:
-                        backend.stop()
+                try:
+                    with tempfile.TemporaryDirectory(prefix='blender-render-worker-') as root:
+                        backend = factory(Path(root))
+                        try:
+                            return backend.render(payload, job_id, flag.is_set)
+                        finally:
+                            backend.stop()
+                finally:
+                    # The thread owns admission, even after its HTTP task is
+                    # cancelled or times out. Release only after backend exit.
+                    busy.release()
             task = asyncio.create_task(asyncio.to_thread(run))
             return await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
         except Exception as exc:
@@ -83,15 +88,13 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
             return JSONResponse({'error':'Render failed or timed out'}, status_code=500)
         finally:
             flag.set()
-            if task and not task.done():
-                try:
-                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
-                except Exception:
-                    pass
-            if task is None or task.done():
+            if task is None:
                 busy.release()
+            else:
+                # Retrieve a late exception without cancelling the live thread.
+                task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
             for key, (_, created) in list(flags.items()):
-                if created < time.monotonic()-3600:
+                if key != job_id and created < time.monotonic()-3600:
                     flags.pop(key, None)
 
     app.add_middleware(BoundedBody, limit=64*1024**2)
