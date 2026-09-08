@@ -37,6 +37,13 @@ def validate_camera_policy(policy: str, style: dict) -> None:
         raise ValueError("preserve_input cannot discard camera.depth_of_field; use the authored camera policy")
 
 
+def builtin_definition(identifier=None) -> PresetDefinition:
+    identifier = preset_id(identifier or DEFAULT_PRESET)
+    return PresetDefinition(identifier,
+        core.load_and_validate_style_json(core._default_preset_style(identifier)),
+        {"kind": "builtin", "id": identifier, "revision": "1", "source_json": PRESET_STYLE_FILENAMES[identifier]})
+
+
 def style_digest(style: dict) -> str:
     return hashlib.sha256(json.dumps(style, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
@@ -90,10 +97,8 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
         if policy not in ("preserve_input", "authored"):
             raise ValueError("camera_policy must be preserve_input or authored")
     else:
-        identifier = preset_id(options.get("preset") or DEFAULT_PRESET)
-        style = core.load_and_validate_style_json(core._default_preset_style(identifier))
-        source = {"kind": "builtin", "id": identifier, "revision": "1", "source_json": PRESET_STYLE_FILENAMES[identifier]}
-        policy = "preserve_input"
+        definition = builtin_definition(options.get('preset'))
+        identifier, style, source, policy = definition.identifier, definition.style_doc, definition.source, definition.camera_policy
     core.validate_style_document(style)
     overrides = options.get("overrides", {})
     # Validate the authored document before convenience or policy normalization

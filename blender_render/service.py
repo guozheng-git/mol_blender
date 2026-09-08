@@ -112,13 +112,28 @@ def validate_input(payload: dict, *, max_atoms: int, max_bytes: int) -> dict:
     return data
 
 
-def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int) -> dict:
+def prepare_options(options: dict, payload: dict, *, public: bool, timeout: int, preset_definition=None) -> dict:
     """Compatibility boundary: all style resolution lives in spec.resolve_options."""
     from .spec import resolve_options
     try:
-        return resolve_options(options, payload, public=public, timeout=timeout)
+        return resolve_options(options, payload, public=public, timeout=timeout, preset_definition=preset_definition)
     except (ValueError, core.RunnerError) as exc:
         raise JobError(str(exc)) from exc
+
+
+def freeze_file_options(options):
+    """Capture catalog bytes now; defer only bundle-dependent resolution."""
+    from dataclasses import asdict
+    from .spec import builtin_definition
+    frozen = {'prepare_file': copy.deepcopy(options)}
+    if 'style_doc' not in options:
+        try:
+            definition = builtin_definition(options.get('preset'))
+        except (ValueError, core.RunnerError) as exc:
+            raise JobError(str(exc)) from exc
+        frozen['prepare_file']['preset'] = definition.identifier
+        frozen['preset_definition'] = asdict(definition)
+    return frozen
 
 
 class RenderService:
@@ -257,7 +272,8 @@ class RenderService:
                 return existing
             existing = None if rerender else self.store.file_replay(owner, source_key, client_hash)
             if existing:
-                return existing
+                return self.store.remember_operation(owner, operation_key, existing, client_hash=client_hash, source_key=source_key)
+            frozen = freeze_file_options(options)
             # Raw bytes are private temporary input, not a StructureBundle.
             # The dispatcher validates the conversion and resolves once before
             # entering any compute backend. Restart never repeats live work.
@@ -267,7 +283,7 @@ class RenderService:
             with self.store.lock:
                 key = idempotency_key or operation_key or secrets.token_hex(16)
                 replay = self.store.submission_replay(owner, source['input_id'], key, client_hash, rerender=rerender)
-                job = replay or self.store.submit(owner, source['input_id'], {'prepare_file': options}, key,
+                job = self.store.remember_operation(owner, operation_key, replay, input_id=source['input_id'], client_hash=client_hash, source_key=source_key) if replay else self.store.submit(owner, source['input_id'], frozen, key,
                     client_hash=client_hash, rerender=rerender, operation_key=operation_key)
             self.wakeup.set()
             return job
@@ -286,7 +302,7 @@ class RenderService:
             legacy_hash = hashlib.sha256(json.dumps(options, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
             replay = self.store.submission_replay(owner, input_id, idempotency_key, client_hash, rerender=rerender, legacy_hash=legacy_hash if not rerender else None)
             if replay:
-                return replay
+                return self.store.remember_operation(owner, operation_key, replay, input_id=input_id, client_hash=client_hash)
             payload = self.store.input(owner, input_id)
             try:
                 if 'source_file' in payload:
@@ -295,7 +311,7 @@ class RenderService:
                         _check_options(options)
                     except ValueError as exc:
                         raise JobError(str(exc)) from exc
-                    normalized = {'prepare_file': options}
+                    normalized = freeze_file_options(options)
                 else:
                     normalized = prepare_options(options, payload, public=self.store.policy.public, timeout=self.store.policy.max_job_seconds)
             except core.StyleValidationError as exc:
@@ -330,7 +346,7 @@ class RenderService:
                 self.store.stage(identifier, 'conversion')
                 if self.store.cancelled(identifier):
                     raise RuntimeError('Cancelled before conversion')
-                self.store.reserve_conversion(job['owner'])
+                self.store.reserve_conversion(job['owner'], job_id=identifier)
                 raw = payload['source_file']
                 if self.converter is None:
                     raise RuntimeError('File converter unavailable after restart; execution was not retried')
@@ -338,7 +354,13 @@ class RenderService:
                 payload = self.converter(base64.b64decode(raw['data'], validate=True), raw['suffix'], **kwargs)
                 p = self.store.policy
                 payload = validate_input(payload, max_atoms=p.max_atoms if p.public else 10000000, max_bytes=p.max_upload_bytes)
-                request = prepare_options(request['prepare_file'], payload, public=p.public, timeout=p.max_job_seconds)
+                from .spec import PresetDefinition
+                captured = request.get('preset_definition')
+                if 'style_doc' not in request['prepare_file'] and captured is None:
+                    raise RuntimeError('Queued legacy file job lacks its preset snapshot; execution was not substituted')
+                definition = PresetDefinition(**captured) if captured is not None else None
+                request = prepare_options(request['prepare_file'], payload, public=p.public,
+                                          timeout=p.max_job_seconds, preset_definition=definition)
                 self.store.bind_spec(identifier, request)
             if self.store.cancelled(identifier) or self.stopping.is_set():
                 raise RuntimeError('Cancelled before compute')

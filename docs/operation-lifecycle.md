@@ -11,6 +11,8 @@ controller. This development change does not migrate any running service.
   `idempotency_key`. Changed transport keys still recover that operation.
 - Reusing an operation key with a different input or options fails with
   `operation_conflict`, including an attempted hidden rough preview.
+- Keys supplied on content-reuse responses are persisted as aliases too; a
+  reused result cannot leave a later changed request under that key unbound.
 - An explicitly requested additional render uses `rerender=True` and a new
   operation key. It gets its own job and reservation even for identical content.
 - Legacy callers may retain their original transport key. Content-based retry
@@ -40,6 +42,10 @@ The client handles framing. Envelope fields are `options`, `idempotency_key`,
 StructureBundle validation and the shared resolver run before backend admission;
 only the resolved snapshot reaches the renderer. Unsupported converter selection
 controls fail instead of being silently discarded.
+Raw admission captures the named preset definition, preserving its camera policy
+and provenance without turning it into authoritative full JSON. Only resolution
+that depends on the exported bundle waits for conversion. Older queued raw jobs
+without a captured named preset fail clearly rather than silently using new assets.
 
 The CLI sends molecular files through this admission endpoint, never through a
 competing synchronous import/submit fallback. Already exported JSON bundles use
@@ -84,6 +90,8 @@ Conversion failures before backend entry release the render reservation without
 charging GPU execution; the existing separate conversion charge remains. Ambiguous
 running work after controller interruption still fails conservatively and is not
 automatically replayed.
+Draining blocks new work, not conversion of an already-admitted running job;
+conversion dispatch still enforces ownership and lifetime budget limits.
 
 The HTTP worker's execution thread owns its admission lock through backend stop
 and eventual process exit. HTTP timeout/cancellation never releases an alive

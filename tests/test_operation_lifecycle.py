@@ -56,6 +56,114 @@ def test_operation_key_recovers_after_lost_child_response_and_reupload(tmp_path,
     store.close()
 
 
+@pytest.mark.parametrize('raw_file', [False, True])
+def test_content_reuse_binds_additional_operation_key_across_restart(tmp_path, payload, raw_file):
+    store = JobStore(tmp_path)
+    converter = lambda *a: payload
+    service = RenderService(store, Compute(), converter=converter)
+    source = service.import_payload('a', payload)['input_id'] if not raw_file else None
+    def submit(key, options):
+        if raw_file:
+            return service.render_file('a', b'public', '.cif', 'public.cif', converter, options,
+                                       operation_key=key, idempotency_key=key)
+        return service.submit('a', source, options, key, operation_key=key)
+    first = submit('original', {})
+    assert submit('reused-key', {})['job_id'] == first['job_id']
+    store.close()
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute(), converter=converter)
+    assert submit('reused-key', {})['job_id'] == first['job_id']
+    with pytest.raises(JobError, match='different request'):
+        submit('reused-key', {'rough': True})
+    assert len(store.recent('a')['jobs']) == 1
+    store.close()
+
+
+def test_admitted_file_drains_without_reopening_admission(tmp_path, payload):
+    store = JobStore(tmp_path)
+    converter = lambda *a: payload
+    service = RenderService(store, Compute(), converter=converter)
+    job = service.render_file('a', b'public', '.cif', 'public.cif', converter, {})
+    store.drain()
+    service._execute(store.claim())
+    assert store.get('a', job['job_id'])['status'] == 'done'
+    assert service.backend.calls == [job['job_id']]
+    with pytest.raises(JobError, match='draining'):
+        service.render_file('a', b'another', '.cif', 'public.cif', converter, {})
+    with pytest.raises(JobError, match='draining'):
+        store.reserve_conversion('a')
+    store.close()
+
+
+def test_reused_operation_alias_preserves_accepted_identity_after_cleanup(tmp_path, payload):
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute())
+    source = service.import_payload('a', payload)['input_id']
+    first = service.submit('a', source, {'preset': 'pastel'}, 'a', operation_key='a')
+    accepted = {'preset': 'preset_1_interface'}
+    assert service.submit('a', source, accepted, 'b', operation_key='b')['job_id'] == first['job_id']
+    assert service.submit('a', source, accepted, 'b-retry', operation_key='b')['job_id'] == first['job_id']
+    service._execute(store.claim())
+    new_source = service.import_payload('a', payload)['input_id']
+    assert new_source != source
+    assert service.submit('a', new_source, accepted, 'c', operation_key='c')['job_id'] == first['job_id']
+    assert not store.input_path(new_source).exists()
+    store.close()
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute())
+    assert service.submit('a', new_source, accepted, 'c-retry', operation_key='c')['job_id'] == first['job_id']
+    with pytest.raises(JobError, match='different request'):
+        service.submit('a', new_source, {**accepted, 'rough': True}, 'changed', operation_key='c')
+    assert not service.backend.calls and len(store.recent('a')['jobs']) == 1
+    store.close()
+
+
+def test_conversion_dispatch_still_enforces_budget_and_owner(tmp_path, payload):
+    store = JobStore(tmp_path, Policy(public=True))
+    service = RenderService(store, Compute(), converter=lambda *a: payload)
+    job = service.render_file('a', b'public', '.cif', 'public.cif', service.converter, {})
+    store.claim()
+    store.drain()
+    with pytest.raises(JobError, match='admitted running job'):
+        store.reserve_conversion('other', job_id=job['job_id'])
+    store.db.execute("UPDATE settings SET value='0' WHERE key='budget_micro'")
+    with pytest.raises(JobError, match='exhausted'):
+        store.reserve_conversion('a', job_id=job['job_id'])
+    store.close()
+
+
+def test_raw_admission_invalid_catalog_is_a_validation_error(tmp_path, payload):
+    store = JobStore(tmp_path)
+    service = RenderService(store, Compute(), converter=lambda *a: payload)
+    with pytest.raises(JobError, match='Unknown preset'):
+        service.render_file('a', b'public', '.cif', 'public.cif', service.converter, {'preset': 'missing'})
+    assert store.recent('a')['jobs'] == [] and not service.backend.calls
+    store.close()
+
+
+def test_raw_file_keeps_catalog_snapshot_across_queued_restart(tmp_path, payload, monkeypatch):
+    from blender_render import core
+    options = {'preset': 'pastel', 'overrides': {'camera': {'yaw_deg': 23}}}
+    expected = prepare_options(options, payload, public=False, timeout=600)
+    store = JobStore(tmp_path)
+    converter = lambda *a: payload
+    service = RenderService(store, Compute(), converter=converter)
+    job = service.render_file('a', b'public', '.cif', 'public.cif', converter, options)
+    store.close()
+    monkeypatch.setattr(core, 'load_and_validate_style_json', lambda *a: pytest.fail('Reloaded changed preset after admission'))
+    class Capture(Compute):
+        def render(self, request, *args):
+            assert request['render_spec']['sha256'] == expected['render_spec']['sha256']
+            assert request['style_doc'] == expected['style_doc']
+            return super().render(request, *args)
+    store = JobStore(tmp_path)
+    service = RenderService(store, Capture(), converter=converter)
+    service._execute(store.claim())
+    assert store.get('a', job['job_id'])['status'] == 'done'
+    assert service.backend.calls == [job['job_id']]
+    store.close()
+
+
 def test_explicit_false_cannot_replay_an_enabled_json_request(tmp_path, payload):
     from blender_render import core
     style = core.load_and_validate_style_json(core._default_preset_style('preset_1_interface'))

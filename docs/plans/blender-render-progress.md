@@ -704,3 +704,67 @@ execution or remote timing stream was run here. The two A/B child-process checks
 remain unverified on this final source under the task's restrictions; their earlier
 executed evidence is not replaced by mocks. No C2/C3 implementation, commit,
 deployment or publication was performed. Stop here for C1 review.
+
+### Separate C1 review and checkpoint follow-up — 2026-09-08
+
+The existing commits already separate A/B and C1; do not rewrite them merely to
+match suggested staging commands:
+
+- A/B: `815e3dffdf34de0451a2903021c620ef07d82827`.
+- Initial C1: `6b334042f95f26a1e8bc3f330e281d56c1a9a714`.
+
+The separately requested read-only review (task
+`01a0819a-9b41-7290-aa94-13c99d984563`) found four blockers, superseding the earlier
+clean-C1 assessment: cold HPC attach lost the token removed from status; content
+reuse did not bind every operation key; drain rejected already-admitted deferred
+conversion; queued raw requests reloaded preset JSON after admission.
+
+Narrow corrections preserve the A/B resolver and C1 queue: retrieve credentials
+with explicit attach-only after ready status, persist operation-key aliases on
+reuse, allow only admitted conversion dispatch through drain with owner/budget
+checks, and capture the library PresetDefinition before queuing raw files.
+Old queued raw jobs lacking a named-preset snapshot fail rather than substitute
+current assets. Re-review also required each operation alias to retain its own
+accepted request hash and input identity across cleanup, not borrow the original
+job's request. This is now covered for equivalent preset names and deleted uploads.
+The final separate read-only review found all four blockers resolved and no
+remaining blockers within the fake/local C1 boundary. Unknown captured catalog
+identifiers additionally return a validation error before admission.
+
+Changed files for these corrections: `blender_render/hpc.py`, `jobs.py`, `spec.py`,
+`service.py`; `tests/test_cli_operation_routing.py`, `test_operation_lifecycle.py`;
+`docs/operation-lifecycle.md` and this record. No real compute or shared service
+was touched. With the same fake-only environment and audit guard documented above:
+
+```sh
+.venv/bin/python -m pytest -q -p no:cacheprovider -p c1_boundary_guard tests/test_cli_operation_routing.py tests/test_operation_lifecycle.py tests/test_jobs_api.py tests/test_hpc_lifecycle.py tests/test_spec.py
+.venv/bin/python -m pytest -q -rs -p no:cacheprovider -p c1_boundary_guard
+```
+
+Executed: **119 passed, four inherited warnings, 3.61s** (`review-fixes-focused.log`)
+and **288 passed, two previously documented A/B process-test skips, four warnings,
+5.65s** (`review-fixes-suite.log`). Logs are under `/private/tmp/blender-c1`; both
+reported zero real process/network boundary attempts. No tests failed in this
+correction run. Real HPC cold start remains unexecuted; its complete handshake is
+now tested using fakes instead of replacing `hpc.connect` with a ready response.
+
+After the alias-identity correction, the same commands passed **120 focused / 289
+suite** tests (3.59s / 5.50s), with two suite skips and four inherited warnings;
+`review-fixes-focused-final.log` and `review-fixes-suite-final.log`. Final checkpoint
+validation, including invalid catalog capture, passed **121 focused tests (3.51s)**
+and **290 suite tests, two documented skips (5.42s)**, both with four inherited
+warnings and zero audited boundary attempts; `review-checkpoint-focused.log` and
+`review-checkpoint-suite.log`. `git diff --check` passed. All seven C1 criteria
+remain satisfied at this fake/local boundary; real-runtime checks remain deferred.
+
+GitHub inspection confirmed `magnusbauer/blender_render` is private and PR #1 is
+draft on `codex/public-release`. The local checkpoint branch is
+`codex/execution-reliability`; pushing it does not change PR #1's head or draft
+state. This worktree initially had no origin remote. Push/checkpoint outcome will
+be recorded after review; no successful push is claimed yet.
+
+The user's current milestone order supersedes earlier proposed decompositions:
+**C2 is artifact lifecycle/result recovery only; C3 is backend parity; D is thin
+interfaces and preset selection; E is installed-product validation.** Do not mix
+Slurm portability, MCP/ChatGPT UX, or preset selection into C2. Start
+`codex/c2-result-recovery` only after a clean C1 checkpoint.

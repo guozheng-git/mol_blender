@@ -69,6 +69,14 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
             print("Waiting for interactive GPU allocation...", file=sys.stderr)
             time.sleep(3)
             start = remote(profile, "attach") if start["status"] == "stopping" else remote(profile, "status")
+        if 'token' not in start:
+            # Read-only status deliberately omits credentials. Only this
+            # explicit connection flow requests them, without allocating again.
+            attached = remote(profile, 'attach', attach_only=True)
+            if (attached.get('status') != 'ready' or not attached.get('token')
+                    or attached.get('session_id') != start.get('session_id')):
+                raise RuntimeError('GPU session changed before authenticated attach; reconnect explicitly.')
+            start = attached
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             local_port = probe.getsockname()[1]

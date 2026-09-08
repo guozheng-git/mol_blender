@@ -110,6 +110,23 @@ class JobStore:
             if column not in columns:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' ' + definition)
         self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS logical_operations ON jobs(owner,operation_key)')
+        self.db.executescript('''
+        CREATE TABLE IF NOT EXISTS operation_keys (
+          owner TEXT NOT NULL, key TEXT NOT NULL, job_id TEXT NOT NULL,
+          PRIMARY KEY(owner,key));
+        INSERT OR IGNORE INTO operation_keys(owner,key,job_id)
+          SELECT owner,operation_key,id FROM jobs WHERE operation_key IS NOT NULL;
+        ''')
+        alias_columns = {row[1] for row in self.db.execute('PRAGMA table_info(operation_keys)')}
+        for column in ('input_id', 'input_sha256', 'client_hash', 'source_key'):
+            if column not in alias_columns:
+                self.db.execute('ALTER TABLE operation_keys ADD COLUMN ' + column + ' TEXT')
+        self.db.execute('''UPDATE operation_keys SET
+          input_id=(SELECT input_id FROM jobs WHERE id=job_id),
+          input_sha256=(SELECT input_sha256 FROM jobs WHERE id=job_id),
+          client_hash=(SELECT client_request_hash FROM jobs WHERE id=job_id),
+          source_key=(SELECT source_key FROM jobs WHERE id=job_id)
+          WHERE input_id IS NULL''')
         self.db.executescript("""
         CREATE TABLE IF NOT EXISTS submission_keys (
           owner TEXT NOT NULL, key TEXT NOT NULL, input_id TEXT NOT NULL,
@@ -209,11 +226,14 @@ class JobStore:
             self._admit(db, amount)
             db.execute("INSERT INTO operations(owner,created,amount,note) VALUES (?,?,?,?)", (owner, self.clock(), amount, note))
 
-    def reserve_conversion(self, owner: str):
+    def reserve_conversion(self, owner: str, *, job_id=None):
         """Reserve sandbox cost without imposing an upload-count quota."""
         with self.transaction() as db:
             amount = 10000 if self.policy.public else 0
-            self._admit(db, amount)
+            if job_id is not None and not db.execute(
+                    "SELECT 1 FROM jobs WHERE id=? AND owner=? AND state='running'", (job_id, owner)).fetchone():
+                raise JobError('Conversion requires the admitted running job')
+            self._admit(db, amount, dispatch=job_id is not None)
             db.execute("INSERT INTO operations(owner,created,amount,note) VALUES (?,?,?,'conversion')", (owner, self.clock(), amount))
 
     def input_path(self, identifier):
@@ -318,6 +338,28 @@ class JobStore:
     def _reused_job(self, row):
         return {**self._public_job(row), 'reused': True}
 
+    def _bind_operation(self, db, owner, key, identifier, *, input_id=None, client_hash=None, source_key=None):
+        if key is None:
+            return
+        if not isinstance(key, str) or not 1 <= len(key) <= 128:
+            raise JobError('operation_key must contain 1 to 128 characters')
+        row = db.execute('SELECT job_id FROM operation_keys WHERE owner=? AND key=?', (owner, key)).fetchone()
+        if row and row['job_id'] != identifier:
+            raise JobError('Operation key already identifies another job', 'operation_conflict', 409)
+        job = db.execute('SELECT * FROM jobs WHERE id=? AND owner=?', (identifier, owner)).fetchone()
+        accepted_input = input_id or job['input_id']
+        source = db.execute('SELECT content_sha256 FROM inputs WHERE id=? AND owner=?', (accepted_input, owner)).fetchone()
+        digest = source['content_sha256'] if source else job['input_sha256']
+        db.execute('INSERT OR IGNORE INTO operation_keys(owner,key,job_id,input_id,input_sha256,client_hash,source_key) VALUES (?,?,?,?,?,?,?)',
+                   (owner, key, identifier, accepted_input, digest,
+                    client_hash if client_hash is not None else job['client_request_hash'],
+                    source_key if source_key is not None else job['source_key']))
+
+    def remember_operation(self, owner, key, job, **identity):
+        with self.transaction() as db:
+            self._bind_operation(db, owner, key, job['job_id'], **identity)
+        return job
+
     def file_replay(self, owner, source_key, client_hash):
         """Recover an operation, never permission to replace an expired render."""
         with self.lock:
@@ -333,15 +375,18 @@ class JobStore:
         if not isinstance(operation_key, str) or not 1 <= len(operation_key) <= 128:
             raise JobError('operation_key must contain 1 to 128 characters')
         with self.lock:
-            row = self.db.execute('SELECT * FROM jobs WHERE owner=? AND operation_key=?', (owner, operation_key)).fetchone()
+            row = self.db.execute('''SELECT j.*, k.input_id AS alias_input_id,
+                k.input_sha256 AS alias_input_sha256, k.client_hash AS alias_client_hash,
+                k.source_key AS alias_source_key FROM jobs j JOIN operation_keys k ON j.id=k.job_id
+                WHERE k.owner=? AND k.key=?''', (owner, operation_key)).fetchone()
             if row:
-                same_input = input_id is None or row['input_id'] == input_id
+                same_input = input_id is None or row['alias_input_id'] == input_id
                 if not same_input:
                     source = self.db.execute('SELECT content_sha256 FROM inputs WHERE id=? AND owner=?', (input_id, owner)).fetchone()
-                    same_input = bool(source and source['content_sha256'] == row['input_sha256'])
-                if (row['client_request_hash'] != client_hash
+                    same_input = bool(source and source['content_sha256'] == row['alias_input_sha256'])
+                if (row['alias_client_hash'] != client_hash
                         or not same_input
-                        or source_key is not None and row['source_key'] != source_key):
+                        or source_key is not None and row['alias_source_key'] != source_key):
                     raise JobError('Operation already exists with a different request; recover it instead of creating a hidden preview.', 'operation_conflict', 409)
                 return self._reused_job(row)
 
@@ -381,6 +426,7 @@ class JobStore:
             if alias:
                 if alias["request_hash"] != request_hash:
                     raise JobError("Idempotency key was already used for a different request.", "idempotency_conflict", 409)
+                self._bind_operation(db, owner, operation_key, alias['job_id'], input_id=input_id, client_hash=client_hash)
                 return self._reused_job(db.execute('SELECT * FROM jobs WHERE id=?', (alias['job_id'],)).fetchone())
             self.input(owner, input_id)
             source = db.execute('SELECT * FROM inputs WHERE id=? AND owner=?', (input_id, owner)).fetchone()
@@ -389,6 +435,7 @@ class JobStore:
                 existing = db.execute("""SELECT * FROM jobs WHERE owner=? AND render_fingerprint=?
                     ORDER BY submitted,id LIMIT 1""", (owner, fingerprint)).fetchone()
                 if existing:
+                    self._bind_operation(db, owner, operation_key, existing['id'], input_id=input_id, client_hash=client_hash)
                     self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, existing['id'])
                     if existing['input_id'] != input_id and not db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (input_id,)).fetchone():
                         self.input_path(input_id).unlink(missing_ok=True)
@@ -408,6 +455,7 @@ class JobStore:
             self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, identifier)
             db.execute('UPDATE jobs SET operation_key=?,stage_history=?,input_sha256=? WHERE id=?',
                        (operation_key, json.dumps([{'stage': 'validation', 'at': now}]), source['content_sha256'], identifier))
+            self._bind_operation(db, owner, operation_key, identifier)
         return self.get(owner, identifier)
 
     def _stage(self, db, identifier, stage):
