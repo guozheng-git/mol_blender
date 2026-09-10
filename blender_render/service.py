@@ -387,12 +387,14 @@ class RenderService:
         compute_started = False
         from .telemetry import measure, record
         from .gateway import TransferPending
+        from .execution import StoredSnapshotIntegrityError
+        recovering_child = bool(job.get('remote_id') or job.get('remote_phase'))
         sink = lambda timing: self.store.add_timings(identifier, [timing])
         try:
             self._protect('admission')
             request = json.loads(job["options"])
-            payload = json.loads(job['execution'])['bundle'] if job.get('execution') else self.store.input(job["owner"], job["input_id"])
-            if 'prepare_file' in request:
+            payload = None if recovering_child else (json.loads(job['execution'])['bundle'] if job.get('execution') else self.store.input(job["owner"], job["input_id"]))
+            if 'prepare_file' in request and not recovering_child:
                 self.store.stage(identifier, 'conversion')
                 if self.store.cancelled(identifier):
                     raise RuntimeError('Cancelled before conversion')
@@ -420,19 +422,24 @@ class RenderService:
                 sink(record('conversion', 'converter', status='skipped'))
             if self.store.cancelled(identifier) or self.stopping.is_set():
                 raise RuntimeError('Cancelled before compute')
-            from .execution import dispatch_request, validate_snapshot
+            from .execution import dispatch_request, validate_snapshot_for_execution, validate_stored_snapshot_integrity
             with self.store.lock:
                 frozen = self.store.db.execute('SELECT execution FROM jobs WHERE id=?', (identifier,)).fetchone()[0]
             if not frozen:
-                raise RuntimeError('Queued legacy job lacks an execution envelope; no runtime was dispatched')
-            snapshot = validate_snapshot(json.loads(frozen), public=self.store.policy.public,
-                max_atoms=self.store.policy.max_atoms if self.store.policy.public else 10000000,
-                max_bytes=self.store.policy.max_upload_bytes, timeout=self.store.policy.max_job_seconds,
-                for_execution=not bool(job.get("remote_phase") or job.get("remote_id")))
+                raise StoredSnapshotIntegrityError('Queued legacy job lacks its execution envelope')
+            if recovering_child:
+                try:
+                    snapshot = validate_stored_snapshot_integrity(json.loads(frozen))
+                except (ValueError, TypeError) as exc:
+                    raise StoredSnapshotIntegrityError('Stored child execution requires recovery') from exc
+            else:
+                snapshot = validate_snapshot_for_execution(json.loads(frozen), public=self.store.policy.public,
+                    max_atoms=self.store.policy.max_atoms if self.store.policy.public else 10000000,
+                    max_bytes=self.store.policy.max_upload_bytes, timeout=self.store.policy.max_job_seconds)
             request = dispatch_request(snapshot, 'controller', job['owner'], identifier)
-            self._protect('transfer' if job.get('remote_phase') else 'dispatch')
+            self._protect('transfer' if recovering_child else 'dispatch')
             self.store.stage(identifier, 'waiting_for_compute')
-            self.store.checkpoint(identifier, 'transfer' if job.get('remote_phase') else 'dispatch', dispatched=True)
+            self.store.checkpoint(identifier, 'transfer' if recovering_child else 'dispatch', dispatched=True)
             compute_started = True
             result = self.backend.render(request, identifier, lambda: self.stopping.is_set() or self.store.cancelled(identifier))
             if self.stopping.is_set():
@@ -452,6 +459,8 @@ class RenderService:
             self.store.finish(identifier, result=artifacts, seconds=time.monotonic() - started)
             if self.store.cancelled(identifier):
                 shutil.rmtree(self.store.artifacts / identifier, ignore_errors=True)
+        except StoredSnapshotIntegrityError:
+            self.store.block(identifier, 'recovery_required', 'transfer' if recovering_child else 'dispatch')
         except RestartRequired as exc:
             # A worker's explicit pre-render rejection is safe to resume. An
             # unobserved transport failure is handled conservatively elsewhere.

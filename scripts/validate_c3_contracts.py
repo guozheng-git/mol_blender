@@ -21,7 +21,8 @@ CONTRACTS = ['test_execution_envelope.py', 'test_gateway_recovery.py', 'test_hpc
              'test_cli_operation_routing.py', 'test_gateway_isolation.py', 'test_c3_inprocess.py',
              'test_engine_package.py', 'test_c3_integrity.py', 'test_c3_operation_blocks.py',
              'test_c3_connections.py', 'test_c3_recovery_integration.py', 'test_c3_policy.py', 'test_c3_migrations.py',
-             'test_c3_review_regressions.py', 'test_c3_final_boundaries.py']
+             'test_c3_review_regressions.py', 'test_c3_final_boundaries.py',
+             'test_c3_blocked_clients.py', 'test_c3_stored_retrieval.py', 'test_c3_ccd_capture.py']
 
 
 def run(command, cwd, env, log):

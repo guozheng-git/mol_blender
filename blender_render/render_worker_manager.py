@@ -107,6 +107,8 @@ class PersistentBlenderWorker:
             str(self.socket_path),
             "--custom-script",
             str(custom_script),
+            '--ccd-root',
+            str(self._captured_package.parent),
         ]
 
         if self.use_apptainer:
@@ -115,7 +117,7 @@ class PersistentBlenderWorker:
             apptainer_exe = _bridge_runner._resolve_apptainer_executable()
             bind_paths = [
                 self.root_dir,
-                daemon_script.parent,
+                daemon_script.parent.parent,
                 custom_script.parent,
                 Path.cwd(),
                 Path.home(),

@@ -23,6 +23,12 @@ and receiving resource/security policy without resolving or editing the snapshot
 Policy conflicts fail. New execution requires the exact admitted engine build.
 Artifact retrieval after a clean controller upgrade validates the original child
 identity without requiring that build to equal the recovering controller's build.
+Execution and stored-integrity validation are separate paths. Stored envelope
+version 1 retains its canonical JSON/hash rules and original engine declaration;
+recovery never invokes the current bundle/style consumer, preset catalog or
+capability derivation. Its owner, parent operation and child/lookup identities
+come from durable controller state and authenticated retrieval. Unsupported or
+inconsistent stored evidence preserves the operation as `recovery_required`.
 
 ## Inventory and protected actions
 
@@ -116,13 +122,29 @@ retain original submission metadata and cannot spin through claim/requeue.
 Worker-only integrity failures permit replacement with a newly sealed worker
 while the controller is clean. Worker replacement cannot clear a controller latch.
 
-CCD is provisioned during explicit setup/image preparation. Actual workers verify
-an existing readable regular CCD file against runtime.lock.json at readiness and
-immediately before rendering. PRESS_BIOTITE_CCD_PATH takes precedence; otherwise
-Biotite's configured path is used. Runtime rendering does not restore, copy or
-download CCD bytes. Controllers declare requirements without importing Blender
-runtime dependencies to inspect worker files. Private worker diagnostics may
-include selected CCD path/hash evidence.
+Shared `Client.wait()` stops immediately on `restart_required`,
+`compatibility_blocked`, `execution_unknown`, or `recovery_required`. Its typed
+409 `ClientError` retains the condition code, job ID and next action, including
+in the message shown by CLI and PyMOL. Waiting never clears a block, cancels or
+resubmits. After explicit resolution, callers can wait on the same operation.
+
+CCD is provisioned during explicit setup/image preparation. The actual Blender
+daemon captures it before readiness: PRESS_BIOTITE_CCD_PATH takes precedence at
+startup, otherwise Biotite's configured path is selected. It opens the source
+with O_NOFOLLOW, requires a regular file and verifies the locked SHA-256. Those
+bytes are written to a new mode-0400 file in a mode-0700 worker-private directory.
+Biotite's setter must succeed and its effective configured path must equal the
+capture. Setter failure or ineffective activation prevents readiness.
+Readiness, final daemon preflight and the renderer entry guard check only this
+captured file and its activation. Rendering never reopens or reactivates the
+original source; replacing that source cannot change a running worker's CCD.
+The capture lives in the worker's owned temporary state and is removed on
+shutdown/startup failure, or with its package capture after forced termination.
+The standalone Blender script also captures before rendering and cleans up on
+exit. Runtime execution never provisions, repairs or overwrites the source CCD.
+Controllers declare requirements without importing Blender runtime dependencies
+to inspect worker files. Private diagnostics report captured path/hash and
+activation evidence.
 Cold readiness, daemon preflight and the renderer's entry CCD guard return typed
 compatibility refusals through worker IPC. The admitted operation keeps its
 snapshots and reservation; an
@@ -199,6 +221,11 @@ volume loss is not recoverable without a surviving verified copy.
 Integrity is checked before each new inventory, artifact and acknowledgement
 request. A latch between artifacts preserves already verified bytes and receipts.
 The same check precedes a request that resumes transfer at a downstream gateway.
+Result job identity and immutable artifact inventory must agree with prior
+receipts. Availability may change; a changed checksum, required-artifact set,
+protocol or child identity cannot overwrite previously bound evidence or trigger
+new acknowledgements. Older C3 receipts retain compatibility through their
+already-bound outer child job ID.
 
 Timings contain only `phase`, `hop`, `status`, `duration_ms`, `attempt`. Status is
 one of executed/skipped/cached/unavailable/interrupted. Molecular data, credentials,
@@ -214,6 +241,13 @@ when the bounded aggregate timing window rotates. Restart transfer attempts
 increment independently of that marker.
 
 ## Validation
+
+Release hardening deferred from this narrow blocker correction: distinguish
+explicit source/developer mode from manifest-required installed/release mode
+(including partial runtime-image bootstrap), capture passive public page handlers
+and refresh capabilities integrity diagnostics, and align input-in-use/queue
+position reporting with transfer and blocked-operation states. These remain
+requirements before E or public deployment, not executed release gates.
 
 Prepare test dependencies explicitly, then run
 `python scripts/validate_c3_contracts.py --output /temporary/outside-checkout`.

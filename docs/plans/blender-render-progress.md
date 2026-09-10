@@ -1,5 +1,61 @@
 # Blender Render implementation progress
 
+## Three final C3 blockers — 2026-09-10
+
+Starting HEAD verified as `f86c87d5df79f8dcf3ac0180b3d05d17a1087da9` on
+`codex/c3-execution-review`, with only unrelated `1qys.cif` untracked. The remote
+review branch matched that commit; `codex/public-release` remained at
+`70bcbfa37cf1148ff90ae6d6849f46b6532ff96a`. One new direct-child commit and an
+explicit non-force push of only the review branch are authorized. No real
+Blender, Slurm, provider execution, acceptance runner, D, deployment or hosted
+policy change is authorized. The unrelated fixture and external SIF are retained.
+
+Twelve client regressions failed before the waiting fix. Shared Client.wait now
+surfaces all four durable blocked conditions with condition/job/next-action
+context through direct clients, CLI and PyMOL. Explicit later resolution resumes
+the same operation without client cancellation or resubmission. The focused
+client/adapter run passed 42 tests with zero audited external attempts.
+
+Eleven retrieval regressions failed before separating execution validation from
+stable version-1 stored-envelope integrity. Recovery checks original immutable
+identity without current catalog, schema consumers or capability derivation.
+Invalid saved evidence retains recovery_required; conflicting child identity,
+protocol and artifact inventory preserve verified receipts without new transfer
+or acknowledgement. The focused recovery suite passed 82 tests with zero audited
+external attempts, including upgraded-controller recovery with no new compute.
+
+Eleven CCD contracts were written before the new worker capture boundary existed.
+The actual daemon initializes a private locked-checksum capture before readiness,
+verifies Biotite activation, and checks only captured bytes thereafter. Tests
+cover source swaps, symlinks, bad sources, failed/ineffective activation, private
+copy corruption, renderer use, real daemon readiness over fake IPC and cleanup.
+The first integrated run exposed an older test's source-path assumption; it now
+checks private-capture corruption, and the IPC retention test exercises that
+same boundary. All 71 focused worker/runtime/review tests passed with zero
+audited external attempts. Complete verification and independent review follow.
+
+Complete guarded verification passed 479 repository tests (two intentional
+inherited child-process skips) and 285 installed-wheel contracts. Both runs
+recorded zero audited external attempts and four dependency deprecation warnings.
+The offline build/install ran outside the checkout, checked installed import
+locations, and matched all 84 source/wheel/installed package files with the
+recursive inventory. `git diff --check` passed. Evidence is retained in the
+task's `c3-three-blockers-full-v1` runner output.
+Wheel SHA-256: `9d7de0486ebd41551dd70b506813158de4768657dc7f103269c31373ee561aa7`.
+Engine build: `6e5d0526e41c2c5d366ef3d5ff5930349d6f95cbfcd93c8519051d47e9bbaf0c`.
+Independent read-only task `c3_three_blocker_review` found no blocking findings
+in the final 18-path delta. Its guarded selection passed 82 tests with zero
+audited external actions. It independently checked the worker lifetime and
+activation flow, stable retrieval and receipt compatibility, all 84 files across
+source/staging/wheel/install, hashes and whitespace checks. The correction's Git
+boundary is one direct child of `f86c87d`, followed by an explicit non-force push
+of only `codex/c3-execution-review`; `codex/public-release` must remain unchanged.
+
+The installed/source manifest distinction, passive public-handler sealing and
+minor status consistency remain deferred release-hardening requirements. Modal
+implemented and contract-tested; real backend execution unverified. Real local/
+Slurm acceptance and recovery stress remain unexecuted.
+
 ## C3 review corrections — 2026-09-10
 
 Starting HEAD verified as `1969365e069504b21bc77b33d0811c31bea2debc` on

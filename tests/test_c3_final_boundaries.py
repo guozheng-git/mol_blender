@@ -51,7 +51,7 @@ def test_import_endpoint_preserves_integrity_error(tmp_path):
 
 
 @pytest.mark.parametrize('phase', ['daemon', 'renderer_entry'])
-def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeypatch, phase):
+def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeypatch, phase, request):
     from blender_render import engine, blender_worker_daemon as daemon
     from blender_render.render_worker_manager import PersistentBlenderWorker
     store, service, source, job = admitted(tmp_path/'store', payload)
@@ -69,8 +69,7 @@ def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeyp
         script = engine.process_seal().inputs['blender_custom_render.py'].decode()
         definitions = [node for node in ast.parse(script).body if isinstance(node, ast.FunctionDef)
                        and node.name in {'_render', '_ensure_biotite_ccd_database'}]
-        namespace = {'argparse':argparse, 'Path':Path,
-                     '_activate_biotite_ccd_path':lambda *a:pytest.fail('Corrupt CCD activated')}
+        namespace = {'argparse':argparse, 'Path':Path}
         exec(compile(ast.Module(body=definitions, type_ignores=[]), 'sealed_renderer_entry', 'exec'), namespace)
         renderer._render = namespace['_render']
         # The Blender-only preload boundary is replaced; integrity checks and
@@ -78,8 +77,11 @@ def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeyp
         monkeypatch.setitem(engine.ACTION_MODULES, 'render', ())
         ccd = tmp_path/'components.bcif'
         ccd.write_bytes(b'ccd')
-        observe = engine.ccd_observation
-        monkeypatch.setattr(engine, 'ccd_observation', lambda:observe(path=ccd, expected=hashlib.sha256(b'ccd').hexdigest()))
+        from blender_render import worker_ccd
+        ccd_module = SimpleNamespace(_CCD_FILE=ccd)
+        ccd_module.set_ccd_path = lambda value:setattr(ccd_module, '_CCD_FILE', Path(value))
+        capture = worker_ccd.initialize(parent=tmp_path, ccd_module=ccd_module, expected=hashlib.sha256(b'ccd').hexdigest())
+        request.addfinalizer(capture.close)
         monkeypatch.setattr(engine, 'runtime_observation', lambda:{'verified':True})
         protect = engine.protect
         checks = []
@@ -87,7 +89,10 @@ def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeyp
             protect(action)
             if action == 'render':
                 checks.append(action)
-                if len(checks) == 2: ccd.write_bytes(b'corrupt after daemon preflight')
+                if len(checks) == 2:
+                    ccd_module._CCD_FILE.chmod(0o600)
+                    ccd_module._CCD_FILE.write_bytes(b'corrupt after daemon preflight')
+                    ccd_module._CCD_FILE.chmod(0o400)
         monkeypatch.setattr(engine, 'protect', corrupt_after_preflight)
     def ipc(request, **kwargs):
         if request['action'] == 'ping':

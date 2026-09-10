@@ -841,27 +841,9 @@ def _configure_cycles_gpu_for_custom(scene: bpy.types.Scene, renderer: dict[str,
 
 
 
-def _activate_biotite_ccd_path(ccd_path: Path) -> None:
-    try:
-        from biotite.structure.info import ccd as ccd_module  # type: ignore
-    except Exception:
-        return
-    setter = getattr(ccd_module, "set_ccd_path", None)
-    if callable(setter):
-        try:
-            setter(str(ccd_path))
-        except Exception:
-            pass
-
-
 def _ensure_biotite_ccd_database(*, before_execution: bool = False) -> None:
-    from blender_render.engine import ccd_observation, RuntimeUnavailable
-    evidence = ccd_observation()
-    if not evidence['verified']:
-        if before_execution:
-            raise RuntimeUnavailable('Missing or corrupt prepared CCD; explicit runtime setup required')
-        raise RuntimeError('Missing or corrupt prepared CCD; explicit runtime setup required')
-    _activate_biotite_ccd_path(Path(evidence['path']))
+    from blender_render.worker_ccd import require
+    require(before_execution=before_execution)
 
 
 def _load_molecule_with_fallback(structure_path: Path, object_name: str):
@@ -4393,7 +4375,15 @@ def _render(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parsed = _parse_argv(sys.argv)
-    _render(parsed)
+    from blender_render.engine import protect
+    protect('render')
+    _configure_molecularnodes_import_path()
+    from blender_render.worker_ccd import initialize
+    capture = initialize()
+    try:
+        _render(parsed)
+    finally:
+        capture.close()
 
 
 if __name__ == "__main__":

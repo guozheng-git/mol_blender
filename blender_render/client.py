@@ -12,7 +12,10 @@ from urllib.parse import urlsplit, urlencode, quote
 
 
 class ClientError(RuntimeError):
-    def __init__(self, message, status=0, code="client_error"):
+    def __init__(self, message, status=0, code="client_error", *, job_id=None, next_action=None):
+        self.job_id, self.next_action = job_id, next_action
+        if job_id is not None:
+            message = f'{message} [condition={code}, job_id={job_id}, next_action={next_action}]'
         super().__init__(message)
         self.status, self.code = status, code
 
@@ -111,6 +114,11 @@ class Client:
         deadline, previous = time.monotonic() + timeout, None
         while time.monotonic() < deadline:
             state = self.status(job_id)
+            if state.get('condition') in {'restart_required', 'compatibility_blocked',
+                                         'execution_unknown', 'recovery_required'}:
+                raise ClientError(state.get('error') or 'Render operation requires intervention',
+                                  409, state['condition'], job_id=job_id,
+                                  next_action=state.get('next_action'))
             marker = (state["status"], state["queue_position"])
             if progress and marker != previous:
                 progress(state)

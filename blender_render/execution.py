@@ -3,11 +3,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from pathlib import PurePosixPath
 
 from .engine import engine_identity, require_compatible
 from .spec import style_digest
 
 TRANSIENT = {'run_id', 'generated_at_utc', 'timings', 'operation_id', 'transport'}
+V1_TRANSIENT = frozenset(TRANSIENT)
 REQUEST_KEYS = {'preset', 'style_doc', 'output_name', 'job_timeout_seconds', 'keep_temp',
                 'save_blend', 'rough', 'raw_view', 'color_follow', 'render_spec'}
 
@@ -29,7 +31,7 @@ def freeze_execution(payload, request):
             'request': copy.deepcopy(request), 'expected_engine': engine_identity()}
 
 
-def validate_snapshot(snapshot, *, public=False, max_atoms=10000000, max_bytes=50*1024**2, timeout=600, for_execution=True):
+def validate_snapshot_for_execution(snapshot, *, public=False, max_atoms=10000000, max_bytes=50*1024**2, timeout=600):
     from .service import validate_input
     from .core import validate_style_document
     from .presets import required_capabilities
@@ -82,14 +84,90 @@ def validate_snapshot(snapshot, *, public=False, max_atoms=10000000, max_bytes=5
                    or output['samples'] > 512 or style['renderer']['engine'] != 'CYCLES'
                    or style['renderer'].get('device') != 'GPU' or style['renderer'].get('require_gpu') is not True):
         raise ValueError('Resolved request conflicts with receiving resource/security policy')
-    if for_execution:
-        require_compatible(snapshot['expected_engine'], engine_identity(), metadata['required_capabilities'])
-        if snapshot['expected_engine'] != engine_identity():
-            from .engine import EngineMismatch
-            raise EngineMismatch('Resolved engine manifest does not match the exact installed build declaration')
+    require_compatible(snapshot['expected_engine'], engine_identity(), metadata['required_capabilities'])
+    if snapshot['expected_engine'] != engine_identity():
+        from .engine import EngineMismatch
+        raise EngineMismatch('Resolved engine manifest does not match the exact installed build declaration')
     if style['version'] not in snapshot['expected_engine']['schema_versions'] or bundle['version'] not in snapshot['expected_engine']['bundle_versions']:
         raise ValueError('Unsupported engine schema or bundle version')
     return copy.deepcopy(snapshot)
+
+
+class StoredSnapshotIntegrityError(ValueError):
+    """Retain the admitted operation for recovery; never substitute execution."""
+
+
+def validate_stored_snapshot_integrity(snapshot):
+    """Decode the immutable version-1 protocol, not a current RenderSpec.
+
+    Only use with a trusted durable operation row. Owner/operation/child binding
+    comes from that row and authenticated retrieval, not caller-supplied claims.
+    These canonical encodings and field rules must remain stable across builds.
+    """
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+
+    def sha(value):
+        return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+    def strings(value):
+        return isinstance(value, list) and all(isinstance(s, str) and s for s in value) and len(set(value)) == len(value)
+
+    try:
+        if (not isinstance(snapshot, dict) or set(snapshot) != {'version', 'bundle', 'bundle_sha256', 'request', 'expected_engine'}
+                or type(snapshot['version']) is not int or snapshot['version'] != 1):
+            raise ValueError('Unsupported stored envelope')
+        bundle, request, original = snapshot['bundle'], snapshot['request'], snapshot['expected_engine']
+        if not isinstance(bundle, dict) or V1_TRANSIENT & bundle.keys():
+            raise ValueError('Invalid stored bundle')
+        provenance = bundle.get('provenance')
+        if isinstance(provenance, dict) and {'filename', 'path', 'url', 'generated_at_utc'} & provenance.keys():
+            raise ValueError('Noncanonical stored bundle')
+        if digest(bundle) != snapshot['bundle_sha256']:
+            raise ValueError('Stored bundle checksum mismatch')
+        if not isinstance(request, dict) or set(request) != {
+                'preset', 'style_doc', 'output_name', 'job_timeout_seconds', 'keep_temp',
+                'save_blend', 'rough', 'raw_view', 'color_follow', 'render_spec'}:
+            raise ValueError('Invalid stored request')
+        spec, metadata = request['style_doc'], request['render_spec']
+        if (not isinstance(spec, dict) or not isinstance(metadata, dict) or set(metadata) != {
+                'schema_version', 'sha256', 'preset_source', 'required_capabilities'}
+                or digest(spec) != metadata['sha256'] or metadata['schema_version'] != spec['version']
+                or not strings(metadata['required_capabilities'])
+                or not isinstance(metadata['preset_source'], dict) or not isinstance(metadata['preset_source'].get('kind'), str)):
+            raise ValueError('Invalid stored RenderSpec identity')
+        if not isinstance(original, dict) or set(original) != {
+                'manifest_version', 'protocol_version', 'bundle_versions', 'schema_versions',
+                'engine_build', 'capabilities', 'runtime_requirements', 'files'}:
+            raise ValueError('Invalid original engine declaration')
+        files = original['files']
+        if (original['manifest_version'] != 1 or original['protocol_version'] != 1
+                or not isinstance(files, dict) or not files or not isinstance(original['runtime_requirements'], dict)
+                or not all(strings(original[key]) for key in ('bundle_versions', 'schema_versions', 'capabilities'))):
+            raise ValueError('Unsupported original engine protocol')
+        for path, checksum in files.items():
+            if (not isinstance(path, str) or not path or '\\' in path or PurePosixPath(path).is_absolute()
+                    or '..' in PurePosixPath(path).parts or PurePosixPath(path).as_posix() != path or not sha(checksum)):
+                raise ValueError('Invalid original engine inventory')
+        # Engine-manifest v1 uses JSON's default separators, unlike bundle/spec.
+        if hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest() != original['engine_build']:
+            raise ValueError('Original engine build checksum mismatch')
+        if (spec['version'] not in original['schema_versions'] or bundle['version'] not in original['bundle_versions']
+                or not set(metadata['required_capabilities']) <= set(original['capabilities'])):
+            raise ValueError('Stored identity conflicts with original engine')
+        if type(request['save_blend']) is not bool or type(request['job_timeout_seconds']) not in (int, float):
+            raise ValueError('Invalid stored retrieval controls')
+        digest(snapshot)  # Reject non-JSON/nonfinite data anywhere in the envelope.
+        return copy.deepcopy(snapshot)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise StoredSnapshotIntegrityError('Stored execution integrity requires recovery; no new execution is authorized') from exc
+
+
+def validate_snapshot(snapshot, *, for_execution=True, **policy):
+    """Compatibility boundary; new callers should select their intention explicitly."""
+    if for_execution:
+        return validate_snapshot_for_execution(snapshot, **policy)
+    return validate_stored_snapshot_integrity(snapshot)
 
 
 def scoped_owner(controller, owner):

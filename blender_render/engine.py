@@ -249,7 +249,7 @@ ACTION_MODULES = {
     'submission': ('client', 'hpc', 'runtime', 'execution', 'telemetry'),
     'transfer': ('client', 'hpc', 'runtime', 'delivery', 'artifacts', 'telemetry'),
     'render': ('core', 'bridge_runner', 'chain_palette', 'ligand_selection', 'cutout_planes',
-               'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry'),
+               'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry', 'worker_ccd'),
 }
 
 
@@ -324,7 +324,7 @@ def ccd_observation(*, path=None, expected=None):
                 from biotite.structure.info import ccd
                 path = ccd._CCD_FILE
         path = Path(path).expanduser()
-        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         with os.fdopen(descriptor, 'rb') as source:
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                 raise ValueError('CCD is not a regular file')
@@ -432,8 +432,9 @@ def _runtime_versions():
 
 
 def runtime_observation():
+    from .worker_ccd import observation
     result = copy.deepcopy(_runtime_versions())
-    result['ccd'] = ccd_observation()
+    result['ccd'] = observation()
     if not result['ccd']['verified']:
         result['verified'] = False
         result['mismatches'].append('ccd_sha256')

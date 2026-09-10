@@ -75,17 +75,24 @@ def test_controller_closures_do_not_import_runtime(tmp_path, monkeypatch):
 def test_warm_worker_rechecks_ccd_before_render(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from blender_render.blender_worker_daemon import _render_job
+    from blender_render import worker_ccd
     path = tmp_path/'components.bcif'
     path.write_bytes(b'ccd')
-    observe = engine.ccd_observation
-    monkeypatch.setattr(engine, 'ccd_observation', lambda:observe(path=path, expected=hashlib.sha256(b'ccd').hexdigest()))
+    ccd = SimpleNamespace(_CCD_FILE=path)
+    ccd.set_ccd_path = lambda value:setattr(ccd, '_CCD_FILE', Path(value))
+    capture = worker_ccd.initialize(parent=tmp_path, ccd_module=ccd, expected=hashlib.sha256(b'ccd').hexdigest())
     monkeypatch.setattr(engine, '_runtime_versions', lambda:{'versions':{}, 'verified':True, 'mismatches':[]})
-    assert engine.runtime_observation()['verified']
-    path.write_bytes(b'corrupt after readiness')
-    with pytest.raises(RuntimeError, match='runtime mismatch'):
-        _render_job(SimpleNamespace(_render=lambda *a:pytest.fail('corrupt CCD rendered')),
-                    {'expected_engine':engine.engine_identity()})
-    assert path.read_bytes() == b'corrupt after readiness'
+    try:
+        assert engine.runtime_observation()['verified']
+        ccd._CCD_FILE.chmod(0o600)
+        ccd._CCD_FILE.write_bytes(b'corrupt after readiness')
+        ccd._CCD_FILE.chmod(0o400)
+        with pytest.raises(RuntimeError, match='runtime mismatch'):
+            _render_job(SimpleNamespace(_render=lambda *a:pytest.fail('corrupt CCD rendered')),
+                        {'expected_engine':engine.engine_identity()})
+        assert path.read_bytes() == b'ccd'
+    finally:
+        capture.close()
 
 
 def test_worker_replacement_cannot_clear_controller_latch(tmp_path, monkeypatch):

@@ -102,7 +102,7 @@ class GatewayBackend:
                                   before_action=lambda:protect('transfer'),
                                   attempt=row['transfer_attempt'] + 1,
                                   on_child_timings=lambda records:self.store.import_child_timings(identifier, child_id, records),
-                                  expected_execution={'bundle_sha256':request['bundle_sha256'],
+                                  expected_execution={'job_id':child_id, 'bundle_sha256':request['bundle_sha256'],
                                       'render_spec_sha256':request['render_spec']['sha256'],
                                       'engine_build':request['expected_engine']['engine_build']})
             self.store.add_timings(identifier, result.get('delivery_timings', []))

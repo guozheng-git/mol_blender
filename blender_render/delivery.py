@@ -35,6 +35,22 @@ def recover_result(client, job_id, output):
         return _recover(client, job_id, output, receipt_path)
 
 
+def _inventory_identity(items):
+    """C2 immutable artifact fields; availability/ack state may change."""
+    if not isinstance(items, list):
+        raise ValueError('Invalid artifact inventory')
+    identities = {}
+    for item in items:
+        if not isinstance(item, dict) or item.get('name') not in {'render.png', 'render.blend', 'manifest.json'}:
+            raise ValueError('Invalid artifact name')
+        name = item['name']
+        if name in identities:
+            raise ValueError('Duplicate artifact identity')
+        identities[name] = {key:item.get(key) for key in ('sha256', 'size', 'mime_type', 'expires_at')}
+        identities[name]['required'] = item.get('required', name in {'render.png', 'render.blend'})
+    return identities
+
+
 def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ack=False, expected_execution=None,
              on_child_timings=None, attempt=1, before_action=None):
     from .client import ClientError
@@ -48,6 +64,12 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
         receipt = json.loads(receipt_path.read_text())
     except FileNotFoundError:
         receipt = {'version': 2, 'job_id': job_id, 'artifacts': [], 'outputs': {}}
+    if receipt.get('job_id') != job_id:
+        raise ValueError('Receipt belongs to a different child operation')
+    # Additive compatibility with earlier C3 receipts: their outer job_id was
+    # already bound, while execution_identity contained only the three digests.
+    if expected_execution is not None and isinstance(receipt.get('execution_identity'), dict):
+        receipt['execution_identity'].setdefault('job_id', job_id)
     base = '/v1/jobs/' + quote(job_id, safe='')
     manifest = {}
     timings = []
@@ -55,14 +77,22 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
         if before_action: before_action()
         result = client.request('GET', base + '/result?inventory=true')
         if result.get('delivery_policy') != 'explicit_ack_v1':
-            raise ClientError('Service does not support recoverable delivery; upgrade it before download. No render was submitted.')
+            raise ValueError('Service does not support recoverable delivery; no render was submitted')
         if 'expected_artifacts' not in result:
-            raise ClientError('Service lacks expected artifact inventory; upgrade it before recovery.')
+            raise ValueError('Service lacks expected artifact inventory')
+        if result.get('job_id') != job_id:
+            raise ValueError('Result belongs to a different child operation')
         if expected_execution is not None:
             observed = {key: result.get(key) for key in expected_execution}
             if observed != expected_execution:
                 raise ValueError('Child execution identity mismatch; artifacts were not acknowledged')
+            if receipt.get('execution_identity') not in (None, observed):
+                raise ValueError('Previously bound execution identity changed')
             receipt['execution_identity'] = observed
+        incoming = _inventory_identity(result['expected_artifacts'])
+        previous = _inventory_identity(receipt['artifacts'])
+        if previous and (incoming != previous or receipt.get('inventory_complete', False) and not result['inventory_complete']):
+            raise ValueError('Previously bound artifact inventory changed')
         receipt['artifacts'] = [dict(item, expected=True) for item in result['expected_artifacts']]
         receipt['inventory_complete'] = result['inventory_complete']
         receipt['version'] = 2

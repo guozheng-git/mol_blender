@@ -11,6 +11,7 @@ import socket
 import sys
 import time
 import traceback
+from contextlib import ExitStack
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -25,6 +26,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Blender worker daemon")
     parser.add_argument("--socket", required=True, help="Unix socket path")
     parser.add_argument("--custom-script", required=True, help="Path to blender_custom_render.py")
+    parser.add_argument('--ccd-root', help='Worker-owned capture directory; removed after worker exit')
     parser.add_argument("--idle-timeout", type=float, default=0.0, help="Exit after idle seconds (0 disables).")
     return parser.parse_args(tail)
 
@@ -146,6 +148,11 @@ def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]
 
 
 def _run_server(args: argparse.Namespace) -> int:
+    with ExitStack() as cleanup:
+        return _serve(args, cleanup)
+
+
+def _serve(args: argparse.Namespace, cleanup: ExitStack) -> int:
     sys.path.insert(0, str(Path(args.custom_script).resolve().parent.parent))
     socket_path = Path(args.socket).expanduser()
     if not socket_path.is_absolute():
@@ -158,6 +165,9 @@ def _run_server(args: argparse.Namespace) -> int:
         protect('render')
         renderer = _load_renderer_module(Path(args.custom_script))
         renderer._configure_molecularnodes_import_path()
+        from blender_render.worker_ccd import initialize
+        capture = initialize(parent=getattr(args, 'ccd_root', None))
+        cleanup.callback(capture.close)
         # Worker-only runtime closure; no controller imports these dependencies.
         import molecularnodes
         import molecularnodes.nodes.styles
@@ -169,6 +179,7 @@ def _run_server(args: argparse.Namespace) -> int:
         loaded_engine = engine_identity()
         loaded_runtime = runtime_observation()
     except Exception as exc:
+        cleanup.close()
         # Remain available for a typed readiness refusal and shutdown. An exit
         # without this report would make the controller infer a generic failure.
         startup_error = _error_response(exc if isinstance(exc, RestartRequired) else
