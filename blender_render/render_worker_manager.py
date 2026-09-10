@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from blender_render import core as _bridge_runner
+from blender_render.worker_ipc import IPCUnavailable, WorkerIPC
 
 
 class WorkerError(RuntimeError):
@@ -53,7 +54,8 @@ class PersistentBlenderWorker:
         self.apptainer_image = str(apptainer_image or "").strip()
         self.worker_start_timeout = max(5.0, float(worker_start_timeout))
 
-        self.socket_path = self.root_dir / "worker.sock"
+        self.socket_path: Path | None = None
+        self._ipc: WorkerIPC | None = None
         self.stdout_log = self.root_dir / "worker.stdout.log"
         self.stderr_log = self.root_dir / "worker.stderr.log"
 
@@ -90,6 +92,8 @@ class PersistentBlenderWorker:
         return detected or blender
 
     def _build_command(self) -> list[str]:
+        if self.socket_path is None or self._ipc is None:
+            raise WorkerNotReady('Worker IPC has not been created')
         daemon_script = self._daemon_script_path()
         if not daemon_script.is_file():
             raise WorkerError(f"Worker daemon script not found: {daemon_script}")
@@ -116,6 +120,7 @@ class PersistentBlenderWorker:
                 raise WorkerError("Apptainer mode enabled but apptainer_image is empty.")
             apptainer_exe = _bridge_runner._resolve_apptainer_executable()
             bind_paths = [
+                self._ipc.directory,
                 self.root_dir,
                 daemon_script.parent.parent,
                 custom_script.parent,
@@ -162,7 +167,7 @@ class PersistentBlenderWorker:
             setattr(self, handle_name, None)
 
     def _send_request_locked(self, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-        if not self.socket_path.exists():
+        if self.socket_path is None or not self.socket_path.exists():
             raise WorkerError(f"Worker socket does not exist: {self.socket_path}")
 
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -254,62 +259,48 @@ class PersistentBlenderWorker:
     def _start_locked(self) -> None:
         from blender_render.engine import protect
         seal = protect('startup')
-        self.root_dir.mkdir(parents=True, exist_ok=True)
-        if self.custom_script.resolve() != seal.root/'blender_custom_render.py':
-            raise WorkerError('Renderer script must belong to the sealed engine')
-        self._capture = tempfile.TemporaryDirectory(prefix='engine-', dir=self.root_dir)
-        self._captured_package = seal.capture(Path(self._capture.name)/'blender_render')
-        if self.socket_path.exists():
-            try:
-                self.socket_path.unlink()
-            except Exception:
-                pass
-
-        self._stdout_handle = self.stdout_log.open("a", encoding="utf-8")
-        self._stderr_handle = self.stderr_log.open("a", encoding="utf-8")
-
-        command = self._build_command()
-        self._last_command = list(command)
-        self._log("worker-start " + " ".join(shlex.quote(part) for part in command))
+        self._stop_locked()
         try:
+            try:
+                self._ipc = WorkerIPC()
+            except (IPCUnavailable, OSError) as exc:
+                raise WorkerNotReady('Worker IPC unavailable; explicit runtime storage repair required') from exc
+            self.socket_path = self._ipc.socket_path
+            self.root_dir.mkdir(parents=True, exist_ok=True)
+            if self.custom_script.resolve() != seal.root/'blender_custom_render.py':
+                raise WorkerError('Renderer script must belong to the sealed engine')
+            self._capture = tempfile.TemporaryDirectory(prefix='engine-', dir=self.root_dir)
+            self._captured_package = seal.capture(Path(self._capture.name)/'blender_render')
+            self._stdout_handle = self.stdout_log.open("a", encoding="utf-8")
+            self._stderr_handle = self.stderr_log.open("a", encoding="utf-8")
+            command = self._build_command()
+            self._last_command = list(command)
+            self._log("worker-start " + " ".join(shlex.quote(part) for part in command))
             env = self._subprocess_env()
             protect('startup')
-            self._process = subprocess.Popen(
-                command,
-                stdout=self._stdout_handle,
-                stderr=self._stderr_handle,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                cwd=str(self._captured_package.parent),
-                env=env,
-                start_new_session=True,
-            )
-        except FileNotFoundError as exc:
-            self._close_logs_locked()
-            self._discard_capture()
-            missing = exc.filename or (command[0] if command else "<unknown>")
-            raise WorkerNotReady(f"Failed to launch Blender worker. Missing executable: {missing}") from exc
-        except Exception:
-            self._close_logs_locked()
-            self._discard_capture()
-            raise
-
-        try:
+            try:
+                self._process = subprocess.Popen(
+                    command,
+                    stdout=self._stdout_handle,
+                    stderr=self._stderr_handle,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    cwd=str(self._captured_package.parent),
+                    env=env,
+                    start_new_session=True,
+                )
+            except FileNotFoundError as exc:
+                missing = exc.filename or command[0]
+                raise WorkerNotReady(f"Failed to launch Blender worker. Missing executable: {missing}") from exc
             self._wait_until_ready_locked(timeout=self.worker_start_timeout)
-        except Exception:
+        except BaseException:
             self._stop_locked()
             raise
 
     def _stop_locked(self) -> None:
         process = self._process
         if process is None:
-            self._close_logs_locked()
-            self._discard_capture()
-            if self.socket_path.exists():
-                try:
-                    self.socket_path.unlink()
-                except Exception:
-                    pass
+            self._release_resources_locked()
             return
 
         if process.poll() is None:
@@ -340,13 +331,20 @@ class PersistentBlenderWorker:
             except subprocess.TimeoutExpired:
                 self._log('worker-exit-wait admission-retained')
         self._process = None
-        self._discard_capture()
-        self._close_logs_locked()
-        if self.socket_path.exists():
+        self._release_resources_locked()
+
+    def _release_resources_locked(self):
+        # Only callers that observed child exit (or never launched) may release.
+        try:
+            if self._ipc is not None:
+                self._ipc.close()
+            self._ipc = None
+            self.socket_path = None
+        finally:
             try:
-                self.socket_path.unlink()
-            except Exception:
-                pass
+                self._discard_capture()
+            finally:
+                self._close_logs_locked()
 
     def _discard_capture(self):
         if self._capture is not None:
@@ -355,7 +353,7 @@ class PersistentBlenderWorker:
 
     def _ensure_started_locked(self) -> None:
         process = self._process
-        if process is not None and process.poll() is None and self.socket_path.exists():
+        if process is not None and process.poll() is None and self.socket_path is not None and self.socket_path.exists():
             try:
                 response = self._send_request_locked({"action": "ping"}, timeout=2.0)
                 if str(response.get("status", "")).strip().lower() == "ready":
@@ -502,7 +500,7 @@ class PersistentBlenderWorker:
             return {
                 "running": running,
                 "pid": pid,
-                "socket_path": str(self.socket_path),
+                "socket_path": str(self.socket_path) if running and self.socket_path is not None else None,
                 "stdout_log": str(self.stdout_log),
                 "stderr_log": str(self.stderr_log),
                 "last_command": list(self._last_command),

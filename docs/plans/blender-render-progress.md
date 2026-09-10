@@ -1,5 +1,51 @@
 # Blender Render implementation progress
 
+## Worker IPC lifecycle correction — 2026-09-10
+
+Starting HEAD verified as `880c3c37ec38b7c404a105f48070bdcec1c9d358` on
+`codex/c3-execution-review`, with unrelated `1qys.cif` preserved. The review remote
+matched; public-release remained `70bcbfa37cf1148ff90ae6d6849f46b6532ff96a`.
+The preceding real C3 attempt passed developer preview and local acceptance after
+isolated pinned runtime preparation. Slurm worker startup then failed with
+`AF_UNIX path too long` at a 115-byte socket pathname beneath the durable registry.
+That execution_unknown operation is retained and is not retried or recovered here.
+
+Twenty new guarded IPC regressions failed before implementation. Persistent worker
+logs and captures remain under the configured durable root; sockets now use fresh
+short private directories selected from a suitable XDG runtime directory or /tmp.
+The directory lives through confirmed process exit, including forced termination,
+and is bound explicitly for outer Apptainer launches. Creation failure is typed
+before process launch. Private status clears the active socket after shutdown.
+Acceptance prerequisites report and verify the effective IPC storage strategy
+without restricting durable registry length or launching a worker.
+
+The first focused run passed 100 worker, command, integrity and operation contracts;
+the extended IPC/preflight run passed 23, including preservation of the admitted
+job and reservation on IPC failure. Independent read-only review identified one
+bind-encoding edge case: private XDG directory names containing `:` or `,`. Two
+failing command regressions reproduced it; those bases now fall back to /tmp.
+The partial v1 full run was stopped as superseded. Post-fix focused verification
+passed 25 tests, and complete verification was repeated after the fix.
+
+Final `c3-worker-ipc-full-v2` evidence: **514 guarded repository tests passed**
+(two inherited A/B child-process skips), **318 installed-wheel contracts passed**,
+and all **85 package files** matched recursively between source, wheel and
+installation. Both complete suites and all focused passes recorded zero audited
+external attempts. Four inherited dependency deprecation warnings remain. Wheel
+build and offline install ran outside the checkout with the prepared test
+interpreter; this is not a clean dependency-install or real-backend acceptance.
+`git diff --check` passed. Wheel SHA-256:
+`9a9152ee109b87be3bdb1163869c30ca166e452d9aa83c62bcc1808b568cac27`.
+Engine build:
+`c62a6a57202424d0911797c7576a9123e9c70dfd4da8570856b23f86a12cf098`.
+
+No real Blender, SSH/Slurm compute, Modal, acceptance invocation, D work,
+existing-operation recovery, or public-release change is part of this correction.
+Real IPC/Slurm acceptance of this new build remains unexecuted. Modal implemented
+and contract-tested; real backend execution unverified. Existing recovery/stress
+gates remain open. The authorized Git boundary is one direct child of `880c3c3`
+and a non-force push of only `codex/c3-execution-review`.
+
 ## Developer preview CCD integration — 2026-09-10
 
 Starting HEAD verified as `1edf33060a83a3b34fb35a067f793a8434c25c15` on

@@ -69,6 +69,11 @@ def main():
     report = {'commit':commit, 'engine_build':engine_identity()['engine_build'],
               'status':'prerequisites', 'blocked_reasons':prerequisites(config, fixture, blender, profile),
               'modal':'Modal implemented and contract-tested; real backend execution unverified.'}
+    from blender_render.worker_ipc import preflight, IPCUnavailable
+    try:
+        report['worker_ipc'] = preflight()
+    except (IPCUnavailable, OSError) as exc:
+        report['blocked_reasons'].append('Worker IPC prerequisite: ' + str(exc))
     def save():
         (out/'acceptance.json').write_text(json.dumps(report, indent=2)+'\n')
     save()

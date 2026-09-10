@@ -158,6 +158,33 @@ untyped worker exit retains an unknown execution outcome. File-import endpoints
 also preserve integrity/compatibility conditions instead of labelling them as
 malformed molecular structures.
 
+## Worker IPC lifetime
+
+The worker's durable root holds logs and package captures. Its Unix socket uses
+an independent, newly created `br-*` directory with mode 0700 and a `w.sock`
+filename. A canonical, user-owned, mode-0700 writable `XDG_RUNTIME_DIR` is
+preferred when it contains no Apptainer bind delimiters (`:` or `,`) and the
+complete socket pathname fits within 100 encoded bytes;
+otherwise the worker uses node-local `/tmp`. `TMPDIR` and durable registry length
+do not select the socket path. Existing directories and stale sockets are never
+adopted. No short-path limit is imposed on a durable registry.
+
+IPC is created before command construction and retained until child exit is
+observed. Startup/capture/command/readiness failures, interrupted startup, normal
+stop, forced termination and abandoned replacement attempts release it. A restart
+gets a fresh directory. Shutdown does not move or remove durable logs. Private
+status reports a socket only while the worker process is active. When the manager
+launches an outer Apptainer command, the IPC directory is explicitly bound at the
+same path; a controller already inside a container uses its own runtime directory.
+
+IPC creation failure is a typed pre-execution readiness refusal: it starts no
+Blender process and preserves the admitted operation through the existing
+compatibility-blocked contract. It does not change ambiguous historical jobs.
+Acceptance preflight creates and removes a probe directory and reports the
+effective `worker_ipc` strategy, permissions and pathname length. It does not bind
+a socket or launch compute. Real Blender/container IPC acceptance for the corrected
+build remains a separate gate.
+
 ## HPC profiles and lifecycle
 
 Profiles require `version: 2` and `launcher: {kind, arguments}`. Migrate old
