@@ -121,24 +121,8 @@ class Client:
         raise ClientError(f"Render {job_id} is still pending. Reconnect with status/result; do not resubmit.")
 
     def download(self, job_id, output):
-        output = Path(output).expanduser().resolve()
-        result = self.request("GET", "/v1/jobs/" + job_id + "/result")
-        paths = {}
-        for item in result["artifacts"]:
-            name = item["name"]
-            if name not in {"render.png", "render.blend", "manifest.json"}:
-                raise ClientError("Unexpected artifact name")
-            path = output if name == "render.png" else output.with_suffix(".blend" if name == "render.blend" else ".manifest.json")
-            raw = self.request("GET", f"/v1/jobs/{job_id}/artifacts/{name}", binary=True)
-            import hashlib
-            if hashlib.sha256(raw).hexdigest() != item["sha256"]:
-                raise ClientError("Artifact checksum does not match")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temp = path.with_name(path.name + ".partial")
-            temp.write_bytes(raw)
-            os.replace(temp, path)
-            paths[name] = str(path)
-        return {"job_id": job_id, "outputs": paths, "manifest": result["manifest"]}
+        from .delivery import recover_result
+        return recover_result(self, job_id, output)
 
 
 class ConfiguredClient(Client):
@@ -151,6 +135,11 @@ class ConfiguredClient(Client):
             or path.startswith(('/v1/files/', '/v1/render-files/')))
         connection = _connect_client(self.profile, read_only=self.read_only or not start, **self.options)
         return connection.request(method, path, body, **kwargs)
+
+    def download(self, job_id, output):
+        # Resolve credentials without startup, then scope receipts to this
+        # concrete service and credential. No upload/submit fallback exists.
+        return _connect_client(self.profile, read_only=True, **self.options).download(job_id, output)
 
 
 def configured_client(profile='local', *, read_only=False, **kwargs):

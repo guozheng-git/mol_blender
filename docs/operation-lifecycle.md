@@ -126,3 +126,7 @@ colors, secondary structure and camera remain part of content identity. Existing
 historical UUID-bearing payloads/fingerprints are not rewritten; retained operation
 keys are the compatibility recovery mechanism, not an asserted cross-version
 content-cache migration.
+
+For C2 acknowledgement, verified local receipts and planned result handoff, see
+[result recovery](result-recovery.md). Legacy delivery and expiry remain explicitly
+documented there; no recovery route submits work.

@@ -768,3 +768,324 @@ The user's current milestone order supersedes earlier proposed decompositions:
 interfaces and preset selection; E is installed-product validation.** Do not mix
 Slurm portability, MCP/ChatGPT UX, or preset selection into C2. Start
 `codex/c2-result-recovery` only after a clean C1 checkpoint.
+
+### Reviewed C1 checkpoint and push outcome
+
+The separate review cleared all four original blockers after the alias follow-up.
+The corrective checkpoint is **`4878801b7b8e3379cfeb9642f7db18c2812f0749`**,
+`fix: close C1 review gaps in admission and retry identity`, on
+`codex/execution-reliability`. It includes the plan/progress updates; A/B remains
+`815e3df` and the initial C1 commit remains `6b33404`. Nothing was reset, squashed,
+amended or force-pushed. Status and whitespace checks passed before committing.
+
+Configured the previously absent `origin` to the verified private repository URL
+and executed `GIT_TERMINAL_PROMPT=0 git push -u origin HEAD`. **Push failed (128):**
+`could not read Username for 'https://github.com': terminal prompts disabled`.
+No successful remote checkpoint is claimed. GitHub connector inspection confirmed
+PR #1 remains draft on `codex/public-release`; its head was not changed. Local Git
+authentication must be configured before retrying the authorized push. No tokens
+or credentials were read, altered or placed in repository files.
+
+Then executed `git switch -c codex/c2-result-recovery` successfully from `4878801`.
+C2 work below remains uncommitted for review. No C3, D or E implementation began.
+
+## Milestone C2 — artifact lifecycle and result recovery
+
+Scope: completed-result recovery only. Reused the existing job/store/API and client
+download boundary; no new renderer, queue, preset semantics, backend launcher or
+plugin/preset-selection work. Detailed policy: [result recovery](../result-recovery.md).
+
+Changed files: `blender_render/delivery.py` (verified local receipts and atomic,
+resumable downloads), `client.py` (shared recovery boundary and attach-only scoped
+client), `api.py` (opt-in non-consuming delivery and explicit checksum acknowledgement),
+`jobs.py` (idempotent owner-scoped delivery receipts and explicit drained result
+handoff), `cli.py` (partial result stays visible and exits nonzero),
+`tests/test_result_recovery.py`, `docs/result-recovery.md`,
+`docs/operation-lifecycle.md`, and this progress record.
+
+| Acceptance | Executed evidence |
+|---|---|
+| Recover a completed job without molecular input or new render | Fresh-client result recovery after original input cleanup; backend call list remains exactly the original job ID. |
+| Preserve successful PNG when scene download fails; resume missing artifacts | In-process API + fake scene test returns PNG and per-artifact error, then finishes the same job from a fresh client and recreates outputs at a new destination. CLI prints partial output and exits nonzero. |
+| Writable destinations, atomic save, size/checksum validation | Invalid parent fails before network; corrupt response leaves existing user output unchanged and sends no acknowledgement. Verified retry succeeds. |
+| Receipts are scoped and do not confuse stale local paths with success | Owner/credential and service URL isolation, deleted-file failure, simultaneous result calls serialized with receipt locks; no new backend dispatch. |
+| Response loss is not permission to rerender | Lost acknowledgement response repeats idempotently. Verified local files remain usable after server deletion. |
+| Preview does not consume the original; retention is explicit | Preview and `delivery=ack` preserve the original; legacy GET still deletes. Wrong acknowledgement hash fails. Original expiry remains effective; no TTL extension. |
+| Protect unexpired outputs during planned replacement | Drained isolated store copies verified artifacts to replacement data root; restart with same DB retains owner/job/expiry and PNG-only artifact set. Repeated handoff verifies matching destination. |
+| Missing artifacts are not advertised as completed usable output | Unplanned replacement into empty data root reports expired/unavailable, with no render or conversion. |
+
+The additive explicit-ack path preserves the hosted TTL and legacy signed-download
+behavior. New resumable clients require the advertised delivery policy instead of
+silently using consuming legacy GETs. Receipt scope is deliberately credential-bound;
+credential rotation does not reuse old credential receipts. No remote deployment
+or privacy/storage policy change was executed. Planned handoff is an explicit
+library-only operator step, not an automatic status/recovery side effect.
+
+Exact executed commands, in the release checkout, using the same guarded
+environment as C1 (`PYTHONPATH=tests`, `PYTHONDONTWRITEBYTECODE=1`, and the three
+isolated `/private/tmp/blender-c1` home/session/run assignments above):
+
+```sh
+.venv/bin/python -m pytest -q -p no:cacheprovider -p c1_boundary_guard tests/test_result_recovery.py tests/test_jobs_api.py tests/test_cli_operation_routing.py tests/test_operation_lifecycle.py
+.venv/bin/python -m pytest -q -rs -p no:cacheprovider -p c1_boundary_guard
+git diff --check
+git diff --stat
+```
+
+- Initial focused run: **87 passed, four inherited warnings, 3.86s**, `c2-focused.log`.
+- Final focused run after concurrency, stale-copy, service-scope and CLI partial
+  status regressions: **91 passed, four warnings, 3.57s**, `c2-focused-final.log`.
+- Full eligible repository suite: **302 passed, two documented A/B child-process
+  skips, four inherited warnings, 5.74s**, `c2-suite.log`.
+- Logs are under `/private/tmp/blender-c1`; all runs reported zero audited real
+  process/network attempts. No failed C2 tests, services, Blender processes, SSH,
+  Slurm/Modal allocations or paid compute. The opt-in guard still prevents any
+  real boundary attempt from passing silently.
+- `git diff --check` passed. Final diff review checked that result paths contain
+  no admission/upload fallback, acknowledgements cannot start compute, successful
+  artifacts remain visible on partial failure, and old download TTL/behavior is
+  not silently redefined.
+
+The initial C2 implementation was subsequently blocked by the two reproduced
+failures below; this paragraph's original readiness assessment is superseded.
+At that point no installed-wheel or real
+backend/storage handoff validation is claimed; destructive loss of both local
+verified copies and expired/deleted originals is not recoverable. Broader gateway
+and hosted adoption of the new acknowledgement policy awaits compatible backend
+installation and interface work, not a silent deployment in this task.
+
+Next: **C3 backend parity** (runtime/capability and execution/storage compatibility,
+including separately authorized real profile checks). Then **D interfaces/preset
+selection**, then **E installed-product validation**. Stop at C2 for review.
+
+### C2 blocker corrections — authoritative artifact lifecycle
+
+Starting state: branch `codex/c2-result-recovery`, HEAD
+`4878801b7b8e3379cfeb9642f7db18c2812f0749`, with the C2 changes listed above
+already uncommitted. The read-only review reproduced (1) handoff copies surviving
+acknowledgement and expiry and (2) a fresh receipt reporting success without PNG.
+Those initial tests did not prove these cases; the earlier completion claim is
+superseded by this correction and its regression evidence. No C3 began.
+
+Files changed in this correction: `blender_render/artifacts.py` (new shared
+inventory/copy lifecycle), `jobs.py` (completion, migration, tombstones and
+handoff), `service.py` (artifact lookup through authorized managed copies),
+`api.py` (inventory metadata query), `delivery.py` (required-output receipts),
+`tests/test_result_recovery.py`, `docs/result-recovery.md`, and this file.
+Existing C2 edits in `client.py`, `cli.py` and `docs/operation-lifecycle.md` were
+preserved. Renderer, presets, RenderSpec, cameras, materials and geometry are
+unchanged. No commit or branch switch was performed.
+
+**State invariants.** Completion freezes expected name, hash, size, original media
+type, required flag and expiry. Mutable availability is separate and authoritative.
+Delivered/expired/deleted/lost never transition back to available. Physical copies
+cannot authorize a tombstone. Operator-selected roots register durably before
+handoff; all registered roots and the legacy root are reconciled. Tombstones commit
+before deletion, including interrupted acknowledgements. Cleanup sweeps terminal
+jobs and orphan staging/job directories, is repeatable and does not follow links
+outside managed storage. Result exposure can persist loss and retry cleanup, but
+has no compute admission route. No TTL extension or delivery-policy change.
+
+**Recovery contract.** The additive `result?inventory=true` query exposes expected
+inventory plus current availability after bytes are gone. Ordinary terminal result
+and artifact retrieval retain HTTP 410. Available download lists are separate.
+Receipts include expected/required flags, availability, verified-local state and
+checksum failure. A known required inventory plus verified PNG is mandatory for
+completion; requested scenes are also required. Manifest is diagnostic. Incomplete
+results retain verified outputs, identify missing required artifacts and return
+`artifact_unavailable` / `recover_verified_local_copy_or_stop`. Result-only retries
+can finish transient transfer failures while remote bytes remain available.
+
+**Migration.** Additive SQLite columns/root registry preserve jobs, reservations,
+charges and original expiry. Old rows use trusted result/manifest descriptors and
+prior draft acknowledgement metadata; PNG is required conservatively. Unknown
+original required inventory cannot produce success. New acknowledgements rely on
+the single artifact-state record, not the legacy receipt table. Version-1 local
+receipts require server inventory refresh before asserting completion. Destructive
+loss and copies outside registered managed storage cannot be recovered or swept.
+
+| Final C2 criterion | Evidence / assessment |
+|---|---|
+| Immutable expected inventory survives consumption/deletion/expiry | Proven: parameterized lifecycle test compares every descriptor and original expiry before and after four terminal/partial cases. |
+| Handoff then PNG ack then replacement does not resurrect PNG | Proven: partial and all-delivered cases delete source plus two registered copies; deliberately restored stale PNG is purged at replacement. |
+| Remaining artifacts retain original availability/TTL | Proven: partial delivery retains scene/manifest; expiry removes every remaining managed directory. |
+| Expiry before replacement, explicit deletion, orphan staging, repeated cleanup | Proven: four-case replacement test plus legacy/transient deletion and symlink safety test. |
+| Interrupted file deletion cannot undo durable delivery | Proven: forced cleanup OSError after ack commit; replacement sees delivered and purges every PNG copy. |
+| Lost tombstones cannot be restored | Proven: missing PNG reconciled to lost, physical recreation stays unavailable and is purged. |
+| Fresh client after consumed PNG remains incomplete | Proven: legacy consuming GET followed by fresh receipt; missing required PNG and stable error/action; remaining artifacts do not establish success. |
+| Existing receipt, missing/modified local PNG | Proven: restart/reuse succeeds only with verified bytes; missing and modified files fail, modification records checksum failure. |
+| PNG default / explicitly requested scene / diagnostic manifest | Proven: both scene settings with missing manifest; verified required outputs complete, diagnostic error stays visible. |
+| Partial transfer, result-only resume, atomic/checksummed output | Proven: interrupted scene, corrupt response, unwritable destination, ack response loss, concurrent receipt serialization and fresh-destination recovery. |
+| Owner/service scope; preview non-consuming; legacy deletion preserved | Proven: authenticated API contracts, receipt isolation, preview and consuming/non-consuming retrieval tests. |
+| Legacy migration preserves accounting and avoids false success | Proven: metadata-present and metadata-absent migration tests retain charges/reservations; unknown inventory cannot complete. |
+| No recovery dispatch or real compute | Proven at fake boundary: original backend call list stays one job; recovery traffic limited to GET/ack; audit reports no process/network attempts. |
+| Installed package contains and executes the final lifecycle contracts | Proven: 104 outside-checkout tests, imported module paths asserted, all 71 package Python/JSON files match wheel. |
+| Real profile/storage replacement and installed-host UX | Intentionally unverified; C3/E, not evidence claimed here. |
+
+**Exact execution.** Repository commands ran from
+`/Users/mb/Documents/blender_bridge-release` with command-prefix assignments
+`PYTHONPATH=tests PYTHONDONTWRITEBYTECODE=1 BLENDER_RENDER_HOME=/private/tmp/blender-c1/home PYMOL_BRIDGE_SESSION_ROOT=/private/tmp/blender-c1/sessions PYMOL_BRIDGE_TMP_ROOT=/private/tmp/blender-c1/runs`:
+
+```sh
+.venv/bin/python -m pytest -q -p no:cacheprovider -p c1_boundary_guard tests/test_result_recovery.py tests/test_jobs_api.py tests/test_operation_lifecycle.py tests/test_cli_operation_routing.py > /private/tmp/blender-c2-fixes/focused.log 2>&1
+.venv/bin/python -m pytest -q -rs -p no:cacheprovider -p c1_boundary_guard > /private/tmp/blender-c2-fixes/suite.log 2>&1
+git diff --check
+```
+
+Final focused: **104 passed, 4 inherited warnings, 4.06s**. Repository suite:
+**315 passed, 2 intentional A/B child-process skips, 4 inherited warnings, 6.22s**.
+Both logs report `C1 audit: real process/network boundary attempts = []`.
+The skipped tests are `test_snapshot_tracks_python_and_assets` and
+`test_save_restart_reuse_and_revision`; no Blender previews were necessary or run.
+Intermediate runs had three failures (two old expectations superseded by inventory
+recovery and registered-copy lookup, one legacy unavailable-result regression),
+then one HTTP 404-versus-410 regression; corrected before final passes. No
+pre-existing failing test or unresolved new failure was identified.
+
+Wheel source staged with `shutil.copy2/copytree` into
+`/private/tmp/blender-c2-fixes/wheel-source`: `pyproject.toml`, README, licenses,
+notices and the current package; tests copied to `wheel-check`. No generated
+build files were written into the checkout. Existing isolated environment used:
+`/private/tmp/blender-render-b-fixes/installed-env` (setuptools 79.0.1 and bundled
+wheel already available). No build dependencies fetched and dev env unchanged.
+From the staged source, then the temporary task directory respectively:
+
+```sh
+/private/tmp/blender-render-b-fixes/installed-env/bin/python -c 'import setuptools.build_meta; print(setuptools.build_meta.build_wheel("/private/tmp/blender-c2-fixes/wheels"))' > /private/tmp/blender-c2-fixes/build.log 2>&1
+/private/tmp/blender-render-b-fixes/installed-env/bin/python -m pip install --force-reinstall --no-deps --no-index /private/tmp/blender-c2-fixes/wheels/pymol_plugin_bridge-0.2.0b1-py3-none-any.whl
+```
+
+Both passed offline. Pip reported its inherited unwritable-cache warning and
+disabled caching. Wheel SHA-256:
+`fbadcee1b2c92f82d89f5c9ccf9af68f215bb3a258270216b9c4cb96d4175a84`.
+ZIP byte comparison verified **71/71 package Python/JSON files** against checkout.
+
+Installed tests ran from the isolated environment's `lib/python3.11/site-packages`
+with `PYTHONPATH=/private/tmp/blender-render-b-fixes/installed-env/lib/python3.11/site-packages:/private/tmp/blender-c2-fixes/wheel-check`,
+`PYTHONDONTWRITEBYTECODE=1`, and isolated home/session/run variables under
+`/private/tmp/blender-c2-fixes/installed-{home,sessions,runs}`. The dev Python
+executed this inline runner (output `installed.log` in the temporary task):
+
+```python
+from pathlib import Path
+import blender_render.artifacts, blender_render.delivery, pytest
+site=Path('/private/tmp/blender-render-b-fixes/installed-env/lib/python3.11/site-packages')
+for module in (blender_render.artifacts, blender_render.delivery):
+    assert Path(module.__file__).is_relative_to(site), module.__file__
+    print('Installed module:', module.__file__)
+root=Path('/private/tmp/blender-c2-fixes/wheel-check')
+raise SystemExit(pytest.main(['-q','-p','no:cacheprovider','-p','c1_boundary_guard'] + [str(root/name) for name in ('test_result_recovery.py','test_jobs_api.py','test_operation_lifecycle.py','test_cli_operation_routing.py')]))
+```
+
+Installed result: **104 passed, 4 inherited warnings, 4.24s**, zero audited boundary
+attempts. This reuses dev test dependencies; it is not a clean dependency install.
+Only packaging/test runner processes were used. No service, Blender, SSH, Slurm,
+Modal, network compute, credentials change, deployment or paid compute occurred.
+
+Final diff review checked shared copy deletion, commit-before-delete ordering,
+terminal/orphan sweeps, required-PNG completion and absence of recovery admission
+fallbacks. Whitespace check passed. **C2 corrections are proven at the requested
+fake/local and installed-wheel contract boundaries and remain uncommitted for
+review.** Real backend/storage checks remain unverified. Next bounded task remains
+C3 backend parity (consistent resolved inputs, runtime/capability validation and
+result delivery across profiles), followed by D interfaces/preset selection and
+E installed-product validation. None began in this correction.
+
+### C2 final review follow-up — 2026-09-09
+
+The subsequent read-only review found three additional defects not covered by the
+104/315/104 evidence above: a consumed required PNG was still advertised as a
+usable content-reuse result; pre-C2 partial-delivery migration could resurrect a
+stale PNG; and trusted macOS path aliases were rejected. That review supersedes
+the previous blanket closure statement. This follow-up implements the approved
+three-fix plan only, on the same branch/HEAD, preserving all uncommitted C2 work.
+
+Changed in this follow-up: `blender_render/artifacts.py`, `blender_render/jobs.py`,
+`tests/test_result_recovery.py`, `docs/result-recovery.md`, and this progress file.
+No engine, preset, RenderSpec, camera, geometry, material, backend launcher or
+interface-selection implementation changed. No commit or branch switch occurred.
+
+| Review correction / acceptance | Final executed evidence |
+|---|---|
+| Required remote artifacts determine reusable completion | A shared assessment requires known inventory and every required artifact available. Both consumed-PNG and consumed-requested-scene tests return the same historical operation, `reused=true`, unavailable/expired status and `result_available=false`, with one original dispatch. Ordinary result returns artifact-unavailable; inventory and remaining artifact recovery still work. |
+| Missing diagnostics do not determine completion | PNG-only and explicit-scene tests now also assert ordinary result and status remain usable after manifest loss, before verified client delivery. |
+| Preserve pre-C2 partial-delivery tombstones | A genuine shrinking result list, with no draft acknowledgement records and a deliberately stale PNG on disk, migrates PNG to delivered and purges it. Remaining scene/manifest survive; charges, reservation and expiry stay identical. Unknown inventories remain incomplete. |
+| Trusted path aliases work without following substituted roots | Configured paths canonicalize before storage use. Alias and canonical handoff paths register once. Substituting a registered canonical handoff root with a symlink does not delete external user files. |
+| Replacement follows the single-controller contract | Replacement/migration/interrupted-cleanup tests close the original store before opening the replacement; no live service is involved. |
+| Lost result-metadata response is recoverable | First GET executes then its response is discarded before receipt creation. A fresh result-only retry completes the same job; traffic is only GET/ack and original dispatch count stays one. |
+| Earlier C2 contracts remain covered | All receipt, checksum, partial delivery, tombstone, orphan cleanup, ownership, preview, retention and operation-retry contracts pass in focused and installed suites. |
+
+Migration uses original manifest metadata only for expectation. For older completed
+rows, artifacts omitted from the trustworthy shrinking current list are delivery
+tombstones, not available files. Unknown absent entries become lost. Existing
+new-format immutable inventories are not rewritten. Tombstones still commit
+before physical purging. Read-only status does not create compute; the shared
+availability assessment does not mutate operation identity or render history.
+Terminal `delivered` remains delivered; other incomplete remote results retain
+the existing unavailable/expired response compatibility. No automatic rerender.
+
+Exact final repository tests ran from the release checkout with prefix:
+`PYTHONPATH=tests PYTHONDONTWRITEBYTECODE=1 BLENDER_RENDER_HOME=/private/tmp/blender-c2-final/home PYMOL_BRIDGE_SESSION_ROOT=/private/tmp/blender-c2-final/sessions PYMOL_BRIDGE_TMP_ROOT=/private/tmp/blender-c2-final/runs`.
+
+```sh
+.venv/bin/python -m pytest -q -p no:cacheprovider -p c1_boundary_guard tests/test_result_recovery.py tests/test_jobs_api.py tests/test_operation_lifecycle.py tests/test_cli_operation_routing.py > /private/tmp/blender-c2-final/focused.log 2>&1
+.venv/bin/python -m pytest -q -rs -p no:cacheprovider -p c1_boundary_guard > /private/tmp/blender-c2-final/suite.log 2>&1
+git diff --check
+```
+
+Focused: **109 passed, 4 inherited warnings, 4.16s**. Repository: **320 passed,
+2 intentional skips, 4 inherited warnings, 7.20s**. The unchanged skips are
+`test_snapshot_tracks_python_and_assets` and `test_save_restart_reuse_and_revision`,
+the two A/B child-process acceptance tests outside this fake-only task. An initial
+focused run also passed 109 tests before strengthening diagnostic-status assertions.
+No new test failure occurred in this follow-up; the reviewed defects are separately
+documented above, not treated as passes in the earlier evidence.
+
+Offline packaging reused `/private/tmp/blender-render-b-fixes/installed-env`.
+Source and tests were copied with Python `shutil` into
+`/private/tmp/blender-c2-final/{wheel-source,wheel-check}` using the same staging
+file set as above. From the staged source, then the temporary task directory:
+
+```sh
+/private/tmp/blender-render-b-fixes/installed-env/bin/python -c 'import setuptools.build_meta; print(setuptools.build_meta.build_wheel("/private/tmp/blender-c2-final/wheels"))' > /private/tmp/blender-c2-final/build.log 2>&1
+/private/tmp/blender-render-b-fixes/installed-env/bin/python -m pip install --force-reinstall --no-deps --no-index /private/tmp/blender-c2-final/wheels/pymol_plugin_bridge-0.2.0b1-py3-none-any.whl > /private/tmp/blender-c2-final/install.log 2>&1
+```
+
+Build and install passed without fetching dependencies; pip disabled its
+unwritable cache. Final wheel SHA-256:
+`f69444184425be2b5af0846d3c51e50b2b1191a7ffb822085845e4feaca7c812`.
+Read-only ZIP/hash comparison verified all **71 package Python/JSON files** equal
+between checkout, wheel and the installed package.
+
+Installed tests ran from the existing isolated environment's site-packages with
+`PYTHONPATH=/private/tmp/blender-render-b-fixes/installed-env/lib/python3.11/site-packages:/private/tmp/blender-c2-final/wheel-check`,
+`PYTHONDONTWRITEBYTECODE=1`, isolated `installed-home`, `installed-sessions` and
+`installed-runs` under `/private/tmp/blender-c2-final`, using dev Python and this
+inline runner (output `/private/tmp/blender-c2-final/installed.log`):
+
+```python
+from pathlib import Path
+import blender_render.artifacts, blender_render.delivery, pytest
+site=Path('/private/tmp/blender-render-b-fixes/installed-env/lib/python3.11/site-packages')
+for module in (blender_render.artifacts, blender_render.delivery):
+    assert Path(module.__file__).is_relative_to(site), module.__file__
+    print('Installed module:',module.__file__)
+root=Path('/private/tmp/blender-c2-final/wheel-check')
+raise SystemExit(pytest.main(['-q','-p','no:cacheprovider','-p','c1_boundary_guard']+[str(root/name) for name in ('test_result_recovery.py','test_jobs_api.py','test_operation_lifecycle.py','test_cli_operation_routing.py')]))
+```
+
+Installed: **109 passed, 4 inherited warnings, 4.27s**. All three final test logs
+report zero audited real process/network attempts. Packaging/test runners are the
+only executed processes; no service, Blender, SSH, Slurm, Modal, deployment,
+credentials change or paid compute. This remains installed-wheel contract coverage
+using dev dependencies, not a clean dependency-install or real backend validation.
+
+Final review checked shared required-output assessment, unchanged retry identity,
+legacy removals taking precedence over physical copies, canonical root deduplication
+and substitution safety, and no recovery admission fallback. `git diff --check`
+passed. The three reproduced blockers are now covered by executed regressions;
+changes remain uncommitted for independent checkpoint review. Broad hashing
+performance optimization and physical power-loss durability remain unverified.
+Real local controller/storage replacement, Slurm filesystem/tunnel recovery,
+Modal controller/Volume persistence and cross-profile runtime/result parity remain
+deferred to C3/E with separate authorization. No C3, D or E work began.

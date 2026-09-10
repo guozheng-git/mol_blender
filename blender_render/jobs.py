@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import artifacts as artifact_lifecycle
+
 
 class JobError(ValueError):
     def __init__(self, message: str, code: str = "invalid_request", status: int = 400):
@@ -56,9 +58,9 @@ class JobStore:
               'rendering', 'result_ready', 'delivery', 'failed', 'cancelled')
 
     def __init__(self, root: Path, policy: Policy | None = None, *, data_root: Path | None = None, sync: Callable[[], None] | None = None, clock=time.time):
-        self.root = Path(root)
+        self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        transient = Path(data_root) if data_root else self.root
+        transient = Path(data_root).expanduser().resolve() if data_root else self.root
         self.inputs = transient / "inputs"
         self.artifacts = transient / "artifacts"
         self.inputs.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -91,8 +93,15 @@ class JobStore:
         CREATE TABLE IF NOT EXISTS operations (
           id INTEGER PRIMARY KEY, owner TEXT NOT NULL, created REAL NOT NULL,
           amount INTEGER NOT NULL, note TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS delivery_receipts (
+          owner TEXT NOT NULL, job_id TEXT NOT NULL, name TEXT NOT NULL, sha256 TEXT NOT NULL,
+          PRIMARY KEY(owner,job_id,name));
+        CREATE TABLE IF NOT EXISTS artifact_roots (path TEXT PRIMARY KEY);
         """)
         columns = {row[1] for row in self.db.execute('PRAGMA table_info(jobs)')}
+        for column in ('expected_artifacts', 'artifact_states'):
+            if column not in columns:
+                self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
         for column in ('session_id','submitted_by'):
             if column not in columns:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
@@ -156,6 +165,9 @@ class JobStore:
                 if path.is_file():
                     digest = self._content_digest(json.loads(path.read_text()))
                     db.execute("UPDATE inputs SET content_sha256=? WHERE id=?", (digest, row['id']))
+            artifact_lifecycle.initialize(self, db)
+            artifact_lifecycle.sweep(self, db)
+        artifact_lifecycle.purge(self.db)
 
     @contextmanager
     def transaction(self):
@@ -492,10 +504,9 @@ class JobStore:
             position = self.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND (submitted<? OR (submitted=? AND rowid <= (SELECT rowid FROM jobs WHERE id=?)))", (row["submitted"], row["submitted"], row["id"])).fetchone()[0]
         pending = row['state'] in {'queued', 'running'}
         status, error = row['state'], row['error']
-        available = None
+        available = None if pending else False
         if status == 'done':
-            artifacts = json.loads(row['result'] or '{}').get('artifacts', [])
-            available = bool(artifacts) and all((self.artifact_root(row['id']) / item['name']).is_file() for item in artifacts)
+            _, _, available = artifact_lifecycle.availability(self, row)
             if not available or row['result_expires'] is not None and row['result_expires'] <= self.clock():
                 status, available = 'expired', False
                 error = 'Render artifacts unavailable; recovery does not authorize another render.'
@@ -521,23 +532,35 @@ class JobStore:
                 raise JobError("Job not found.", "not_found", 404)
             return self._public_job(row)
 
-    def result(self, owner: str, identifier: str) -> dict:
+    def result(self, owner: str, identifier: str, *, inventory=False) -> dict:
         with self.lock:
             row = self.db.execute("SELECT * FROM jobs WHERE id=? AND owner=?", (identifier, owner)).fetchone()
             if not row:
                 raise JobError("Job not found.", "not_found", 404)
-            if row["state"] in {"expired", "delivered", "deleted"}:
+            # Persist observed loss before exposing metadata. This only reconciles
+            # artifact storage; it cannot admit work or restore a tombstone.
+            if row['expected_artifacts']:
+                with self.transaction() as db:
+                    artifact_lifecycle.reconcile_artifact_copies(self, db, row)
+                artifact_lifecycle.purge(self.db, identifier)
+                row = self.db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if not inventory and row["state"] in {"expired", "delivered", "deleted"}:
                 raise JobError("Render files have expired or been deleted after delivery or a deletion request.", "expired", 410)
-            if row["state"] != "done":
+            if row["state"] not in {'done', 'expired', 'delivered', 'deleted'}:
                 raise JobError("Render is not complete.", "not_ready", 409)
-            if row['result_expires'] is not None and row['result_expires'] <= self.clock():
+            if not inventory and row['result_expires'] is not None and row['result_expires'] <= self.clock():
                 raise JobError("Render artifacts have expired.", "expired", 410)
-            data = json.loads(row["result"])
-            if any(not (self.artifact_root(identifier) / item['name']).is_file() for item in data['artifacts']):
+            known, items, complete = artifact_lifecycle.availability(self, row)
+            data = {'job_id': identifier, 'expected_artifacts': items,
+                    'inventory_complete': known,
+                    'artifacts': [a for a in items if a['availability'] == 'available']}
+            data['bytes'] = sum(a['size'] for a in data['artifacts'])
+            if not inventory and not complete:
                 raise JobError('Render artifacts are unavailable; recovery never starts a replacement render.', 'artifact_unavailable', 410)
             if 'manifest' not in data:
-                manifest = self.artifact_root(identifier) / 'manifest.json'
-                data['manifest'] = json.loads(manifest.read_text()) if manifest.is_file() else {}
+                descriptor = next((a for a in data['artifacts'] if a['name'] == 'manifest.json'), None)
+                manifest = artifact_lifecycle.valid_copy(self.db, identifier, descriptor) if descriptor else None
+                data['manifest'] = json.loads(manifest.read_text()) if manifest else {}
             return data
 
     def delete_result(self, owner: str, identifier: str) -> dict:
@@ -550,19 +573,15 @@ class JobStore:
                 raise JobError("Cancel the active render before deleting its files.", "job_in_use", 409)
             # Check both locations so a pre-privacy release's files are also
             # removed. Job IDs come from the owner-checked database record.
-            roots = {self.artifacts / row['id'], self.root / 'artifacts' / row['id']}
-            files = byte_count = 0
-            for root in roots:
-                if root.exists():
-                    for path in root.rglob('*'):
-                        if path.is_file():
-                            files += 1
-                            byte_count += path.stat().st_size
-                    shutil.rmtree(root)
-            deleted = bool(files or row['result'])
+            states = json.loads(row['artifact_states'] or '{}')
+            states = {name: 'deleted' if state == 'available' else state for name, state in states.items()}
+            deleted = bool(row['result'])
             # Older results embedded full provenance in SQLite. Clear it and
             # render options; secure_delete also removes their freed cells.
-            db.execute("UPDATE jobs SET result=NULL,options='{}',state='deleted',result_expires=NULL WHERE id=?", (identifier,))
+            db.execute("UPDATE jobs SET result=NULL,options='{}',state='deleted',artifact_states=? WHERE id=?", (json.dumps(states), identifier))
+        with self.lock:
+            files, byte_count = artifact_lifecycle.delete_all_artifact_copies(self.db, identifier)
+        deleted = bool(deleted or files)
         return {'job_id': identifier, 'deleted': deleted, 'files_deleted': files, 'bytes_deleted': byte_count}
 
     def claim(self) -> dict | None:
@@ -614,7 +633,14 @@ class JobStore:
             if not compute_started:
                 seconds = 0
             record = {k: v for k, v in (result or {}).items() if k != 'manifest'}
-            db.execute("UPDATE jobs SET state=?,finished=?,charged=?,gpu_seconds=?,result=?,error=?,rendered=?,result_expires=?,options='{}' WHERE id=?", (state, self.clock(), charged, seconds, json.dumps(record) if state == "done" else None, error, int(state == 'done'), self.clock()+self.policy.ttl_seconds if state=='done' else None, identifier))
+            expires = self.clock()+self.policy.ttl_seconds if state == 'done' else None
+            if state == 'done':
+                expected = artifact_lifecycle.inventory(record.get('artifacts', []), expires,
+                                                        bool(json.loads(row['options']).get('save_blend')))
+                states = {a['name']: 'available' for a in expected['artifacts']}
+                db.execute('UPDATE jobs SET expected_artifacts=?,artifact_states=? WHERE id=?',
+                           (json.dumps(expected), json.dumps(states), identifier))
+            db.execute("UPDATE jobs SET state=?,finished=?,charged=?,gpu_seconds=?,result=?,error=?,rendered=?,result_expires=?,options='{}' WHERE id=?", (state, self.clock(), charged, seconds, json.dumps(record) if state == "done" else None, error, int(state == 'done'), expires, identifier))
             self._stage(db, identifier, 'result_ready' if state == 'done' else state)
             self._release_finished_inputs(db)
 
@@ -624,24 +650,91 @@ class JobStore:
             self.input_path(row['id']).unlink(missing_ok=True)
             db.execute("DELETE FROM inputs WHERE id=?", (row['id'],))
 
-    def artifact_delivered(self, owner: str, identifier: str, name: str):
+    def artifact_delivered(self, owner: str, identifier: str, name: str, *, sha256=None):
         with self.transaction() as db:
             row = db.execute("SELECT * FROM jobs WHERE id=? AND owner=?", (identifier, owner)).fetchone()
-            if not row or row['state'] != 'done' or not row['result']:
+            if sha256 is not None and not row:
+                raise JobError('Job not found.', 'not_found', 404)
+            if not row or not row['expected_artifacts']:
+                if sha256 is not None:
+                    raise JobError('Artifact unavailable', 'artifact_unavailable', 410)
                 return
-            result = json.loads(row['result'])
+            result = json.loads(row['expected_artifacts'])
             artifact = next((a for a in result['artifacts'] if a['name'] == name), None)
             if not artifact:
+                if sha256 is not None:
+                    raise JobError('Artifact not found', 'not_found', 404)
+                return
+            if sha256 is not None and artifact['sha256'] != sha256:
+                raise JobError('Delivery checksum mismatch', 'checksum_mismatch', 409)
+            if json.loads(row['artifact_states']).get(name) == 'delivered':
+                artifact_lifecycle.delete_artifact_copies(db, identifier, name)
+                return {'acknowledged': True}
+            if artifact_lifecycle.effective_state(self, row, artifact) != 'available':
+                if sha256 is not None:
+                    raise JobError('Artifact unavailable', 'artifact_unavailable', 410)
                 return
             self._stage(db, identifier, 'delivery')
-            (self.artifact_root(identifier) / name).unlink(missing_ok=True)
-            result['artifacts'] = [a for a in result['artifacts'] if a['name'] != name]
-            result['bytes'] = sum(a['size'] for a in result['artifacts'])
-            if result['artifacts']:
-                db.execute("UPDATE jobs SET result=? WHERE id=?", (json.dumps(result), identifier))
-            else:
-                shutil.rmtree(self.artifact_root(identifier), ignore_errors=True)
-                db.execute("UPDATE jobs SET result=NULL,state='delivered' WHERE id=?", (identifier,))
+            states = json.loads(row['artifact_states'])
+            states[name] = 'delivered'
+            db.execute('UPDATE jobs SET artifact_states=? WHERE id=?', (json.dumps(states), identifier))
+            artifact_lifecycle.reconcile_artifact_copies(self, db, db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone())
+        with self.lock:
+            artifact_lifecycle.purge(self.db, identifier)
+        return {'acknowledged': True}
+
+    def preserve_results(self, data_root: Path) -> dict:
+        """Explicit drained-controller handoff; never run from status/recovery.
+
+        Copy unexpired outputs to a replacement data_root before shutting down
+        temporary storage. The same database and original expiry remain required.
+        Source files are retained until their existing deletion/expiry policy.
+        """
+        import tempfile
+        destination = Path(data_root) / 'artifacts'
+        copied = []
+        with self.lock:
+            if (self.db.execute("SELECT value FROM settings WHERE key='admission'").fetchone()[0] != 'draining'
+                    or self.db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','running')").fetchone()):
+                raise JobError('Drain and finish all admitted jobs before result handoff', 'jobs_active', 409)
+            # Commit the managed root before copying so interrupted staging is
+            # still discoverable on restart. Handoff never changes availability.
+            with self.transaction() as db:
+                destination = artifact_lifecycle.register_root(db, destination)
+                artifact_lifecycle.sweep(self, db)
+            artifact_lifecycle.purge(self.db)
+            for row in self.db.execute("SELECT * FROM jobs WHERE state='done' AND result_expires>?", (self.clock(),)).fetchall():
+                result = self.result(row['owner'], row['id'], inventory=True)
+                destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+                target = destination / row['id']
+                if target.exists():
+                    for item in result['artifacts']:
+                        if item['name'] not in {'render.png', 'render.blend', 'manifest.json'}:
+                            raise JobError('Unexpected artifact name')
+                        path = target / item['name']
+                        if target.is_symlink() or path.is_symlink() or not path.is_file() or path.stat().st_size != item['size'] or hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
+                            raise JobError('Result handoff destination differs; no files overwritten')
+                    copied.append(row['id'])
+                    continue
+                with tempfile.TemporaryDirectory(prefix='.handoff-', dir=destination) as temp:
+                    staged = Path(temp) / row['id']
+                    staged.mkdir(mode=0o700)
+                    for item in result['artifacts']:
+                        if item['name'] not in {'render.png', 'render.blend', 'manifest.json'}:
+                            raise JobError('Unexpected artifact name')
+                        source = artifact_lifecycle.valid_copy(self.db, row['id'], item)
+                        if source is None:
+                            raise JobError('Result handoff source unavailable', 'artifact_unavailable', 410)
+                        data = source.read_bytes()
+                        if len(data) != item['size'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+                            raise JobError('Result handoff checksum mismatch')
+                        (staged / item['name']).write_bytes(data)
+                    os.replace(staged, target)
+                copied.append(row['id'])
+            with self.transaction() as db:
+                artifact_lifecycle.sweep(self, db)
+            artifact_lifecycle.purge(self.db)
+        return {'job_ids': copied, 'data_root': str(Path(data_root)), 'expiry_extended': False}
 
     def recover_interrupted(self):
         with self.transaction() as db:
@@ -683,10 +776,9 @@ class JobStore:
             for row in rows:
                 self.input_path(row['id']).unlink(missing_ok=True)
                 db.execute("DELETE FROM inputs WHERE id=?", (row["id"],))
-            rows = db.execute("SELECT id FROM jobs WHERE result_expires IS NOT NULL AND result_expires<=? AND state NOT IN ('expired','delivered')", (now,)).fetchall()
-            for row in rows:
-                shutil.rmtree(self.artifact_root(row['id']), ignore_errors=True)
-                db.execute("UPDATE jobs SET result=NULL,options='{}',state='expired' WHERE id=?", (row["id"],))
+            artifact_lifecycle.sweep(self, db)
+        with self.lock:
+            artifact_lifecycle.purge(self.db)
 
     def close(self):
         with self.lock:

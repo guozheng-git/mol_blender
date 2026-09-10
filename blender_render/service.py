@@ -423,11 +423,14 @@ class RenderService:
         return {"job_id": identifier, "artifacts": records, "manifest": manifest, "bytes": sum(item["size"] for item in records)}
 
     def artifact(self, owner: str, identifier: str, name: str) -> tuple[Path, str]:
-        result = self.store.result(owner, identifier)
+        result = self.store.result(owner, identifier, inventory=True)
         record = next((item for item in result["artifacts"] if item["name"] == name), None)
         if record is None or name not in {"render.png", "render.blend", "manifest.json"}:
+            if any(a['name'] == name for a in result['expected_artifacts']):
+                raise JobError('Artifact unavailable.', 'artifact_unavailable', 410)
             raise JobError("Artifact not found.", "not_found", 404)
-        path = self.store.artifact_root(identifier) / name
-        if not path.is_file():
+        from .artifacts import valid_copy
+        path = valid_copy(self.store.db, identifier, record)
+        if path is None:
             raise JobError('Temporary download is no longer available.', 'expired', 410)
         return path, record["mime_type"]

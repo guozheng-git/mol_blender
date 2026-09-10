@@ -264,8 +264,9 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
 
     @app.get("/result/{job_id}")
     @app.get("/v1/jobs/{job_id}/result")
-    async def result(job_id: str, identity=Depends(owner)):
-        data = service.store.result(identity, job_id)
+    async def result(job_id: str, inventory: bool = False, identity=Depends(owner)):
+        data = service.store.result(identity, job_id, inventory=inventory)
+        data['delivery_policy'] = 'explicit_ack_v1'
         for artifact in data["artifacts"]:
             artifact["download_url"] = downloads.url(identity, job_id, artifact["name"])
         return data
@@ -274,7 +275,17 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     async def artifact(job_id: str, name: str, request: Request, identity=Depends(owner)):
         path, mime = service.artifact(identity, job_id, name)
         return FileResponse(path, media_type=mime, filename=name,
-            background=None if 'range' in request.headers else BackgroundTask(service.store.artifact_delivered, identity, job_id, name))
+            background=None if 'range' in request.headers or request.query_params.get('delivery') == 'ack' else BackgroundTask(service.store.artifact_delivered, identity, job_id, name))
+
+    @app.post('/v1/jobs/{job_id}/artifacts/{name}/ack')
+    async def acknowledge(job_id: str, name: str, request: Request, identity=Depends(owner)):
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise JobError('Expected artifact sha256') from exc
+        if not isinstance(body, dict) or set(body) != {'sha256'} or not isinstance(body['sha256'], str):
+            raise JobError('Expected artifact sha256')
+        return await asyncio.to_thread(service.store.artifact_delivered, identity, job_id, name, sha256=body['sha256'])
 
     @app.delete("/v1/jobs/{job_id}/result")
     async def delete_result(job_id: str, identity=Depends(owner)):

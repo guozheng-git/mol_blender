@@ -312,7 +312,7 @@ def main(argv=None):
         result = execute(parser().parse_args(argv))
         if result is not None:
             print(json.dumps(result, indent=2))
-        return 0
+        return 1 if isinstance(result, dict) and result.get('complete') is False else 0
     except (RuntimeError, ValueError, OSError) as exc:
         print("blender-render: " + str(exc), file=sys.stderr)
         return 1
