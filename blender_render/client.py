@@ -36,6 +36,8 @@ class Client:
         if method == "POST" and body is None:
             body = {}
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
+        if getattr(self, 'controller_owner', None):
+            headers['X-Render-Owner'] = self.controller_owner
         data = None
         if body is not None:
             data = body if raw else json.dumps(body, allow_nan=False).encode()
@@ -115,6 +117,8 @@ class Client:
                 previous = marker
             if state["status"] == "done":
                 return self.request("GET", "/v1/jobs/" + job_id + "/result")
+            if state['status'] == 'transfer_pending':
+                raise ClientError('Child execution retained; recover this operation with recover-transfer', 409, 'transfer_pending')
             if state["status"] in {"failed", "cancelled", "expired", "delivered", "deleted"}:
                 raise ClientError(state.get("error") or "Render " + state["status"])
             time.sleep(.5)
@@ -124,6 +128,9 @@ class Client:
         from .delivery import recover_result
         return recover_result(self, job_id, output)
 
+    def recover_transfer(self, job_id):
+        return self.request('POST', '/v1/jobs/' + quote(job_id, safe='') + '/recover-transfer')
+
 
 class ConfiguredClient(Client):
     """Construction and all reads are inert with respect to service startup."""
@@ -131,7 +138,7 @@ class ConfiguredClient(Client):
         self.profile, self.read_only, self.options = profile, read_only, options
 
     def request(self, method, path, body=None, **kwargs):
-        start = method == 'POST' and (path == '/v1/structures' or path == '/v1/jobs'
+        start = method == 'POST' and (path == '/v1/structures' or path in {'/v1/jobs', '/internal/v1/resolved'}
             or path.startswith(('/v1/files/', '/v1/render-files/')))
         connection = _connect_client(self.profile, read_only=self.read_only or not start, **self.options)
         return connection.request(method, path, body, **kwargs)
@@ -152,6 +159,7 @@ def start_service(profile='local', **kwargs):
 
 
 def _connect_client(profile="local", *, read_only=False, admission=False, **kwargs):
+    controller_owner = kwargs.pop('controller_owner', None)
     from .config import load_config
     if profile in {"local", "apptainer"}:
         from .runtime import ensure_local, existing_local
@@ -161,6 +169,8 @@ def _connect_client(profile="local", *, read_only=False, admission=False, **kwar
         if profile not in config.get("profiles", {}):
             raise ClientError(f"Unknown profile {profile!r}. Run blender-render profile add first.")
         connection = config["profiles"][profile]
+        if controller_owner is not None and connection.get('kind') != 'hpc' and connection.get('private') is not True:
+            raise ClientError('Gateway execution requires an explicitly private endpoint; private structures cannot transit a shared service')
         if connection.get("kind") == "hpc":
             if admission:
                 # CLI operations belong to this durable outer queue. Only its
@@ -171,9 +181,17 @@ def _connect_client(profile="local", *, read_only=False, admission=False, **kwar
             else:
                 from .hpc import connect, existing_connection
                 connection = existing_connection(profile) if read_only else connect(profile, connection, **kwargs)
-    if connection.get("auth") == "oauth":
+    if connection.get("auth") == "oauth" and controller_owner is None:
         from .oauth_client import access_token
         return Client(connection["url"], access_token(connection["url"]), timeout=120)
+    if controller_owner is not None:
+        path = connection.get('controller_token_file')
+        token = Path(path).expanduser().read_text().strip() if path else os.environ.get(connection.get('controller_token_env', ''), '')
+        if len(token) < 32:
+            raise ClientError('Separate controller credentials required for resolved execution; explicit configuration required')
+        client = Client(connection['url'], token)
+        client.controller_owner = controller_owner
+        return client
     token = os.environ.get(connection.get("token_env", "BLENDER_RENDER_TOKEN"), "")
     if connection.get("token_file"):
         token = Path(connection["token_file"]).expanduser().read_text().strip()

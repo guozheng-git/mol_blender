@@ -35,7 +35,8 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
 
     @app.get('/health')
     async def health():
-        return {'ready':True}
+        from .engine import engine_identity
+        return {'ready':True, 'controller_declaration': engine_identity(), 'worker_observation': None}
 
     @app.post('/cancel/{job_id}')
     async def cancel(job_id: str):
@@ -59,8 +60,13 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
             payload = await request.json()
             if not isinstance(payload, dict):
                 raise ValueError('Expected an object')
-            payload['keep_temp'] = False
-            payload['job_timeout_seconds'] = timeout-20
+            from .execution import request_snapshot, validate_snapshot
+            context = payload.get('execution_context', {})
+            if (context.get('version') != 1 or context.get('controller_id') != 'controller'
+                    or context.get('operation_id') != job_id or not isinstance(context.get('owner_id'), str)
+                    or not 1 <= len(context['owner_id']) <= 128):
+                raise ValueError('Invalid authenticated execution context')
+            validate_snapshot(request_snapshot(payload), public=True, timeout=timeout)
             def run():
                 try:
                     with tempfile.TemporaryDirectory(prefix='blender-render-worker-') as root:
@@ -120,6 +126,9 @@ class HTTPBackend:
                     raise RuntimeError('Cancelled')
                 response = client.get(self.url+'/health', timeout=15)
                 if response.status_code == 200:
+                    from .engine import require_compatible
+                    require_compatible(request.get('expected_engine'), response.json().get('controller_declaration'),
+                                       request['render_spec']['required_capabilities'])
                     break
                 if response.status_code != 503 or time.monotonic() >= deadline:
                     response.raise_for_status()

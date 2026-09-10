@@ -68,6 +68,7 @@ class JobStore:
         self.policy = policy or Policy()
         self.session_id = os.environ.get("BLENDER_RENDER_SESSION_ID") or secrets.token_hex(12)
         self.clock = clock
+        self._queue_clocks = {}
         self.sync = sync or (lambda: None)
         self.lock = threading.RLock()
         self.healthy = True
@@ -115,7 +116,9 @@ class JobStore:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
         for column, definition in (('stage', "TEXT NOT NULL DEFAULT 'validation'"),
                                    ('stage_history', "TEXT NOT NULL DEFAULT '[]'"),
-                                   ('operation_key', 'TEXT'), ('input_sha256', 'TEXT')):
+                                   ('operation_key', 'TEXT'), ('input_sha256', 'TEXT'), ('execution', 'TEXT'),
+                                   ('remote_phase', 'TEXT'), ('remote_completed_at', 'REAL'),
+                                   ('timings', "TEXT NOT NULL DEFAULT '[]'"), ('transfer_attempt', 'INTEGER NOT NULL DEFAULT 0')):
             if column not in columns:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' ' + definition)
         self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS logical_operations ON jobs(owner,operation_key)')
@@ -192,9 +195,19 @@ class JobStore:
 
     def _usage(self, db) -> tuple[int, int, int]:
         cap = min(int(db.execute("SELECT value FROM settings WHERE key='budget_micro'").fetchone()[0]), math.floor(self.policy.budget_usd * 1_000_000))
-        spent, reserved = db.execute("SELECT COALESCE(SUM(charged),0), COALESCE(SUM(CASE WHEN state IN ('queued','running') THEN reserved ELSE 0 END),0) FROM jobs").fetchone()
+        spent, reserved = db.execute("SELECT COALESCE(SUM(charged),0), COALESCE(SUM(CASE WHEN state IN ('queued','running','transfer_pending') THEN reserved ELSE 0 END),0) FROM jobs").fetchone()
         spent += db.execute("SELECT COALESCE(SUM(amount),0) FROM operations").fetchone()[0]
         return cap, int(spent), int(reserved)
+
+    def storage_bytes(self, db):
+        inputs = db.execute('SELECT COALESCE(SUM(size),0) FROM inputs').fetchone()[0]
+        artifacts = db.execute("SELECT COALESCE(SUM(json_extract(result,'$.bytes')),0) FROM jobs WHERE result IS NOT NULL").fetchone()[0]
+        snapshots = db.execute("SELECT COALESCE(SUM(length(CAST(execution AS BLOB))),0)+COALESCE(SUM(length(CAST(options AS BLOB))),0) FROM jobs").fetchone()[0]
+        return inputs + artifacts + snapshots
+
+    def _check_storage(self, db, extra=0):
+        if self.policy.public and self.storage_bytes(db) + extra > self.policy.max_storage_bytes:
+            raise JobError('Upload/snapshot storage capacity is temporarily full', 'storage_full', 503)
 
     def _admit(self, db, amount: int, *, dispatch: bool = False):
         if not dispatch and db.execute("SELECT value FROM settings WHERE key='admission'").fetchone()[0] != "open":
@@ -211,7 +224,7 @@ class JobStore:
         day = math.floor(now / 86400) * 86400
         with self.lock:
             cap, spent, reserved = self._usage(self.db)
-            count = self.db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND submitted>=? AND (rendered=1 OR state IN ('queued','running'))", (owner, day)).fetchone()[0]
+            count = self.db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND submitted>=? AND (rendered=1 OR state IN ('queued','running','transfer_pending'))", (owner, day)).fetchone()[0]
             retained, next_expiry = self.db.execute("SELECT COUNT(*),MIN(expires) FROM inputs WHERE owner=? AND expires>?", (owner, now)).fetchone()
         limited = self.policy.public and owner not in self.policy.quota_exempt_owners
         return {"public": self.policy.public, "budget_remaining_usd": max(0, cap - spent - reserved) / 1_000_000 if self.policy.public else None,
@@ -296,7 +309,7 @@ class JobStore:
             if not row:
                 # The response does not disclose another user's input IDs.
                 return {"input_id": identifier, "deleted": False}
-            if db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (identifier,)).fetchone():
+            if db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running','transfer_pending')", (identifier,)).fetchone():
                 raise JobError("This structure is used by an active render. Wait for completion or cancel that job first.", "input_in_use", 409)
             self.input_path(identifier).unlink(missing_ok=True)
             db.execute("DELETE FROM inputs WHERE id=? AND owner=?", (identifier, owner))
@@ -318,11 +331,7 @@ class JobStore:
                     db.execute("UPDATE inputs SET source_key=? WHERE id=?", (source_key, existing['id']))
                 return self._input_info(existing, reused=True)
             self._admit(db, 0)
-            if self.policy.public:
-                size = db.execute("SELECT COALESCE(SUM(size),0) FROM inputs WHERE expires>?", (now,)).fetchone()[0]
-                size += db.execute("SELECT COALESCE(SUM(json_extract(result,'$.bytes')),0) FROM jobs WHERE result IS NOT NULL").fetchone()[0]
-                if size + len(data) > self.policy.max_storage_bytes:
-                    raise JobError("Upload capacity is temporarily full.", "storage_full", 503)
+            self._check_storage(db, len(data))
             path.write_bytes(data)
             path.chmod(0o600)
             db.execute("INSERT INTO inputs(id,owner,created,expires,size,sha256,name,content_sha256,source_key) VALUES (?,?,?,?,?,?,?,?,?)", (identifier, owner, now, now + self.policy.input_ttl_seconds, len(data), hashlib.sha256(data).hexdigest(), Path(name).name[:160], digest, source_key))
@@ -335,7 +344,7 @@ class JobStore:
             row = self.db.execute("SELECT * FROM inputs WHERE id=? AND owner=?", (identifier, owner)).fetchone()
             if not row:
                 raise JobError("Temporary structure is unavailable; upload it again.", "not_found", 404)
-            active = self.db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (identifier,)).fetchone()
+            active = self.db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running','transfer_pending')", (identifier,)).fetchone()
             if row["expires"] <= self.clock() and not active:
                 raise JobError("Temporary structure has expired; upload it again.", "expired", 410)
             path = self.input_path(row['id'])
@@ -449,17 +458,17 @@ class JobStore:
                 if existing:
                     self._bind_operation(db, owner, operation_key, existing['id'], input_id=input_id, client_hash=client_hash)
                     self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, existing['id'])
-                    if existing['input_id'] != input_id and not db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running')", (input_id,)).fetchone():
+                    if existing['input_id'] != input_id and not db.execute("SELECT 1 FROM jobs WHERE input_id=? AND state IN ('queued','running','transfer_pending')", (input_id,)).fetchone():
                         self.input_path(input_id).unlink(missing_ok=True)
                         db.execute('DELETE FROM inputs WHERE id=?', (input_id,))
                     return self._reused_job(existing)
             reservation = self.policy.reserve()
             self._admit(db, reservation)
-            if db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.policy.max_queue:
+            if db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','transfer_pending')").fetchone()[0] >= self.policy.max_queue:
                 raise JobError("Render queue is full; try again later.", "queue_full", 429)
             if self.policy.public:
                 day = math.floor(now / 86400) * 86400
-                count = db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND submitted>=? AND (rendered=1 OR state IN ('queued','running'))", (owner, day)).fetchone()[0]
+                count = db.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND submitted>=? AND (rendered=1 OR state IN ('queued','running','transfer_pending'))", (owner, day)).fetchone()[0]
                 if owner not in self.policy.quota_exempt_owners and count >= self.policy.daily_jobs:
                     raise JobError("Your daily free render quota is used up.", "daily_quota", 429)
             db.execute("INSERT INTO jobs(id,owner,input_id,idempotency_key,request_hash,options,state,submitted,reserved) VALUES (?,?,?,?,?,?,'queued',?,?)", (identifier, owner, input_id, idempotency_key, request_hash, encoded, now, reservation))
@@ -468,6 +477,12 @@ class JobStore:
             db.execute('UPDATE jobs SET operation_key=?,stage_history=?,input_sha256=? WHERE id=?',
                        (operation_key, json.dumps([{'stage': 'validation', 'at': now}]), source['content_sha256'], identifier))
             self._bind_operation(db, owner, operation_key, identifier)
+            if 'render_spec' in options:
+                from .execution import freeze_execution
+                snapshot = freeze_execution(self.input(owner, input_id), options)
+                db.execute('UPDATE jobs SET execution=? WHERE id=?', (json.dumps(snapshot, allow_nan=False), identifier))
+            self._check_storage(db)
+            self._queue_clocks[identifier] = time.monotonic()
         return self.get(owner, identifier)
 
     def _stage(self, db, identifier, stage):
@@ -484,14 +499,35 @@ class JobStore:
     def stage(self, identifier, stage):
         with self.transaction() as db:
             row = db.execute('SELECT state FROM jobs WHERE id=?', (identifier,)).fetchone()
-            if row and row['state'] in ('queued', 'running'):
+            if row and row['state'] in ('queued', 'running', 'transfer_pending'):
                 self._stage(db, identifier, stage)
 
-    def bind_spec(self, identifier, request):
+    def bind_execution(self, identifier, snapshot):
+        with self.transaction() as db:
+            row = db.execute('SELECT execution FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if row is None:
+                raise JobError('Operation not found', 'not_found', 404)
+            if row['execution'] and json.loads(row['execution']) != snapshot:
+                raise JobError('Execution snapshot is immutable', 'snapshot_conflict', 409)
+            db.execute('UPDATE jobs SET execution=? WHERE id=?', (json.dumps(snapshot, allow_nan=False), identifier))
+            self._check_storage(db)
+
+    def bind_spec(self, identifier, request, payload=None):
         """Bind the one resolved snapshot after deferred file conversion."""
         with self.transaction() as db:
+            row = db.execute('SELECT options,execution,state FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if not row or row['state'] != 'running' or 'prepare_file' not in json.loads(row['options']):
+                raise JobError('Only a running deferred conversion can bind execution')
+            if row and row['execution']:
+                raise JobError('Execution snapshot is immutable', 'snapshot_conflict', 409)
+            if payload is None:
+                raise JobError('Binding requires both immutable snapshots')
+            from .execution import freeze_execution
+            snapshot = freeze_execution(payload, request)
+            db.execute('UPDATE jobs SET execution=? WHERE id=?', (json.dumps(snapshot, allow_nan=False), identifier))
             db.execute("UPDATE jobs SET options=? WHERE id=? AND state='running'",
                        (json.dumps(request, sort_keys=True, allow_nan=False), identifier))
+            self._check_storage(db)
 
     def recent(self, owner):
         with self.lock:
@@ -502,7 +538,7 @@ class JobStore:
         position = 0
         if row["state"] == "queued":
             position = self.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND (submitted<? OR (submitted=? AND rowid <= (SELECT rowid FROM jobs WHERE id=?)))", (row["submitted"], row["submitted"], row["id"])).fetchone()[0]
-        pending = row['state'] in {'queued', 'running'}
+        pending = row['state'] in {'queued', 'running', 'transfer_pending'}
         status, error = row['state'], row['error']
         available = None if pending else False
         if status == 'done':
@@ -511,17 +547,27 @@ class JobStore:
                 status, available = 'expired', False
                 error = 'Render artifacts unavailable; recovery does not authorize another render.'
         stage = {'failed': 'failed', 'cancelled': 'cancelled', 'delivered': 'delivery'}.get(row['state'], row['stage'])
+        if row['state'] == 'transfer_pending':
+            stage = row['remote_phase']
+        execution = json.loads(row['execution']) if row['execution'] else {}
+        if stage == 'validation' and pending and 'prepare_file' in json.loads(row['options']):
+            stage = 'conversion_pending'
         if stage == 'validation' and row['state'] == 'done':
             stage = 'result_ready'  # Legacy terminal row; no fabricated timing.
         return {"job_id": row["id"], "operation_id": row["id"], "status": status, "queue_position": position,
                 "stage": stage, "stage_history": json.loads(row['stage_history']),
                 "result_available": available,
+                "bundle_sha256": execution.get('bundle_sha256'),
+                "render_spec_sha256": execution.get('request', {}).get('render_spec', {}).get('sha256'),
+                "engine_build": execution.get('expected_engine', {}).get('engine_build'),
+                'timings': json.loads(row['timings']),
+                'child_operation_id': row['remote_id'], 'child_completed': row['remote_completed_at'] is not None,
                 "session_id": row["session_id"], "submitted_by": row["submitted_by"],
                 "submitted_at": row["submitted"], "started_at": row["started"], "finished_at": row["finished"],
                 "cancel_requested": bool(row["cancel_requested"]), "error": error,
                 "estimated_cost_usd": row["charged"] / 1_000_000,
                 "expires_at": row['result_expires'],
-                "next_action": 'render_status' if pending else ('render_result' if status=='done' else 'stop'),
+                "next_action": 'recover_transfer' if status == 'transfer_pending' else ('render_status' if pending else ('render_result' if status=='done' else 'stop')),
                 "poll_after_seconds": 5 if pending else None,
                 "reused": False}
 
@@ -547,6 +593,8 @@ class JobStore:
             if not inventory and row["state"] in {"expired", "delivered", "deleted"}:
                 raise JobError("Render files have expired or been deleted after delivery or a deletion request.", "expired", 410)
             if row["state"] not in {'done', 'expired', 'delivered', 'deleted'}:
+                if row['state'] == 'transfer_pending':
+                    raise JobError('Child execution retained; use recover-transfer for this operation', 'transfer_pending', 409)
                 raise JobError("Render is not complete.", "not_ready", 409)
             if not inventory and row['result_expires'] is not None and row['result_expires'] <= self.clock():
                 raise JobError("Render artifacts have expired.", "expired", 410)
@@ -554,6 +602,8 @@ class JobStore:
             data = {'job_id': identifier, 'expected_artifacts': items,
                     'inventory_complete': known,
                     'artifacts': [a for a in items if a['availability'] == 'available']}
+            metadata = self._public_job(row)
+            data.update({key: metadata[key] for key in ('bundle_sha256', 'render_spec_sha256', 'engine_build', 'timings')})
             data['bytes'] = sum(a['size'] for a in data['artifacts'])
             if not inventory and not complete:
                 raise JobError('Render artifacts are unavailable; recovery never starts a replacement render.', 'artifact_unavailable', 410)
@@ -569,7 +619,7 @@ class JobStore:
             row = db.execute("SELECT * FROM jobs WHERE id=? AND owner=?", (identifier, owner)).fetchone()
             if not row:
                 raise JobError("Job not found.", "not_found", 404)
-            if row['state'] in {'queued', 'running'}:
+            if row['state'] in {'queued', 'running', 'transfer_pending'}:
                 raise JobError("Cancel the active render before deleting its files.", "job_in_use", 409)
             # Check both locations so a pre-privacy release's files are also
             # removed. Job IDs come from the owner-checked database record.
@@ -596,11 +646,48 @@ class JobStore:
             except JobError:
                 return None
             db.execute("UPDATE jobs SET state='running',started=? WHERE id=?", (self.clock(), row["id"]))
+            from .telemetry import record
+            queued = self._queue_clocks.pop(row['id'], None)
+            timing = record('queue', 'controller', time.monotonic()-queued if queued is not None else 0,
+                            'executed' if queued is not None else 'unavailable', row['transfer_attempt']+1)
+            db.execute('UPDATE jobs SET timings=? WHERE id=?', (json.dumps((json.loads(row['timings'])+[timing])[-256:]), row['id']))
             return dict(row)
 
     def set_remote_id(self, identifier: str, remote_id: str):
         with self.transaction() as db:
+            row = db.execute('SELECT remote_id FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if row and row['remote_id'] and row['remote_id'] != remote_id:
+                raise JobError('Child operation identity is immutable', 'identity_conflict', 409)
             db.execute("UPDATE jobs SET remote_id=? WHERE id=?", (remote_id, identifier))
+
+    def remote_checkpoint(self, identifier, phase, *, completed=False):
+        with self.transaction() as db:
+            db.execute('UPDATE jobs SET remote_phase=? WHERE id=?', (phase, identifier))
+            if completed:
+                db.execute('UPDATE jobs SET remote_completed_at=COALESCE(remote_completed_at,?) WHERE id=?', (self.clock(), identifier))
+
+    def transfer_pending(self, identifier, phase):
+        with self.transaction() as db:
+            db.execute("UPDATE jobs SET state='transfer_pending',remote_phase=?,error='Child operation retained; resume observation or artifact transfer without a replacement render' WHERE id=? AND state='running'", (phase, identifier))
+            if phase == 'execution_incompatible':
+                db.execute("UPDATE jobs SET error='Execution engine incompatible; install the exact admitted build before recovery' WHERE id=?", (identifier,))
+
+    def resume_transfer(self, owner, identifier):
+        with self.transaction() as db:
+            row = db.execute('SELECT * FROM jobs WHERE id=? AND owner=?', (identifier, owner)).fetchone()
+            if not row:
+                raise JobError('Job not found', 'not_found', 404)
+            if row['state'] == 'transfer_pending':
+                if row['cancel_requested']:
+                    raise JobError('Transfer cancelled', 'cancelled', 409)
+                db.execute("UPDATE jobs SET state='queued',error=NULL,transfer_attempt=transfer_attempt+1 WHERE id=?", (identifier,))
+        return self.get(owner, identifier)
+
+    def add_timings(self, identifier, records):
+        from .telemetry import sanitize
+        with self.transaction() as db:
+            row = db.execute('SELECT timings FROM jobs WHERE id=?', (identifier,)).fetchone()
+            db.execute('UPDATE jobs SET timings=? WHERE id=?', (json.dumps(sanitize(json.loads(row['timings']) + sanitize(records))), identifier))
 
     def cancelled(self, identifier: str) -> bool:
         with self.lock:
@@ -612,8 +699,10 @@ class JobStore:
             row = db.execute("SELECT * FROM jobs WHERE id=? AND owner=?", (identifier, owner)).fetchone()
             if not row:
                 raise JobError("Job not found.", "not_found", 404)
-            if row["state"] == "queued":
+            if row["state"] in {'queued', 'transfer_pending'}:
                 db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Render cancelled by a user or operator request.' WHERE id=?", (self.clock(), identifier))
+                if row['remote_phase']:
+                    db.execute('UPDATE jobs SET charged=reserved WHERE id=?', (identifier,))
                 self._stage(db, identifier, 'cancelled')
             elif row["state"] == "running":
                 db.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (identifier,))
@@ -630,10 +719,14 @@ class JobStore:
                 error = 'Render cancelled by a user or operator request.'
             seconds = max(0, min(float(seconds), self.policy.max_job_seconds))
             charged = min(row["reserved"], math.ceil((seconds + self.policy.startup_seconds) * self.policy.usd_per_second * 1_000_000)) if self.policy.public and compute_started else 0
+            if row['remote_phase']:
+                # A transfer attempt's duration is not the earlier child GPU
+                # cost. Keep its committed reservation conservatively charged.
+                charged = row['reserved']
             if not compute_started:
                 seconds = 0
             record = {k: v for k, v in (result or {}).items() if k != 'manifest'}
-            expires = self.clock()+self.policy.ttl_seconds if state == 'done' else None
+            expires = (row['remote_completed_at'] or self.clock())+self.policy.ttl_seconds if state == 'done' else None
             if state == 'done':
                 expected = artifact_lifecycle.inventory(record.get('artifacts', []), expires,
                                                         bool(json.loads(row['options']).get('save_blend')))
@@ -645,7 +738,25 @@ class JobStore:
             self._release_finished_inputs(db)
 
     def _release_finished_inputs(self, db):
-        rows = db.execute("SELECT id FROM inputs WHERE id IN (SELECT input_id FROM jobs) AND id NOT IN (SELECT input_id FROM jobs WHERE state IN ('queued','running'))").fetchall()
+        queued = {row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='queued'")}
+        self._queue_clocks = {key:value for key, value in self._queue_clocks.items() if key in queued}
+        for job in db.execute("SELECT id,execution FROM jobs WHERE execution IS NOT NULL AND state NOT IN ('queued','running','transfer_pending')").fetchall():
+            snapshot = json.loads(job['execution'])
+            if 'bundle' in snapshot:
+                snapshot.pop('bundle')
+                snapshot['request'] = {'render_spec': snapshot['request'].get('render_spec', {})}
+                snapshot['expected_engine'] = {'engine_build': snapshot['expected_engine']['engine_build']}
+                db.execute('UPDATE jobs SET execution=? WHERE id=?', (json.dumps(snapshot), job['id']))
+        transfers = self.root / 'child-results'
+        if transfers.is_dir():
+            for path in transfers.iterdir():
+                row = db.execute('SELECT state FROM jobs WHERE id=?', (path.name,)).fetchone()
+                if row is None or row['state'] not in {'queued', 'running', 'transfer_pending'}:
+                    if path.is_symlink() or path.is_file():
+                        path.unlink()
+                    else:
+                        shutil.rmtree(path)
+        rows = db.execute("SELECT id FROM inputs WHERE id IN (SELECT input_id FROM jobs) AND id NOT IN (SELECT input_id FROM jobs WHERE state IN ('queued','running','transfer_pending'))").fetchall()
         for row in rows:
             self.input_path(row['id']).unlink(missing_ok=True)
             db.execute("DELETE FROM inputs WHERE id=?", (row['id'],))
@@ -695,7 +806,7 @@ class JobStore:
         copied = []
         with self.lock:
             if (self.db.execute("SELECT value FROM settings WHERE key='admission'").fetchone()[0] != 'draining'
-                    or self.db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','running')").fetchone()):
+                    or self.db.execute("SELECT 1 FROM jobs WHERE state IN ('queued','running','transfer_pending')").fetchone()):
                 raise JobError('Drain and finish all admitted jobs before result handoff', 'jobs_active', 409)
             # Commit the managed root before copying so interrupted staging is
             # still discoverable on restart. Handoff never changes availability.
@@ -738,13 +849,16 @@ class JobStore:
 
     def recover_interrupted(self):
         with self.transaction() as db:
+            # A gateway resume observes the already admitted child and transfers
+            # output. It cannot call the fresh child submission path again.
+            db.execute("UPDATE jobs SET state='queued',transfer_attempt=transfer_attempt+1 WHERE state IN ('running','transfer_pending') AND remote_phase IS NOT NULL")
             interrupted = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='running'")]
             # Never retry an unknown paid execution or refund its reservation.
             db.execute("UPDATE jobs SET state='failed',finished=?,charged=reserved,gpu_seconds=?,options='{}',error='Service interrupted. Execution was not retried; submit a new request.' WHERE state='running'", (self.clock(), self.policy.max_job_seconds))
             for identifier in interrupted:
                 self._stage(db, identifier, 'failed')
-            for row in db.execute("SELECT id,input_id FROM jobs WHERE state='queued'").fetchall():
-                if not self.input_path(row['input_id']).is_file():
+            for row in db.execute("SELECT id,input_id,execution FROM jobs WHERE state='queued'").fetchall():
+                if not row['execution'] and not self.input_path(row['input_id']).is_file():
                     db.execute("UPDATE jobs SET state='failed',finished=?,options='{}',error='Temporary input lost on restart; upload again.' WHERE id=?", (self.clock(), row['id']))
                     self._stage(db, row['id'], 'failed')
             self._release_finished_inputs(db)
@@ -761,6 +875,7 @@ class JobStore:
         """Close queued work when operating funds no longer cover execution."""
         with self.transaction() as db:
             queued = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='queued'")]
+            db.execute("UPDATE jobs SET charged=reserved WHERE state='queued' AND remote_phase IS NOT NULL")
             db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Service operating budget exhausted' WHERE state='queued'", (self.clock(),))
             for identifier in queued:
                 self._stage(db, identifier, 'cancelled')
@@ -769,10 +884,12 @@ class JobStore:
     def cleanup(self):
         now = self.clock()
         with self.transaction() as db:
+            db.execute("UPDATE jobs SET charged=reserved WHERE state='transfer_pending' AND COALESCE(remote_completed_at,submitted)+?<=?", (self.policy.ttl_seconds, now))
+            db.execute("UPDATE jobs SET state='expired',options='{}',error='Child transfer expired; no replacement render authorized' WHERE state='transfer_pending' AND COALESCE(remote_completed_at,submitted)+?<=?", (self.policy.ttl_seconds, now))
             self._release_finished_inputs(db)
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='oauth'").fetchone():
                 db.execute("DELETE FROM oauth WHERE expires IS NOT NULL AND expires<=?", (now,))
-            rows = db.execute("SELECT id FROM inputs WHERE expires<=? AND id NOT IN (SELECT input_id FROM jobs WHERE state IN ('queued','running'))", (now,)).fetchall()
+            rows = db.execute("SELECT id FROM inputs WHERE expires<=? AND id NOT IN (SELECT input_id FROM jobs WHERE state IN ('queued','running','transfer_pending'))", (now,)).fetchall()
             for row in rows:
                 self.input_path(row['id']).unlink(missing_ok=True)
                 db.execute("DELETE FROM inputs WHERE id=?", (row["id"],))

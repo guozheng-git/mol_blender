@@ -15,6 +15,17 @@ from .runtime import file_lock, write_private
 
 
 def validate_profile(profile):
+    if profile.get('version') != 2 or not isinstance(profile.get('launcher'), dict):
+        raise ValueError('HPC profile migration required: set version=2 and an explicit launcher (slurm_sbatch or ipd_qlogin)')
+    launcher = profile['launcher']
+    if set(launcher) != {'kind', 'arguments'} or launcher['kind'] not in {'slurm_sbatch', 'ipd_qlogin'}:
+        raise ValueError('Unsupported HPC launcher configuration')
+    if 'allocation' in profile:
+        raise ValueError('HPC profile migration required: move allocation to launcher.arguments')
+    if not isinstance(launcher['arguments'], list) or any(not isinstance(x, str) or '\x00' in x or '\n' in x for x in launcher['arguments']):
+        raise ValueError('launcher.arguments must be an argv list')
+    if any(x == '--wrap' or x.startswith('--wrap=') for x in launcher['arguments']):
+        raise ValueError('Launcher arguments cannot replace the worker script with --wrap')
     for key in ("host", "remote_python", "remote_root", "image", "registry"):
         if not isinstance(profile.get(key), str) or not profile[key].strip() or "\n" in profile[key] or "\x00" in profile[key]:
             raise ValueError(f"HPC profile requires {key}")
@@ -43,6 +54,14 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
     root = config_root() / "hpc" / name
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     from .client import Client
+    from .engine import engine_identity, require_compatible, EngineMismatch
+    expected = profile.get('expected_engine') or engine_identity()
+    declaration = remote(profile, 'identity')
+    if declaration.get('python_supported') is not True:
+        raise EngineMismatch('Unsupported remote Python capabilities; explicit setup required')
+    if profile.get('expected_commit') and (declaration.get('commit') != profile['expected_commit'] or declaration.get('tracked_clean') is not True):
+        raise RuntimeError('Remote checkout must be clean at the reviewed commit before allocation')
+    require_compatible(expected, declaration.get('engine'), [])
     with file_lock(root / "attach.lock"):
         try:
             previous = json.loads((root / "connection.json").read_text())
@@ -50,29 +69,36 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
             if current.get("status") != "ready" or current.get("session_id") != previous.get("session_id"):
                 raise RuntimeError("Cached allocation ended")
             token = Path(previous["token_file"]).read_text().strip()
-            Client(previous["url"], token, timeout=2).request("GET", "/v1/quota")
+            if not previous.get('controller_token_file'):
+                raise RuntimeError('Cached connection lacks controller credentials; attach again')
+            health = Client(previous["url"], token, timeout=2).request("GET", "/health")
+            require_compatible(expected, health.get('controller_declaration'), [])
             return previous
+        except EngineMismatch:
+            raise
         except (OSError, ValueError, RuntimeError):
             pass
-        start = remote(profile, "attach", attach_only=bool(attach_only))
+        start = remote(profile, 'attach' if attach_only else 'start')
         deadline = time.monotonic() + timeout
         recoveries = 0
         while start["status"] != "ready":
+            if start['status'] in {'submission_unknown', 'unavailable'}:
+                raise RuntimeError('Allocation outcome unknown; inspect the existing allocation before starting again')
             if start["status"] in {"failed", "absent"}:
                 if attach_only or recoveries >= 1:
                     raise RuntimeError(start.get("error", "No ready GPU session. Use mode='local' or check the cluster profile."))
                 recoveries += 1
-                start = remote(profile, "attach")
+                start = remote(profile, 'start')
                 continue
             if time.monotonic() >= deadline:
                 raise RuntimeError("GPU allocation is still pending. Reconnect to the same profile; use mode='local' to render now.")
             print("Waiting for interactive GPU allocation...", file=sys.stderr)
             time.sleep(3)
-            start = remote(profile, "attach") if start["status"] == "stopping" else remote(profile, "status")
+            start = remote(profile, 'attach' if attach_only else 'start') if start['status'] == 'stopping' else remote(profile, 'status')
         if 'token' not in start:
             # Read-only status deliberately omits credentials. Only this
             # explicit connection flow requests them, without allocating again.
-            attached = remote(profile, 'attach', attach_only=True)
+            attached = remote(profile, 'attach')
             if (attached.get('status') != 'ready' or not attached.get('token')
                     or attached.get('session_id') != start.get('session_id')):
                 raise RuntimeError('GPU session changed before authenticated attach; reconnect explicitly.')
@@ -90,20 +116,32 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
         if profile.get("transport") == "slurm":
             remote_command = ["srun", "--jobid=" + str(start["job_id"]), "--overlap", "-N1", "-n1", profile["remote_python"],
                 str(Path(profile["remote_root"]) / "blender_render/hpc_proxy.py"), "stdio", "--port", str(start["port"])]
+            if start.get('cluster'):
+                remote_command[1:1] = ['--clusters=' + start['cluster']]
             ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=20", profile["host"], shlex.join(remote_command)]
             write_private(root / "proxy-command.json", json.dumps(ssh))
             command = [sys.executable, str(Path(__file__).with_name("hpc_proxy.py")), "listen", "--port", str(local_port), "--command-file", str(root / "proxy-command.json")]
-        with (root / "tunnel.log").open("a") as log:
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
         token_path = root / "token"
         write_private(token_path, start.pop("token"))
+        controller_token_path = root / 'controller-token'
+        if not start.get('controller_token'):
+            raise RuntimeError('Worker lacks separate controller authentication; explicit upgrade required')
+        write_private(controller_token_path, start.pop('controller_token'))
+        with (root / "tunnel.log").open("a") as log:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
         connection = {**start, "url":f"http://127.0.0.1:{local_port}", "token_file":str(token_path), "tunnel_pid":process.pid}
+        connection['controller_token_file'] = str(controller_token_path)
         for _ in range(50):
             try:
-                Client(connection["url"], token_path.read_text(), 1).request("GET", "/v1/quota")
+                health = Client(connection["url"], token_path.read_text(), 1).request("GET", "/health")
+                require_compatible(expected, health.get('controller_declaration'), [])
+                connection['cached_observation'] = health
                 write_private(root / "connection.json", json.dumps(connection))
                 print("Interactive GPU session ready", file=sys.stderr)
                 return connection
+            except EngineMismatch:
+                process.terminate()
+                raise
             except Exception:
                 if process.poll() is not None:
                     break

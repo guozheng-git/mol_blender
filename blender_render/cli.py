@@ -21,7 +21,7 @@ def parser():
     setup.add_argument("--blender", default="")
     setup.add_argument("--pymol-python", default="")
     setup.add_argument("--install-runtime", action="store_true")
-    commands.add_parser("doctor", help="Check the pinned runtime")
+    commands.add_parser("doctor", help="Inspect configuration without runtime probes").add_argument('--profile', default='local')
     commands.add_parser("presets", help="List packaged presets")
     login = commands.add_parser("login", help="Sign in to a hosted or lab HTTPS service")
     login.add_argument("--url", default="https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct")
@@ -64,13 +64,14 @@ def parser():
     structures.add_argument("input_id", nargs="?")
     structures.add_argument("--profile", default="local")
     service = commands.add_parser("service")
-    service.add_argument("action", choices=["start", "stop", "status"])
+    service.add_argument("action", choices=["start", "attach", "stop", "status"])
     service.add_argument("--profile", default="local")
     serve = commands.add_parser("serve", help="Run an authenticated loopback worker service")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--root", type=Path, default=config_root() / "local")
     serve.add_argument("--token-file", type=Path, required=True)
+    serve.add_argument('--controller-token-file', type=Path)
     serve.add_argument("--blender", default="")
     serve.add_argument("--image", default="")
     serve.add_argument('--pymol-python', default='')
@@ -127,7 +128,8 @@ def serve(args):
         if args.mcp:
             from .mcp_server import create_private_http
             mcp = create_private_http(service, token)
-        app = create_app(service, token=token, mcp_server=mcp)
+        controller_tokens = {args.controller_token_file.read_text().strip(): 'controller'} if args.controller_token_file else None
+        app = create_app(service, token=token, mcp_server=mcp, controller_tokens=controller_tokens)
         server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
         app.state.shutdown = lambda: setattr(server, "should_exit", True)
 
@@ -174,6 +176,17 @@ def execute(args):
         return {"status": "configured", **check, "pymol_command": "run " + str(Path(__file__).with_name("pymol_bridge_plugin.py"))}
     if args.command == "doctor":
         from .runtime import diagnose
+        if args.profile not in {'local', 'apptainer'}:
+            from .hpc import validate_profile
+            from .engine import engine_identity
+            profile = load_config().get('profiles', {}).get(args.profile)
+            if not profile:
+                raise ValueError('Unknown profile')
+            if profile.get('kind') == 'hpc':
+                validate_profile(profile)
+            return {'profile': args.profile, 'kind': profile.get('kind'), 'configuration_valid': True,
+                    'controller_declaration': engine_identity(), 'runtime_verified': False,
+                    'cached_observation': profile.get('cached_observation')}
         return diagnose()
     if args.command == "login":
         from .oauth_client import access_token
@@ -228,6 +241,8 @@ def execute(args):
             from .hpc import stop
             return stop(args.profile, load_config()["profiles"][args.profile])
         from .client import start_service
+        if args.action == 'attach':
+            return start_service(args.profile, attach_only=True)
         return start_service(args.profile)
     client = configured_client(args.profile, admission=True, blender=getattr(args,'blender',''),
                                image=getattr(args,'image',''), pymol_python=getattr(args,'pymol_python',''))

@@ -59,13 +59,18 @@ def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', 
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     state_file = root / "session.json"
     from .client import Client
+    from .engine import engine_identity, require_compatible
     with file_lock(root / "startup.lock"):
         try:
             state = json.loads(state_file.read_text())
             token = Path(state["token_file"]).read_text().strip()
-            health = Client(state["url"], token, 2).request("GET", "/v1/quota")
+            health = Client(state["url"], token, 2).request("GET", "/health")
             if state.get("version") != VERSION:
                 raise RuntimeError("A previous service version is running. Run blender-render service stop before upgrading.")
+            try:
+                require_compatible(engine_identity(), health.get('controller_declaration'), [])
+            except ValueError as exc:
+                raise RuntimeError('Existing controller build differs; drain and stop it before upgrading') from exc
             if image and state.get("image", "") != image:
                 raise RuntimeError("Local service uses a different runtime. Stop it before switching Apptainer images.")
             if pymol_python and state.get('pymol_python', '') != pymol_python:
@@ -114,7 +119,7 @@ def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', 
             if process.poll() is not None:
                 raise RuntimeError(f"Local service exited. See {root / 'service.log'}")
             try:
-                Client(state["url"], token_file.read_text().strip(), 1).request("GET", "/v1/quota")
+                Client(state["url"], token_file.read_text().strip(), 1).request("GET", "/health")
                 return state
             except Exception:
                 time.sleep(.2)

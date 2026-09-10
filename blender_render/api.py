@@ -83,10 +83,13 @@ class BoundedBody:
             await self.app(scope, bounded_receive, send)
 
 
-def create_app(service: RenderService, *, token: str, public_url: str = "", signing_key: str = "", auth_provider=None, mcp_server=None, converter=None, tokens: dict[str, str] | None = None) -> FastAPI:
+def create_app(service: RenderService, *, token: str, public_url: str = "", signing_key: str = "", auth_provider=None, mcp_server=None, converter=None, tokens: dict[str, str] | None = None, controller_tokens: dict[str, str] | None = None) -> FastAPI:
     if len(token) < 32:
         raise ValueError("A service/admin token of at least 32 characters is required")
     token_owners = {token: "local"} if tokens is None else tokens
+    controller_tokens = controller_tokens or {}
+    if any(len(key) < 32 or key == token or key in token_owners for key in controller_tokens):
+        raise ValueError('Controller credentials must be separate from consumer/admin credentials')
     downloads = Downloads(signing_key or token, public_url)
     mcp_app = mcp_server.http_app(path="/mcp", stateless_http=True) if mcp_server else None
 
@@ -144,6 +147,13 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     async def owner(request: Request) -> str:
         value = request.headers.get("authorization", "")
         bearer = value[7:] if value.startswith("Bearer ") else ""
+        for candidate, controller in controller_tokens.items():
+            if hmac.compare_digest(candidate, bearer):
+                from .execution import scoped_owner
+                identity = request.headers.get('x-render-owner', '')
+                if not 1 <= len(identity) <= 128:
+                    raise JobError('Scoped owner required', 'unauthorized', 401)
+                return scoped_owner(controller, identity)
         # The private operator token is never a public user's identity.
         if not service.store.policy.public:
             for candidate, identity in token_owners.items():
@@ -174,6 +184,23 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
             raise JobError("Request body must be an object.")
         return data
 
+    @app.post('/internal/v1/resolved')
+    async def resolved(request: Request):
+        value = request.headers.get('authorization', '')
+        for candidate, controller in controller_tokens.items():
+            if hmac.compare_digest(value, 'Bearer ' + candidate):
+                return await asyncio.to_thread(service.submit_resolved, controller, await body(request))
+        raise JobError('Controller authentication required', 'unauthorized', 401)
+
+    @app.get('/internal/v1/operations/{operation}')
+    async def internal_operation(operation: str, identity=Depends(owner)):
+        # Ordinary callers can only read their own scope, never a controller's.
+        with service.store.lock:
+            row = service.store.db.execute('SELECT job_id FROM operation_keys WHERE owner=? AND key=?', (identity, operation)).fetchone()
+            if not row:
+                raise JobError('Operation not found; submission outcome remains unknown', 'not_found', 404)
+            return service.store.get(identity, row['job_id'])
+
     @app.get("/healthz")
     @app.get("/health")
     async def health(request: Request):
@@ -182,7 +209,10 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         with service.store.lock:
             queue = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued'").fetchone()[0]
             running = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='running'").fetchone()[0]
-        return {"status": "ok" if service.store.healthy else "unavailable", "version": VERSION, "queue_depth": queue, "running": running}
+        from .engine import engine_identity
+        return {"status": "ok" if service.store.healthy else "unavailable", "version": VERSION, "queue_depth": queue, "running": running,
+                'controller_declaration': engine_identity(),
+                'worker_observation': getattr(getattr(service.backend, 'worker', None), 'observation', None)}
 
     @app.get("/v1/quota")
     async def quota(identity=Depends(owner)):
@@ -195,11 +225,11 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
 
     @app.get('/v1/capabilities')
     async def capabilities(identity=Depends(owner)):
-        from .presets import catalog
+        from .engine import engine_identity
         from .config import runtime_versions
         return {'version': VERSION, 'required_runtime': runtime_versions(), 'runtime_verified': False,
-                'capabilities': sorted(set().union(*(set(p['required_capabilities']) for p in catalog()))
-                                       | {'camera.depth_of_field'}),
+                'capabilities': engine_identity()['capabilities'], 'controller_declaration': engine_identity(),
+                'worker_observation': getattr(getattr(service.backend, 'worker', None), 'observation', None),
                 'limitation': 'Installed controller declaration, not a live compute probe.'}
 
     @app.post("/v1/structures")
@@ -261,6 +291,10 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     @app.post("/v1/jobs/{job_id}/cancel")
     async def cancel(job_id: str, identity=Depends(owner)):
         return await asyncio.to_thread(service.store.cancel, identity, job_id)
+
+    @app.post('/v1/jobs/{job_id}/recover-transfer')
+    async def recover_transfer(job_id: str, identity=Depends(owner)):
+        return service.resume_transfer(identity, job_id)
 
     @app.get("/result/{job_id}")
     @app.get("/v1/jobs/{job_id}/result")

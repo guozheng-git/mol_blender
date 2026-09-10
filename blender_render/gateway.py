@@ -29,62 +29,110 @@ class GatewayBackend:
         self.progress = callback
 
     def render(self, request, identifier, cancelled):
-        if cancelled():
-            raise RuntimeError('Lab render cancelled before child connection')
+        from .execution import request_snapshot
+        from .delivery import _recover
+        from .telemetry import measure
+        from .engine import EngineMismatch
         with self.store.lock:
-            row = self.store.db.execute('SELECT remote_id FROM jobs WHERE id=?', (identifier,)).fetchone()
-            child_id = row['remote_id'] if row else None
-        client = configured_client(self.profile, read_only=bool(child_id))
-        if child_id:
-            job = {'job_id': child_id}
-        else:
-            source = client.upload(request['payload'])
-            if cancelled():
-                raise RuntimeError('Lab render cancelled before child submission')
-            options = {key: request[key] for key in ('style_doc','rough','raw_view','color_follow','save_blend') if key in request}
-            # The gateway already resolved camera framing and output dimensions.
-            options['preserve_view'] = False
-            job = client.submit(source['input_id'], options, 'gateway-' + identifier,
-                                rerender=True, operation_key='gateway-' + identifier)
-            self.store.set_remote_id(identifier, job['job_id'])
-        self.active = client, job['job_id']
-        deadline = time.monotonic() + request.get('job_timeout_seconds', 1800)
+            row = dict(self.store.db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone())
+        child_id = row['remote_id']
+        completed = row['remote_completed_at'] is not None
+        owner = row['owner']
+        client = configured_client(self.profile, read_only=bool(child_id or row['remote_phase']), controller_owner=owner)
+        key = 'gateway-' + identifier
+        sink = lambda record: self.store.add_timings(identifier, [record])
         try:
-            while True:
-                if cancelled() or time.monotonic() >= deadline:
-                    client.cancel(job['job_id'])
-                    raise RuntimeError('Lab render cancelled or timed out')
-                state = client.status(job['job_id'])
+            if not child_id:
+                if row['remote_phase']:
+                    # Lost submission response: look up the admitted child only.
+                    job = client.request('GET', '/internal/v1/operations/' + key)
+                else:
+                    if cancelled():
+                        raise RuntimeError('Lab render cancelled before child submission')
+                    self.store.remote_checkpoint(identifier, 'child_observation_pending')
+                    envelope = {**request_snapshot(request), 'controller_id':'controller',
+                                'owner_id':owner, 'operation_id':key}
+                    with measure(sink, 'allocation', 'gateway'):
+                        job = client.request('POST', '/internal/v1/resolved', envelope)
+                child_id = job['job_id']
+                self.store.set_remote_id(identifier, child_id)
+            self.active = client, child_id, completed
+            deadline = time.monotonic() + request.get('job_timeout_seconds', 1800)
+            recovery_requested = False
+            while not completed:
+                # Observe completion before cancellation so a late cancellation
+                # cannot turn delivery failure into a child render failure.
+                state = client.status(child_id)
+                if state.get('status') in {'done', 'delivered', 'expired'}:
+                    completed = True
+                    self.store.remote_checkpoint(identifier, 'child_transfer_pending', completed=True)
+                    self.active = client, child_id, True
+                    break
+                if state['status'] in {'failed', 'cancelled', 'deleted'}:
+                    raise ChildRenderFailed('Child render ' + state['status'])
+                if state['status'] == 'transfer_pending':
+                    if recovery_requested:
+                        raise TransferPending('child_observation_pending')
+                    client.request('POST', '/v1/jobs/' + child_id + '/recover-transfer')
+                    recovery_requested = True
+                if cancelled():
+                    client.cancel(child_id)
+                    raise ChildRenderFailed('Child render cancelled')
+                if time.monotonic() >= deadline:
+                    raise TransferPending('child_observation_pending')
                 if self.progress and state.get('stage') in {'waiting_for_compute', 'scene_build', 'rendering'}:
                     self.progress(identifier, state['stage'])
-                if state['status'] == 'done':
-                    result = client.request('GET', '/v1/jobs/' + job['job_id'] + '/result')
-                    response = {'status':'completed', 'manifest':result['manifest'],
-                                'runtime_seconds':result['manifest'].get('runtime_seconds')}
-                    for artifact in result['artifacts']:
-                        name = artifact['name']
-                        if name not in {'render.png','render.blend'}:
-                            continue
-                        data = client.request('GET', f"/v1/jobs/{job['job_id']}/artifacts/{name}", binary=True)
-                        if hashlib.sha256(data).hexdigest() != artifact['sha256']:
-                            raise RuntimeError('Lab worker artifact checksum mismatch')
-                        response['png_base64' if name == 'render.png' else 'blend_base64'] = base64.b64encode(data).decode()
-                    if 'png_base64' not in response or request.get('save_blend') and 'blend_base64' not in response:
-                        raise RuntimeError('Lab worker artifact unavailable; no replacement render was submitted')
-                    return response
-                if state['status'] in {'failed','cancelled','expired','delivered','deleted'}:
-                    raise RuntimeError(state.get('error') or 'Lab render ' + state['status'])
                 time.sleep(.5)
-        except BaseException:
-            client.cancel(job['job_id'])
+            if cancelled():
+                raise TransferPending('child_transfer_pending')
+            root = self.store.root / 'child-results' / identifier
+            with measure(sink, 'transfer', 'gateway', row['transfer_attempt'] + 1):
+                result = _recover(client, child_id, root / 'render.png', root / 'receipt.json',
+                                  before_ack=self.store.sync, strict_ack=True,
+                                  expected_execution={'bundle_sha256':request['bundle_sha256'],
+                                      'render_spec_sha256':request['render_spec']['sha256'],
+                                      'engine_build':request['expected_engine']['engine_build']})
+            self.store.add_timings(identifier, result.get('timings', []))
+            if not result['complete']:
+                raise TransferPending('child_transfer_pending')
+            response = {'status':'completed', 'manifest':result['manifest'], 'runtime_seconds':None, 'timings':[]}
+            for name, key in (('render.png', 'png_base64'), ('render.blend', 'blend_base64')):
+                if name in result['outputs']:
+                    response[key] = base64.b64encode(Path(result['outputs'][name]).read_bytes()).decode()
+            if 'png_base64' not in response or request.get('save_blend') and 'blend_base64' not in response:
+                raise TransferPending('child_transfer_pending')
+            return response
+        except EngineMismatch as exc:
+            raise TransferPending('execution_incompatible') from exc
+        except ChildRenderFailed:
             raise
+        except Exception as exc:
+            raise TransferPending('child_transfer_pending' if completed else 'child_observation_pending') from exc
         finally:
             self.active = None
 
     def stop(self):
         if self.active:
-            client, identifier = self.active
-            client.cancel(identifier)
+            client, child_id, completed = self.active
+            if not completed:
+                try:
+                    state = client.status(child_id)
+                    if state['status'] in {'queued', 'running'}:
+                        client.cancel(child_id)
+                except Exception:
+                    # A failed observation retains the child identity; it is
+                    # never permission to launch a replacement.
+                    pass
+
+
+class TransferPending(RuntimeError):
+    def __init__(self, phase):
+        self.phase = phase
+        super().__init__('Child operation retained; recover observation or transfer')
+
+
+class ChildRenderFailed(RuntimeError):
+    pass
 
 
 class ApptainerConverter:
@@ -100,7 +148,7 @@ class ApptainerConverter:
             raise ValueError('Configure an existing converter SIF image')
         self.lock = threading.Lock()
 
-    def __call__(self, data, suffix):
+    def __call__(self, data, suffix, *, selection='(all)'):
         if suffix not in {'.pse','.cif','.mmcif','.pdb'} or len(data) > 50 * 1024**2:
             raise JobError('Invalid molecular upload')
         with self.lock, tempfile.TemporaryDirectory(prefix='blender-convert-') as directory:
@@ -110,7 +158,7 @@ class ApptainerConverter:
                        '--net', '--network', 'none', '--no-home', '--no-mount', 'hostfs,bind-paths,home,cwd',
                        '--writable-tmpfs', '--bind', str(root) + ':/work', '--pwd', '/work',
                        self.image, '/usr/bin/python3', '/opt/blender_render/export.py',
-                       '/work/input' + suffix, '/work/payload.json']
+                       '/work/input' + suffix, '/work/payload.json', '--selection', selection]
             process = subprocess.Popen(command, cwd=directory, env={'PATH':os.defpath, 'QT_QPA_PLATFORM':'offscreen'},
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             try:

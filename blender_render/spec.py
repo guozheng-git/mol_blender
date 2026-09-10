@@ -151,7 +151,7 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
             raise ValueError("Free renders are limited to 4096 pixels per dimension and 512 samples.")
         if style["renderer"]["engine"] != "CYCLES":
             raise ValueError("Public renders use Cycles.")
-        style["renderer"].update(device="GPU", compute_device_type="CUDA", require_gpu=True)
+        style["renderer"].update(device="GPU", compute_device_type="AUTO", require_gpu=True)
     if options.get("rough"):
         style = core._apply_rough_style_overrides(style)
     # Transport controls destinations; a style can never choose server paths.

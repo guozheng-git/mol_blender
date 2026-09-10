@@ -1053,28 +1053,7 @@ def _ensure_biotite_ccd_database() -> None:
     elif wheel_note:
         debug_notes.append(wheel_note)
 
-    setup_exc: Exception | None = None
-    try:
-        from biotite.setup_ccd import main as setup_ccd_main  # type: ignore
-    except Exception as exc:
-        setup_exc = exc
-    else:
-        setup_ccd_main()
-        for path in target_paths:
-            if path.is_file():
-                _activate_biotite_ccd_path(path)
-                return
-        debug_notes.append("biotite.setup_ccd executed but CCD file still not found at expected targets")
-
-    details = ""
-    if debug_notes:
-        details = "\nRecovery attempts:\n- " + "\n- ".join(debug_notes[:8])
-    if setup_exc is not None:
-        details += f"\nsetup_ccd import error: {type(setup_exc).__name__}: {setup_exc}"
-    raise RuntimeError(
-        "Molecular Nodes requested CCD data but automatic CCD recovery failed."
-        f"{details}"
-    )
+    raise RuntimeError('Missing prepared CCD data; run explicit runtime setup or prepare the image before rendering')
 
 
 def _load_molecule_with_fallback(structure_path: Path, object_name: str):
@@ -4549,9 +4528,11 @@ def _render(args: argparse.Namespace) -> None:
             manifest_doc["runtime_versions"] = {"blender": bpy.app.version_string, "molecularnodes": mn_version,
                 "python": ".".join(map(str, sys.version_info[:3])), "numpy": np.__version__, "biotite": biotite.__version__}
             manifest_doc["cycles_device"] = json.loads(scene.get("bridge_device_info", "{}"))
-            manifest_doc["timings_seconds"] = {"scene_build": geometry_ready - started, "path_trace": rendered - geometry_ready,
-                "save": time.monotonic() - rendered, "total": time.monotonic() - started}
-            manifest_doc['operation_stages'] = read_stages(run_manifest_path)
+            from blender_render.telemetry import record, write_timings
+            write_timings(run_manifest_path, [
+                record('scene_build', 'worker', geometry_ready-started),
+                record('rendering', 'worker', rendered-geometry_ready),
+                record('artifact_preparation', 'worker', time.monotonic()-rendered)])
             manifest_doc["resolved_preset"] = style_doc
             manifest_doc["camera_matrix_world"] = [list(row) for row in camera.matrix_world]
             manifest_doc["camera_type"] = camera.data.type

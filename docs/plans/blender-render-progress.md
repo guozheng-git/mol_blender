@@ -1,5 +1,121 @@
 # Blender Render implementation progress
 
+## C3 execution record — 2026-09-09 (in progress)
+
+Authorized starting point: `codex/public-release`, C2 `70bcbfa`. The existing
+untracked public structure is untouched. No checkout/reset or hosted policy
+change. C3 is limited to immutable execution, backend negotiation and recovery;
+D and publication remain outside scope.
+
+C3.1: added immutable bundle/spec admission snapshots separately from C1's
+fingerprint encoding. Raw conversion captures catalog/options first, then binds
+both snapshots atomically. Status/result preserve digests after private snapshot
+content is deleted. Internal submissions require distinct controller credentials,
+scoped owners and independent validation; workers check exact build/capabilities
+and restart a stale process once before dispatch. Packaging generates the manifest;
+source identities and loaded runtime observations are cached per process. Added
+selection propagation to Apptainer and an injected Modal sandbox boundary; removed
+render-time CCD download setup. GPU policy resolves to backend-neutral AUTO.
+
+Tests were written first: six expected failures before implementation, with zero
+audited process/network attempts. Final focused run: **83 passed, 4 dependency
+warnings**, using `python -m pytest -p c1_boundary_guard` over execution-envelope,
+spec, export, jobs/API and render-server contracts. Log: temporary test-runner
+storage `blender-c3-focused1.log`. A privacy regression (snapshot bytes surviving
+terminal cleanup) was found by existing tests and fixed; only immutable digest
+and provenance metadata survive terminal cleanup. No real backend execution yet.
+
+Test setup uses a temporary Python 3.11 environment outside the checkout. Test
+dependencies were explicitly installed as runner prerequisites; application
+imports/tests run under the audit guard. The system Python lacked required
+dependencies and its venv bootstrap, so it was not used for application tests.
+
+C3.2: version-2 profiles now require structured `launcher.kind` and `arguments`.
+The generic template selects `slurm_sbatch`; IPD explicitly selects `ipd_qlogin`.
+Sbatch receives a private worker script as argv, validates job/cluster replies,
+and persists an ambiguous-submission fence. Worker publication holds the registry
+lock and verifies the allocation session. Cluster identity accompanies scheduler
+operations. Attach never allocates; start is explicit. Doctor supports profiles
+without network/runtime probes. Authenticated health replaces quota probes and
+pre-allocation identity negotiation rejects unsupported remote Python/builds.
+
+Initial regression run had 11 expected failures (the audit blocked the old
+attach path's attempted process; no process executed). Final focused HPC,
+runtime and CLI contracts: **45 passed, 4 dependency warnings**, zero audited
+boundary attempts. Existing replacement tests now explicitly exercise `start`;
+new tests exercise the stricter non-allocating `attach` contract. Real scheduler
+and runtime behavior remains unverified until exact-commit acceptance.
+
+C3.3: gateway child identity and observed completion persist before transfer.
+Lost submission responses use an owner-scoped operation lookup, never another
+submission. Downloads use C2 non-consuming reads, verify bytes, atomically save
+files/receipts and commit state before acknowledging. Transfer or parent storage
+failure keeps the child completion and a `transfer_pending` parent; an explicit
+`recover-transfer` or controller restart resumes that operation. Cancellation
+after child completion and expiry clean parent staging without cancelling or
+rerendering the child. Reservations, input retention, active deletion protection,
+single-writer restart and original parent expiry cover the pending state.
+
+Structured timing records use bounded allowlists and process-local monotonic
+durations. Queue history across restart is marked unavailable rather than derived
+from cross-process timestamps. Timings are operation/result metadata and receipt
+data; the renderer writes a separate temporary journal rather than checksummed
+manifest telemetry. Fake Modal sandbox and worker contracts execute without any
+provider actions. C3.3 began with five failing regressions; focused recovery,
+worker and lifecycle contracts now pass **67 tests**, with zero audited boundary
+attempts. A broader intermediate run passed **351 tests with two intentional
+A/B child-process skips**. In-process replacements cover those two contracts;
+they do not establish fresh-interpreter acceptance.
+
+The separate read-only review followed the first successful full/wheel run
+(356 repository tests, 162 installed contracts, 82 matching package files).
+It found three reproduced blockers: snapshot storage was outside the resource
+limit, a child could return different identity metadata before acknowledgement,
+and optional diagnostic loss blocked required outputs. Three regressions failed
+before correction. Storage now includes snapshots/options; delivery checks the
+child identity before any ack and preserves diagnostic optionality. Additional
+review corrections require explicitly private gateway endpoints, keep controller
+credentials separate from OAuth, reject bad launcher profiles before scheduler
+actions, preserve ambiguous-stop fences, and clean validation-owned processes on
+failed startup. Raw coordinate converters use the same stable object name.
+
+The first contract-runner attempt was interrupted because a broad fixture copy
+included an ignored local SIF image. The runner and source-identity regression now
+copy only declared package source/resources. The SIF was untouched; no container
+was started. Subsequent full/offline wheel runs passed with zero audited application
+boundary attempts. Final exact counts and wheel identity follow after the last
+review corrections are rechecked. No real render, SSH, allocation or Modal action
+has occurred during implementation/review.
+
+Final reviewed implementation verification:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /tmp/blender-c3-test-env311/bin/python scripts/validate_c3_contracts.py --output /tmp/blender-c3-final
+git diff --check
+```
+
+Repository: **373 passed, 2 intentional A/B process skips, 4 dependency warnings,
+34.20s**. Installed wheel: **179 passed, 4 dependency warnings, 7.17s**. Both audit
+logs report zero real process/network attempts. All **82 package files** match
+source, wheel and installed bytes, and installed import paths are asserted.
+Wheel SHA-256: `a59ca1f2a6054a7395091ded501feaf47465b8c3bf4833e9dacb4f242e6d33c4`.
+Engine build: `ef64aec3b7ec0ec0363adb5adf7984998afc6420a7389edfc0cab4e8e2596ce7`.
+Build and wheel installation ran offline with preinstalled test/build dependencies.
+
+Final reservation review reproduced two more regressions: cancelling or expiring
+a pending gateway transfer could release its prior dispatch reservation. Both
+regressions failed before correction and now pass. Terminal gateway operations
+conservatively charge the original reservation, independent of restart policy;
+a short transfer retry cannot stand in for the earlier child GPU duration. No
+new execution is authorized by recovery. Read-only follow-up reviewed these
+changes, snapshot limits/cleanup, pre-ack identity checks, script/cluster argv,
+token ownership and the validation runner's isolation/cleanup. Whitespace check
+passed. C3 implementation and validation runner are ready for the requested
+commit; exact-commit real acceptance is the next step, subject to prerequisites.
+
+Modal implemented and contract-tested; real backend execution unverified.
+No D work, deployment, hosted-policy modification, push or publication occurred.
+
 ## Starting point and scope
 
 - Started 2026-09-07 on `codex/public-release`, HEAD `b1bb7d1c5d0d832b75c096eeea855b306815d79f`, matching the live private draft PR #1 head. No checkout, reset, commit, push or deployment.

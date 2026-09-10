@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from blender_render.worker_http import create_worker
+from test_jobs_api import payload
+from test_execution_envelope import worker_request
 
 
 def test_host_cancellation_interrupts_before_waiting_for_socket_lock(monkeypatch):
@@ -32,7 +34,7 @@ def test_host_cancellation_interrupts_before_waiting_for_socket_lock(monkeypatch
     backend.stop()
 
 
-def test_worker_auth_idempotence_and_process_cleanup(tmp_path):
+def test_worker_auth_idempotence_and_process_cleanup(tmp_path, payload):
     stopped = []
     roots = []
     class Backend:
@@ -47,9 +49,9 @@ def test_worker_auth_idempotence_and_process_cleanup(tmp_path):
         assert client.get('/health').status_code == 401
         headers={'Authorization':'Bearer '+'x'*40}
         job='a'*32
-        assert client.post('/render/'+job,json={},headers=headers).status_code == 200
+        assert client.post('/render/'+job,json=worker_request(payload, job),headers=headers).status_code == 200
         assert stopped == [True] and not roots[0].exists()
-        assert client.post('/render/'+job,json={},headers=headers).status_code == 409
+        assert client.post('/render/'+job,json=worker_request(payload, job),headers=headers).status_code == 409
         cancelled='b'*32
         assert client.post('/cancel/'+cancelled,headers=headers).status_code == 200
-        assert client.post('/render/'+cancelled,json={},headers=headers).status_code == 409
+        assert client.post('/render/'+cancelled,json=worker_request(payload, job),headers=headers).status_code == 409

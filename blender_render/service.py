@@ -246,7 +246,7 @@ class RenderService:
             _check_options(options)
         except ValueError as exc:
             raise JobError(str(exc)) from exc
-        if type(rerender) is not bool or not isinstance(selection, str) or not selection.strip():
+        if type(rerender) is not bool or not isinstance(selection, str) or not selection.strip() or '\x00' in selection:
             raise JobError('Invalid repeat or selection controls')
         for key in (idempotency_key, operation_key):
             if key is not None and (not isinstance(key, str) or not 1 <= len(key) <= 128):
@@ -335,13 +335,45 @@ class RenderService:
                 log.exception("Job dispatcher failed; admission remains conservative")
                 self.stopping.wait(2)
 
+    def submit_resolved(self, controller, envelope):
+        from .execution import validate_snapshot, scoped_owner
+        try:
+            context = {k: envelope[k] for k in ('controller_id', 'owner_id', 'operation_id')}
+            if context['controller_id'] != controller:
+                raise ValueError('Authenticated controller identity mismatch')
+            if any(not isinstance(v, str) or not 1 <= len(v) <= 128 for v in context.values()):
+                raise ValueError('Invalid scoped operation identity')
+            p = self.store.policy
+            snapshot = validate_snapshot({k: v for k, v in envelope.items() if k not in context},
+                public=p.public, max_atoms=p.max_atoms if p.public else 10000000,
+                max_bytes=p.max_upload_bytes, timeout=p.max_job_seconds)
+        except (KeyError, ValueError, core.RunnerError) as exc:
+            raise JobError(str(exc)) from exc
+        owner = scoped_owner(controller, context['owner_id'])
+        key = context['operation_id']
+        fingerprint = hashlib.sha256(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        with self._owner_import(owner), self.store.lock:
+            replay = self.store.operation_replay(owner, key, fingerprint)
+            if replay:
+                return replay
+            source = self.import_payload(owner, snapshot['bundle'])
+            result = self.store.submit(owner, source['input_id'], snapshot['request'], key,
+                client_hash=fingerprint, rerender=True, operation_key=key)
+            # Exact identity was checked above; no downstream resolution occurs.
+            self.store.bind_execution(result['job_id'], snapshot)
+        self.wakeup.set()
+        return result
+
     def _execute(self, job: dict):
         started = time.monotonic()
         identifier = job["id"]
         compute_started = False
+        from .telemetry import measure, record
+        from .gateway import TransferPending
+        sink = lambda timing: self.store.add_timings(identifier, [timing])
         try:
             request = json.loads(job["options"])
-            payload = self.store.input(job["owner"], job["input_id"])
+            payload = json.loads(job['execution'])['bundle'] if job.get('execution') else self.store.input(job["owner"], job["input_id"])
             if 'prepare_file' in request:
                 self.store.stage(identifier, 'conversion')
                 if self.store.cancelled(identifier):
@@ -351,7 +383,8 @@ class RenderService:
                 if self.converter is None:
                     raise RuntimeError('File converter unavailable after restart; execution was not retried')
                 kwargs = {'selection': raw['selection']} if raw['selection'] != '(all)' else {}
-                payload = self.converter(base64.b64decode(raw['data'], validate=True), raw['suffix'], **kwargs)
+                with measure(sink, 'conversion', 'converter'):
+                    payload = self.converter(base64.b64decode(raw['data'], validate=True), raw['suffix'], **kwargs)
                 p = self.store.policy
                 payload = validate_input(payload, max_atoms=p.max_atoms if p.public else 10000000, max_bytes=p.max_upload_bytes)
                 from .spec import PresetDefinition
@@ -361,11 +394,20 @@ class RenderService:
                 definition = PresetDefinition(**captured) if captured is not None else None
                 request = prepare_options(request['prepare_file'], payload, public=p.public,
                                           timeout=p.max_job_seconds, preset_definition=definition)
-                self.store.bind_spec(identifier, request)
+                self.store.bind_spec(identifier, request, payload)
+            elif not job.get('remote_phase'):
+                sink(record('conversion', 'converter', status='skipped'))
             if self.store.cancelled(identifier) or self.stopping.is_set():
                 raise RuntimeError('Cancelled before compute')
-            request['payload'] = payload
-            request["payload"]["run_id"] = identifier
+            from .execution import dispatch_request, validate_snapshot
+            with self.store.lock:
+                frozen = self.store.db.execute('SELECT execution FROM jobs WHERE id=?', (identifier,)).fetchone()[0]
+            if not frozen:
+                raise RuntimeError('Queued legacy job lacks an execution envelope; no runtime was dispatched')
+            snapshot = validate_snapshot(json.loads(frozen), public=self.store.policy.public,
+                max_atoms=self.store.policy.max_atoms if self.store.policy.public else 10000000,
+                max_bytes=self.store.policy.max_upload_bytes, timeout=self.store.policy.max_job_seconds)
+            request = dispatch_request(snapshot, 'controller', job['owner'], identifier)
             self.store.stage(identifier, 'waiting_for_compute')
             compute_started = True
             result = self.backend.render(request, identifier, lambda: self.stopping.is_set() or self.store.cancelled(identifier))
@@ -373,11 +415,30 @@ class RenderService:
                 raise RuntimeError("Service stopped during render")
             if result.get("status") != "completed":
                 raise RuntimeError("Renderer did not complete successfully")
-            artifacts = self._save_artifacts(identifier, result)
+            self.store.add_timings(identifier, result.get('timings', []))
+            try:
+                with measure(sink, 'artifact_preparation', 'controller', job.get('transfer_attempt', 0)+1):
+                    artifacts = self._save_artifacts(identifier, result)
+            except Exception as exc:
+                with self.store.lock:
+                    completed = self.store.db.execute('SELECT remote_completed_at FROM jobs WHERE id=?', (identifier,)).fetchone()[0]
+                if completed is not None:
+                    raise TransferPending('artifact_preparation_failed') from exc
+                raise
             self.store.finish(identifier, result=artifacts, seconds=time.monotonic() - started)
             if self.store.cancelled(identifier):
                 shutil.rmtree(self.store.artifacts / identifier, ignore_errors=True)
+        except TransferPending as exc:
+            if self.store.cancelled(identifier):
+                self.store.finish(identifier, error='Parent transfer cancelled', seconds=time.monotonic()-started)
+            else:
+                self.store.transfer_pending(identifier, exc.phase)
         except Exception as exc:
+            with self.store.lock:
+                completed = self.store.db.execute('SELECT remote_completed_at FROM jobs WHERE id=?', (identifier,)).fetchone()[0]
+            if completed is not None and not self.store.cancelled(identifier):
+                self.store.transfer_pending(identifier, 'artifact_preparation_failed')
+                return
             log.exception("Render job %s failed", identifier)
             message = "Render failed. Check structure, preset, and resource limits." if self.store.policy.public else str(exc)
             seconds = self.store.policy.max_job_seconds if getattr(self.backend, "paid", False) else time.monotonic() - started
@@ -385,6 +446,11 @@ class RenderService:
             shutil.rmtree(self.store.artifacts / identifier, ignore_errors=True)
         finally:
             self.last_activity = time.time()
+
+    def resume_transfer(self, owner, identifier):
+        result = self.store.resume_transfer(owner, identifier)
+        self.wakeup.set()
+        return result
 
     def _save_artifacts(self, identifier: str, result: dict) -> dict:
         root = self.store.artifacts / identifier
@@ -403,16 +469,22 @@ class RenderService:
         if not records or records[0]["name"] != "render.png":
             raise RuntimeError("Renderer returned no PNG")
         manifest = dict(result.get("manifest", {}))
+        with self.store.lock:
+            frozen = self.store.db.execute('SELECT execution FROM jobs WHERE id=?', (identifier,)).fetchone()[0]
+        if frozen:
+            snapshot = json.loads(frozen)
+            manifest.update(bundle_sha256=snapshot['bundle_sha256'], render_spec=snapshot['request']['render_spec'])
         for key in ("chosen_structure_path", "temp_dir", "manifest_path"):
             manifest.pop(key, None)
-        manifest.update(job_id=identifier, runtime_seconds=result.get("runtime_seconds"), artifacts=list(records))
+        for key in ('timings', 'timings_seconds', 'operation_stages', 'runtime_seconds'):
+            manifest.pop(key, None)
+        manifest.update(job_id=identifier, artifacts=list(records))
         data = json.dumps(manifest, indent=2).encode()
         (root / "manifest.json").write_bytes(data)
         records.append({"name": "manifest.json", "mime_type": "application/json", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
         with self.store.lock:
             if self.store.policy.public:
-                existing_bytes = self.store.db.execute("SELECT COALESCE(SUM(json_extract(result,'$.bytes')),0) FROM jobs WHERE result IS NOT NULL").fetchone()[0]
-                existing_bytes += self.store.db.execute("SELECT COALESCE(SUM(size),0) FROM inputs").fetchone()[0]
+                existing_bytes = self.store.storage_bytes(self.store.db)
                 if existing_bytes + sum(item["size"] for item in records) > self.store.policy.max_storage_bytes:
                     raise RuntimeError("Artifact storage limit exceeded")
             try:

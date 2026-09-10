@@ -484,7 +484,12 @@ def from_file(path, selection="(all)", state=-1):
         raise ValueError("Supported inputs are .pse, .cif, and .pdb")
     with pymol2.PyMOL() as instance:
         cmd = instance.cmd
-        cmd.load(str(path))
+        if path.suffix.lower() == '.pse':
+            cmd.load(str(path))
+        else:
+            # Converter scratch filenames differ across backends. They must
+            # not become molecular object identity in the normalized bundle.
+            cmd.load(str(path), 'structure')
         if path.suffix.lower() != ".pse":
             cmd.hide("everything")
             cmd.show("cartoon", "polymer")

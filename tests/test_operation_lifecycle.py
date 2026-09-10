@@ -18,6 +18,7 @@ from blender_render.jobs import JobError, JobStore, Policy
 from blender_render.service import RenderService, prepare_options
 from blender_render.worker_http import create_worker
 from test_jobs_api import payload, Compute, await_status, TOKEN
+from test_execution_envelope import worker_request
 
 
 def test_operation_identity_survives_changed_retry_key_and_hidden_preview(tmp_path, payload):
@@ -193,7 +194,7 @@ def test_file_handle_precedes_conversion_and_is_durable(tmp_path, payload):
     compute = Compute()
     service = RenderService(store, compute)
     first = service.render_file('a', b'public fixture', '.cif', 'fixture.cif', convert, {}, operation_key='intent')
-    assert first['stage'] == 'validation' and not converted and not compute.calls
+    assert first['stage'] == 'conversion_pending' and not converted and not compute.calls
     staged_input = store.recent('a')['jobs'][0]['job_id']
     staged_input = store.db.execute('SELECT input_id FROM jobs WHERE id=?', (staged_input,)).fetchone()[0]
     assert service.submit('a', staged_input, {}, 'compatibility-retry')['job_id'] == first['job_id']
@@ -322,29 +323,28 @@ def test_gateway_distinct_outer_and_retry_map_to_intended_children(monkeypatch, 
     outer = JobStore(tmp_path / 'outer')
     child = JobStore(tmp_path / 'child')
     child_service = RenderService(child, Compute())
-    submissions, uploads = [], []
+    submissions = []
     class Child:
-        def upload(self, data):
-            uploads.append(True)
-            return child_service.import_payload('gateway', data)
-        def submit(self, source, options, key, **kwargs):
-            job = child_service.submit('gateway', source, options, key, **kwargs)
-            submissions.append(job['job_id'])
-            if not job['reused']:
-                child_service._execute(child.claim())
-            return job
         def status(self, identifier):
-            return child.get('gateway', identifier)
+            from blender_render.execution import scoped_owner
+            return child.get(scoped_owner('controller', 'a'), identifier)
         def cancel(self, identifier):
-            return child.cancel('gateway', identifier)
-        def request(self, method, path, **kwargs):
+            pytest.fail('Completed child was cancelled')
+        def request(self, method, path, body=None, **kwargs):
+            from blender_render.execution import scoped_owner
+            owner = scoped_owner('controller', 'a')
+            if path == '/internal/v1/resolved':
+                job = child_service.submit_resolved('controller', body)
+                submissions.append(job['job_id'])
+                child_service._execute(child.claim())
+                return job
             identifier = path.split('/')[3]
-            if path.endswith('/result'):
-                return child.result('gateway', identifier)
-            name = path.rsplit('/', 1)[1]
-            data = (child.artifact_root(identifier) / name).read_bytes()
-            child.artifact_delivered('gateway', identifier, name)
-            return data
+            if '/result' in path:
+                return {**child.result(owner, identifier, inventory=True), 'delivery_policy':'explicit_ack_v1'}
+            name = path.split('/')[5].split('?')[0]
+            if path.endswith('/ack'):
+                return child.artifact_delivered(owner, identifier, name, sha256=body['sha256'])
+            return child_service.artifact(owner, identifier, name)[0].read_bytes()
     # All transport/compute is replaced. This test cannot contact a destination.
     monkeypatch.setattr(gateway, 'configured_client', lambda *a, **k: Child())
     backend = gateway.GatewayBackend(outer, 'fake-only')
@@ -358,15 +358,15 @@ def test_gateway_distinct_outer_and_retry_map_to_intended_children(monkeypatch, 
     assert len(child_service.backend.calls) == 2
     request = prepare_options({}, payload, public=False, timeout=600)
     request['payload'] = payload
-    with pytest.raises((RuntimeError, JobError), match='unavailable|Lab render'):
+    with pytest.raises((RuntimeError, JobError), match='retained'):
         backend.render(request, first['job_id'], lambda: False)
-    assert len(submissions) == len(uploads) == 2
+    assert len(submissions) == 2
     assert outer.get('a', second['job_id'])['status'] == 'done'
     child.close()
     outer.close()
 
 
-def test_worker_timeout_holds_slot_until_late_exit():
+def test_worker_timeout_holds_slot_until_late_exit(payload):
     entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
     active = [0]
     class Backend:
@@ -384,25 +384,25 @@ def test_worker_timeout_holds_slot_until_late_exit():
     app = create_worker('x' * 40, timeout=.05, backend_factory=Backend)
     with TestClient(app) as client:
         headers = {'Authorization': 'Bearer ' + 'x' * 40}
-        assert client.post('/render/' + 'a' * 32, json={}, headers=headers).status_code == 500
+        assert client.post('/render/' + 'a' * 32, json=worker_request(payload, 'a'*32, timeout=.01), headers=headers).status_code == 500
         assert entered.is_set() and active == [1]
-        assert client.post('/render/' + 'b' * 32, json={}, headers=headers).status_code == 429
+        assert client.post('/render/' + 'b' * 32, json=worker_request(payload, 'b'*32, timeout=.01), headers=headers).status_code == 429
         assert client.post('/cancel/' + 'a' * 32, headers=headers).status_code == 200
         assert active == [1]
         release.set()
         assert stopped.wait(1)
         deadline = time.monotonic() + 1
         while True:
-            result = client.post('/render/' + 'c' * 32, json={}, headers=headers)
+            result = client.post('/render/' + 'c' * 32, json=worker_request(payload, 'c'*32, timeout=.01), headers=headers)
             if result.status_code != 429 or time.monotonic() >= deadline:
                 break
             time.sleep(.01)
         assert result.status_code == 200  # The old bug leaked admission forever.
         assert client.post('/render/' + 'd' * 32, json=[], headers=headers).status_code == 500
-        assert client.post('/render/' + 'e' * 32, json={}, headers=headers).status_code == 200
+        assert client.post('/render/' + 'e' * 32, json=worker_request(payload, 'e'*32, timeout=.01), headers=headers).status_code == 200
 
 
-def test_worker_request_cancellation_retains_admission():
+def test_worker_request_cancellation_retains_admission(payload):
     entered, release = threading.Event(), threading.Event()
     class Backend:
         def __init__(self, root): pass
@@ -415,15 +415,15 @@ def test_worker_request_cancellation_retains_admission():
         app = create_worker('x' * 40, backend_factory=Backend)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
                                      headers={'Authorization': 'Bearer ' + 'x' * 40}) as client:
-            request = asyncio.create_task(client.post('/render/' + 'a' * 32, json={}))
+            request = asyncio.create_task(client.post('/render/' + 'a' * 32, json=worker_request(payload, 'a'*32, timeout=.01)))
             assert await asyncio.to_thread(entered.wait, 1)
             request.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await request
-            assert (await client.post('/render/' + 'b' * 32, json={})).status_code == 429
+            assert (await client.post('/render/' + 'b' * 32, json=worker_request(payload, 'b'*32, timeout=.01))).status_code == 429
             release.set()
             for _ in range(100):
-                response = await client.post('/render/' + 'c' * 32, json={})
+                response = await client.post('/render/' + 'c' * 32, json=worker_request(payload, 'c'*32, timeout=.01))
                 if response.status_code != 429: break
                 await asyncio.sleep(.01)
             assert response.status_code == 200
@@ -528,6 +528,9 @@ def test_worker_journal_reaches_controller_before_render_returns(tmp_path, monke
     manifest = tmp_path / 'manifest.json'
     observed, notified = [], threading.Event()
     def socket_request(*a, **kw):
+        if a[0].get('action') == 'ping':
+            from blender_render.engine import engine_identity
+            return {'engine':engine_identity(), 'runtime':{'verified':True}}
         record_stage(manifest, 'scene_build')
         record_stage(manifest, 'rendering')
         assert notified.wait(1)

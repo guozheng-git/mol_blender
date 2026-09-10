@@ -65,30 +65,11 @@ class GPUWorker:
         self.thread.join(timeout=10)
 
 
-def convert_file(data: bytes, suffix: str) -> dict:
-    if suffix not in {".pse", ".pdb", ".cif", ".mmcif"} or len(data) > 50 * 1024**2:
-        raise ValueError("Invalid molecular upload")
-    sandbox = modal.Sandbox.create("sleep", "90", app=app, image=converter_image,
-        timeout=90, cpu=.5, memory=2048, secrets=[], volumes={}, block_network=True,
-        include_oidc_identity_token=False)
-    try:
-        sandbox.filesystem.write_bytes(data, "/tmp/input" + suffix)
-        # Keep converter output out of provider logs, including a PSE that
-        # prints its contents. File exchange uses the filesystem API.
-        process = sandbox.exec('/bin/sh', '-c', '/usr/bin/python3 /opt/export.py /tmp/input'+suffix+' /tmp/payload.json >/dev/null 2>&1')
-        process.wait()
-        if process.returncode:
-            raise ValueError("The molecular file could not be converted")
-        # Bound the read inside the sandbox, including a malicious session that
-        # leaves a process writing the file after its converter exits.
-        reader = sandbox.exec('/bin/sh', '-c', '/usr/bin/head -c '+str(50*1024**2+1)+' /tmp/payload.json > /tmp/bounded.json 2>/dev/null')
-        reader.wait()
-        payload = sandbox.filesystem.read_bytes('/tmp/bounded.json')
-        if reader.returncode or len(payload) > 50 * 1024**2:
-            raise ValueError("Converted structure is too large")
-        return json.loads(payload)
-    finally:
-        sandbox.terminate()
+def convert_file(data: bytes, suffix: str, *, selection='(all)') -> dict:
+    from .modal_boundaries import convert_file as convert
+    return convert(data, suffix, selection=selection, create_sandbox=lambda: modal.Sandbox.create(
+        "sleep", "90", app=app, image=converter_image, timeout=90, cpu=.5, memory=2048,
+        secrets=[], volumes={}, block_network=True, include_oidc_identity_token=False))
 
 
 def start_http(application):

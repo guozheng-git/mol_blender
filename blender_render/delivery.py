@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -34,8 +35,9 @@ def recover_result(client, job_id, output):
         return _recover(client, job_id, output, receipt_path)
 
 
-def _recover(client, job_id, output, receipt_path):
+def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ack=False, expected_execution=None):
     from .client import ClientError
+    started = time.monotonic()
     output = Path(output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     # Check destination writability before any potentially consuming request.
@@ -47,16 +49,24 @@ def _recover(client, job_id, output, receipt_path):
         receipt = {'version': 2, 'job_id': job_id, 'artifacts': [], 'outputs': {}}
     base = '/v1/jobs/' + quote(job_id, safe='')
     manifest = {}
+    timings = []
     try:
         result = client.request('GET', base + '/result?inventory=true')
         if result.get('delivery_policy') != 'explicit_ack_v1':
             raise ClientError('Service does not support recoverable delivery; upgrade it before download. No render was submitted.')
         if 'expected_artifacts' not in result:
             raise ClientError('Service lacks expected artifact inventory; upgrade it before recovery.')
+        if expected_execution is not None:
+            observed = {key: result.get(key) for key in expected_execution}
+            if observed != expected_execution:
+                raise ValueError('Child execution identity mismatch; artifacts were not acknowledged')
+            receipt['execution_identity'] = observed
         receipt['artifacts'] = [dict(item, expected=True) for item in result['expected_artifacts']]
         receipt['inventory_complete'] = result['inventory_complete']
         receipt['version'] = 2
         manifest = result.get('manifest', {})
+        from .telemetry import sanitize
+        timings = sanitize(result.get('timings', []))
     except (ClientError, OSError):
         if not receipt['artifacts']:
             raise
@@ -64,6 +74,8 @@ def _recover(client, job_id, output, receipt_path):
         # independently verified local bytes. Never infer a shrinking inventory.
         for item in receipt['artifacts']:
             item['availability'] = 'unknown'
+    if expected_execution is not None and receipt.get('execution_identity') != expected_execution:
+        raise ValueError('Recovered receipt execution identity mismatch')
     destinations = {}
     for item in receipt['artifacts']:
         name = item['name']
@@ -104,11 +116,14 @@ def _recover(client, job_id, output, receipt_path):
             receipt['outputs'][name] = str(path)
             # Persist verification before acknowledgement permits server deletion.
             _atomic(receipt_path, json.dumps(receipt).encode())
+            if before_ack:
+                before_ack()
             try:
                 client.request('POST', base + '/artifacts/' + name + '/ack', {'sha256': item['sha256']})
-            except (ClientError, OSError):
+            except (ClientError, OSError) as exc:
                 # Output is safe locally; server retains it until ack or TTL.
-                pass
+                if strict_ack:
+                    errors[name] = 'Artifact acknowledgement pending'
         except (ClientError, OSError) as exc:
             errors[name] = str(exc)
     _atomic(receipt_path, json.dumps(receipt).encode())
@@ -117,10 +132,17 @@ def _recover(client, job_id, output, receipt_path):
     missing = [a['name'] for a in receipt['artifacts'] if a['required'] and not a['verified_locally']]
     if 'render.png' not in paths and 'render.png' not in missing:
         missing.insert(0, 'render.png')
-    complete = receipt.get('inventory_complete', False) and not missing
+    required_errors = any(a['required'] and a['name'] in errors for a in receipt['artifacts'])
+    complete = receipt.get('inventory_complete', False) and not missing and not (strict_ack and required_errors)
     if not receipt.get('inventory_complete', False):
         errors['inventory'] = 'artifact_unavailable: original required inventory could not be reconstructed'
+    from .telemetry import record, sanitize
+    timings = sanitize(timings + [record('delivery', 'gateway' if strict_ack else 'client', time.monotonic()-started,
+                                        'executed' if complete else 'interrupted')])
+    receipt['timings'] = timings
+    _atomic(receipt_path, json.dumps(receipt).encode())
     return {'job_id': job_id, 'outputs': paths, 'manifest': manifest,
+            'timings': timings,
             'complete': complete, 'errors': errors, 'missing_required': missing,
             'error_code': None if complete else 'artifact_unavailable',
             'artifacts': receipt['artifacts'],

@@ -241,18 +241,22 @@ def test_controller_launch_carries_deferred_profile_and_converter(monkeypatch):
 
 def test_explicit_hpc_cold_start_recovers_token_after_status(monkeypatch):
     profile = {'kind': 'hpc', 'host': 'fake-login', 'remote_python': 'python',
-               'remote_root': '/fake', 'registry': '/fake/registry', 'image': '/fake.sif'}
+               'remote_root': '/fake', 'registry': '/fake/registry', 'image': '/fake.sif',
+               'version': 2, 'launcher': {'kind':'slurm_sbatch', 'arguments': []}}
+    from blender_render.engine import engine_identity
     monkeypatch.setattr(config, 'load_config', lambda: {'profiles': {'lab': profile}})
     calls = []
     ready = {'status': 'ready', 'session_id': 'session', 'node': 'fake-gpu', 'user': 'fake', 'port': 1234}
     def remote(profile, action, **kwargs):
         calls.append((action, kwargs))
-        if len(calls) == 1:
+        if action == 'identity':
+            return {'python_supported': True, 'engine': engine_identity()}
+        if action == 'start':
             return {'status': 'allocating'}
         if action == 'status':
             return dict(ready)
-        assert kwargs == {'attach_only': True}
-        return {**ready, 'token': 'fake-secret'}
+        assert kwargs == {}
+        return {**ready, 'token': 'fake-secret', 'controller_token':'controller-secret'}
     monkeypatch.setattr(hpc, 'remote', remote)
     monkeypatch.setattr(hpc, 'connect', _connect_hpc)
     monkeypatch.setattr(hpc.time, 'sleep', lambda *a: None)
@@ -265,10 +269,10 @@ def test_explicit_hpc_cold_start_recovers_token_after_status(monkeypatch):
     monkeypatch.setattr(socket, 'socket', Probe)
     def request(self, method, path, **kwargs):
         assert self.token == 'fake-secret'
-        return {'status': 'ok'}
+        return {'status': 'ok', 'controller_declaration': engine_identity()}
     monkeypatch.setattr(client.Client, 'request', request)
-    assert run('service', 'start', '--profile', 'lab') == {'status': 'ok'}
-    assert calls == [('attach', {'attach_only': False}), ('status', {}), ('attach', {'attach_only': True})]
+    assert run('service', 'start', '--profile', 'lab')['status'] == 'ok'
+    assert calls == [('identity', {}), ('start', {}), ('status', {}), ('attach', {})]
 
 
 def test_serve_wires_admission_before_fake_gateway_dispatch(monkeypatch, tmp_path, payload):

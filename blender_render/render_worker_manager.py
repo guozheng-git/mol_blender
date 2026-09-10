@@ -60,6 +60,7 @@ class PersistentBlenderWorker:
         self._stderr_handle: TextIO | None = None
         self._last_command: list[str] = []
         self._logger = logger
+        self.observation = None
 
     def _log(self, message: str) -> None:
         if self._logger is None:
@@ -127,7 +128,7 @@ class PersistentBlenderWorker:
         env = os.environ.copy()
         from blender_render.config import load_config, config_root
         runtime_site = env.get("BLENDER_RENDER_SITE") or load_config().get("runtime_site", str(config_root() / "runtime" / "site"))
-        env["PYTHONPATH"] = runtime_site + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(self.custom_script.parent.parent) + os.pathsep + runtime_site + os.pathsep + env.get("PYTHONPATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         if self.use_apptainer:
             env["APPTAINERENV_PYTHONPATH"] = "/opt/runtime/site:/opt:" + env["PYTHONPATH"]
@@ -336,6 +337,22 @@ class PersistentBlenderWorker:
         with self._lock:
             self._ensure_started_locked()
 
+    def _negotiate_locked(self, expected, requirements):
+        from blender_render.engine import require_compatible
+        for attempt in range(2):
+            observed = self._send_request_locked({'action': 'ping'}, timeout=2)
+            self.observation = observed
+            try:
+                require_compatible(expected, observed.get('engine'), requirements)
+                if not observed.get('runtime', {}).get('verified'):
+                    raise ValueError('Worker runtime missing or incompatible; explicit setup required')
+                return
+            except ValueError as exc:
+                if attempt:
+                    raise WorkerError(str(exc)) from exc
+                self._stop_locked()
+                self._start_locked()
+
     def stop(self) -> None:
         self.interrupt()
         with self._lock:
@@ -360,6 +377,8 @@ class PersistentBlenderWorker:
         run_manifest: Path,
         timeout: float,
         progress=None,
+        expected_engine=None,
+        required_capabilities=(),
     ) -> dict[str, Any]:
         request_payload = {
             "action": "render_job",
@@ -371,7 +390,16 @@ class PersistentBlenderWorker:
         }
 
         with self._lock:
+            startup_started = time.monotonic()
+            was_warm = self._process is not None and self._process.poll() is None
             self._ensure_started_locked()
+            from blender_render.engine import engine_identity
+            expected_engine = expected_engine or engine_identity()
+            self._negotiate_locked(expected_engine, required_capabilities)
+            from blender_render.telemetry import record
+            startup_timing = record('startup', 'worker', time.monotonic()-startup_started, 'cached' if was_warm else 'executed')
+            request_payload['expected_engine'] = expected_engine
+            request_payload['required_capabilities'] = list(required_capabilities)
             from blender_render.operation_progress import read_stages, stage_path
             stage_path(run_manifest).unlink(missing_ok=True)
             completed = threading.Event()
@@ -406,6 +434,7 @@ class PersistentBlenderWorker:
                 report()
 
         status = str(response.get("status", "")).strip().lower()
+        response['timings'] = [startup_timing, *response.get('timings', [])]
         if status != "completed":
             message = str(response.get("error", "")).strip() or f"Worker returned status={status or '<unknown>'}"
             raise WorkerError(message)

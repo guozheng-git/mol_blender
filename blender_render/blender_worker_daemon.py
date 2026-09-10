@@ -74,6 +74,10 @@ def _write_json_response(conn: socket.socket, payload: dict[str, Any]) -> None:
 
 
 def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]:
+    from blender_render.engine import engine_identity, require_compatible, runtime_observation
+    require_compatible(request.get('expected_engine'), engine_identity(), request.get('required_capabilities', []))
+    if not runtime_observation()['verified']:
+        raise RuntimeError('Worker runtime mismatch; explicit setup required')
     structure_path = str(request.get("structure_path", "")).strip()
     view_json = str(request.get("view_json", "")).strip()
     style_json = str(request.get("style_json", "")).strip()
@@ -101,17 +105,27 @@ def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]
         output_png=output_png,
         run_manifest=run_manifest,
     )
-    started = time.time()
+    started = time.monotonic()
+    renderer._bridge_dispatch_count = getattr(renderer, '_bridge_dispatch_count', 0) + 1
     renderer._render(args)
-    elapsed = round(time.time() - started, 3)
+    elapsed = round(time.monotonic() - started, 3)
+    manifest_path = Path(run_manifest)
+    manifest = json.loads(manifest_path.read_text())
+    manifest['engine'] = engine_identity()
+    manifest['worker_runtime'] = runtime_observation()
+    manifest['worker_render_count'] = renderer._bridge_dispatch_count
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    from blender_render.telemetry import read_timings
     return {
         "status": "completed",
         "output_png": output_png,
         "runtime_seconds": elapsed,
+        'timings': read_timings(run_manifest),
     }
 
 
 def _run_server(args: argparse.Namespace) -> int:
+    sys.path.insert(0, str(Path(args.custom_script).resolve().parent.parent))
     socket_path = Path(args.socket).expanduser()
     if not socket_path.is_absolute():
         socket_path = (Path.cwd() / socket_path).absolute()
@@ -119,6 +133,10 @@ def _run_server(args: argparse.Namespace) -> int:
 
     try:
         renderer = _load_renderer_module(Path(args.custom_script))
+        renderer._configure_molecularnodes_import_path()
+        from blender_render.engine import engine_identity, runtime_observation
+        loaded_engine = engine_identity()
+        loaded_runtime = runtime_observation()
     except Exception as exc:
         print(f"blender_worker_daemon: failed to load renderer: {exc}", file=sys.stderr)
         return 1
@@ -170,6 +188,8 @@ def _run_server(args: argparse.Namespace) -> int:
                         {
                             "status": "ready",
                             "pid": os.getpid(),
+                            'engine': loaded_engine,
+                            'runtime': loaded_runtime,
                         },
                     )
                     continue

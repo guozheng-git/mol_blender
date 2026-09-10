@@ -62,17 +62,26 @@ def _suggest_output_name(*, request_doc: dict[str, Any], preset: str, style_doc:
 
 def _resolved_request(request_doc: dict[str, Any]) -> dict[str, Any]:
     from blender_render.spec import OPTION_KEYS, resolve_options, style_digest
-    envelope_keys = {"payload", "output_name", "job_timeout_seconds", "style_json", "blend_output", "render_spec"}
+    envelope_keys = {"payload", "output_name", "job_timeout_seconds", "style_json", "blend_output", "render_spec",
+                     "bundle_sha256", "expected_engine", "execution_context"}
     unknown = set(request_doc) - OPTION_KEYS - envelope_keys
     if unknown:
         raise ValueError("Unsupported render options: " + ", ".join(sorted(unknown)))
     # Current services send a snapshot. Legacy direct callers are translated
     # into the same resolver once, before any worker or staging activity.
     if "render_spec" in request_doc:
+        if 'bundle_sha256' in request_doc:
+            from blender_render.execution import request_snapshot, validate_snapshot
+            validate_snapshot(request_snapshot(request_doc), timeout=request_doc['job_timeout_seconds'], max_bytes=512*1024**2)
+        elif {'expected_engine', 'execution_context'} & request_doc.keys():
+            raise ValueError('Incomplete execution envelope')
         style = _bridge_runner.validate_style_document(request_doc.get("style_doc"))
         metadata = request_doc["render_spec"]
         if not isinstance(metadata, dict) or metadata.get("sha256") != style_digest(style):
             raise _bridge_runner.RunnerError("Resolved render specification hash mismatch")
+        from blender_render.presets import required_capabilities
+        if metadata.get('required_capabilities') != required_capabilities(style):
+            raise _bridge_runner.RunnerError('Resolved render capability mismatch')
         return request_doc
     options = {key: request_doc[key] for key in OPTION_KEYS if key in request_doc}
     if request_doc.get("style_json") and "style_doc" not in options:
@@ -132,6 +141,8 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
         manifest = _bridge_runner._load_json(run_manifest_path)
         manifest["render_spec"] = request_doc["render_spec"]
         manifest["resolved_preset"] = style_doc
+        manifest['bundle_sha256'] = request_doc.get('bundle_sha256')
+        manifest['expected_engine'] = request_doc.get('expected_engine')
         _bridge_runner._write_json_atomic(run_manifest_path, manifest)
 
         style_json_path = temp_root / "style.json"
@@ -167,6 +178,9 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
                 output_png=output_png,
                 run_manifest=run_manifest_path,
                 timeout=job_timeout,
+                **({'expected_engine': request_doc['expected_engine'],
+                    'required_capabilities': request_doc['render_spec']['required_capabilities']}
+                   if 'expected_engine' in request_doc else {}),
                 **({'progress': state.progress} if state.progress else {}),
             )
 
@@ -218,6 +232,7 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
             "temp_dir": str(temp_root),
             "temp_kept": bool(keep_temp),
             "worker": worker_result,
+            'timings': worker_result.get('timings', []),
         }
 
         output_blend_path = _bridge_runner._resolve_output_blend(output_png, style_doc)
