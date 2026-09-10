@@ -142,6 +142,12 @@ The capture lives in the worker's owned temporary state and is removed on
 shutdown/startup failure, or with its package capture after forced termination.
 The standalone Blender script also captures before rendering and cleans up on
 exit. Runtime execution never provisions, repairs or overwrites the source CCD.
+The Milestone B developer Blender entrypoint likewise initializes worker_ccd
+before invoking the shared renderer. It requires the preview's CCD checksum to
+equal runtime.lock.json, selects cfg's already private CCD instead of any inherited
+caller runtime path, and places the worker capture inside the preview temporary
+root. A finally block closes it after rendering and development source/manifest
+evidence, including failures. Source snapshot and provenance checks remain active.
 Controllers declare requirements without importing Blender runtime dependencies
 to inspect worker files. Private diagnostics report captured path/hash and
 activation evidence.

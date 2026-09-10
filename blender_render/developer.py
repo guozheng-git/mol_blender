@@ -130,8 +130,8 @@ def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
         if "style_doc" not in options and identifier.startswith(("user/", "project/")):
             identity["catalog_snapshot"] = capture_preset(identifier, catalog_dir, run / "catalog")
         identity["bundle_sha256"] = digest_file(run / "bundle.json")
-        # CCD recovery in the shared engine can rewrite its selected database.
-        # Give it a private copy, never the caller's installed runtime file.
+        # Freeze CCD input before dispatch. The Blender process captures this
+        # private copy again; rendering never uses the caller's runtime file.
         (run / "components.bcif").write_bytes(ccd.read_bytes())
         config = {"identity": identity, "options": options, "root": str(run),
                   "output": str(output.resolve()), "blender": str(blender.resolve()),

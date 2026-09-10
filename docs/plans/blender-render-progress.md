@@ -1,5 +1,45 @@
 # Blender Render implementation progress
 
+## Developer preview CCD integration — 2026-09-10
+
+Starting HEAD verified as `1edf33060a83a3b34fb35a067f793a8434c25c15` on
+`codex/c3-execution-review`, with unrelated `1qys.cif` preserved. The remote review
+branch matched; `codex/public-release` remained at
+`70bcbfa37cf1148ff90ae6d6849f46b6532ff96a`. This narrow correction authorizes one
+direct-child commit and non-force push of only the review branch. No real Blender,
+Slurm, Modal, acceptance runner, D, deployment or hosted-policy change.
+
+Ten actual-entrypoint regressions failed before the fix: developer_blender
+invoked the shared renderer without initializing worker_ccd. The entrypoint now
+checks cfg's CCD checksum against the runtime lock, selects the preview's already
+private CCD, and initializes a worker-owned capture inside the preview root.
+Rendering and the existing source/provenance evidence generation share its
+lifetime; finally closes the capture on success or failure. The renderer's strict
+requirement and worker capture implementation are unchanged.
+
+The tests execute the actual entry script and package code from a temporary source
+snapshot, injecting only Blender/Biotite/render boundaries. They verify private
+capture use, an inherited caller-CCD path never being read, wrong-pin rejection,
+provenance preservation, source-mutation rejection, and cleanup after render and
+manifest failures. Focused developer/CCD verification passed 46 tests with two
+intentional inherited child-process skips and zero audited external attempts.
+Complete guarded and installed-wheel verification and independent review follow.
+
+Complete verification passed 489 guarded repository tests (two intentional
+inherited child-process skips) and 295 installed-wheel contracts. Both audit logs
+record zero external attempts; four dependency deprecation warnings remain.
+Offline wheel build/install ran outside the checkout, verified installed import
+locations, and matched all 84 source/wheel/installed package files. Whitespace
+checks passed. Evidence: `c3-developer-ccd-full-v1` runner output.
+Wheel SHA-256: `7f9c04cdfb649f080081f091b13873864d1a8e324ab39fd53291976c0d24f007`.
+Engine build: `76aa0cb47c4e1c9f4d43b896ddeef0db07a313779ce4960f5566292099e96f06`.
+Independent read-only task `developer_ccd_review` found no blocking defects in
+the six-file delta. Its focused guarded rerun passed 46 tests with two intentional
+skips and zero external attempts. It confirmed capture lifetime, locked chemistry,
+source/provenance preservation, full-run evidence and the staged Git boundary.
+The correction is one direct child of `1edf330`, pushed without force only to
+`codex/c3-execution-review`; public-release and real backend gates remain unchanged.
+
 ## Three final C3 blockers — 2026-09-10
 
 Starting HEAD verified as `f86c87d5df79f8dcf3ac0180b3d05d17a1087da9` on
