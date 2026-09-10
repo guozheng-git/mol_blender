@@ -20,6 +20,10 @@ def validate_profile(profile):
     launcher = profile['launcher']
     if set(launcher) != {'kind', 'arguments'} or launcher['kind'] not in {'slurm_sbatch', 'ipd_qlogin'}:
         raise ValueError('Unsupported HPC launcher configuration')
+    supported = {('slurm_sbatch','slurm'), ('slurm_sbatch','ssh'),
+                 ('ipd_qlogin','slurm'), ('ipd_qlogin','ssh')}
+    if not isinstance(profile.get('transport'), str) or (launcher['kind'], profile['transport']) not in supported:
+        raise ValueError('Unsupported or missing HPC launcher/transport combination; choose slurm or ssh explicitly')
     if 'allocation' in profile:
         raise ValueError('HPC profile migration required: move allocation to launcher.arguments')
     if not isinstance(launcher['arguments'], list) or any(not isinstance(x, str) or '\x00' in x or '\n' in x for x in launcher['arguments']):
@@ -38,8 +42,15 @@ def validate_profile(profile):
 
 def remote(profile, action, **options):
     validate_profile(profile)
-    script = str(Path(profile["remote_root"]) / "blender_render/hpc_remote.py")
-    command = shlex.join([profile["remote_python"], script, action])
+    from .engine import remote_bootstrap, protect
+    if action == 'start':
+        from .engine import engine_identity
+        options.setdefault('expected_engine', profile.get('expected_engine') or engine_identity())
+    passive = action in {'status', 'stop'}
+    code = remote_bootstrap(Path(profile['remote_root'])/'blender_render', check=not passive,
+                            administrative=action in {'status', 'stop', 'attach'})
+    if not passive: protect('submission' if action == 'start' else 'transfer')
+    command = shlex.join([profile["remote_python"], '-c', code, action])
     result = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", profile["host"], command],
         input=json.dumps({"profile": profile, **options}), capture_output=True, text=True, timeout=30)
     if result.returncode:
@@ -47,8 +58,13 @@ def remote(profile, action, **options):
     return json.loads(result.stdout)
 
 
-def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
+def connect(name, profile, *, intention=None, attach_only=None, timeout=600, **ignored):
+    from .client import ConnectionIntention, connection_intention
+    intention = connection_intention(intention, attach_only=attach_only) or ConnectionIntention.START_OR_ALLOCATE
     validate_profile(profile)
+    if intention == ConnectionIntention.INSPECT_CACHED:
+        return existing_connection(name)
+    attach_only = intention == ConnectionIntention.ATTACH_EXISTING
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
         raise ValueError("Invalid profile name")
     root = config_root() / "hpc" / name
@@ -56,12 +72,19 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
     from .client import Client
     from .engine import engine_identity, require_compatible, EngineMismatch
     expected = profile.get('expected_engine') or engine_identity()
-    declaration = remote(profile, 'identity')
-    if declaration.get('python_supported') is not True:
-        raise EngineMismatch('Unsupported remote Python capabilities; explicit setup required')
-    if profile.get('expected_commit') and (declaration.get('commit') != profile['expected_commit'] or declaration.get('tracked_clean') is not True):
-        raise RuntimeError('Remote checkout must be clean at the reviewed commit before allocation')
-    require_compatible(expected, declaration.get('engine'), [])
+    if not attach_only:
+        declaration = remote(profile, 'identity')
+        if declaration.get('python_supported') is not True:
+            raise EngineMismatch('Unsupported remote Python capabilities; explicit setup required')
+        if profile.get('expected_commit') and (declaration.get('commit') != profile['expected_commit'] or declaration.get('tracked_clean') is not True):
+            raise RuntimeError('Remote checkout must be clean at the reviewed commit before allocation')
+        require_compatible(expected, declaration.get('engine'), [])
+    def negotiate(health):
+        from .engine import require_retrieval
+        if attach_only:
+            require_retrieval(health)
+        else:
+            require_compatible(expected, health.get('controller_declaration'), [])
     with file_lock(root / "attach.lock"):
         try:
             previous = json.loads((root / "connection.json").read_text())
@@ -71,8 +94,8 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
             token = Path(previous["token_file"]).read_text().strip()
             if not previous.get('controller_token_file'):
                 raise RuntimeError('Cached connection lacks controller credentials; attach again')
-            health = Client(previous["url"], token, timeout=2).request("GET", "/health")
-            require_compatible(expected, health.get('controller_declaration'), [])
+            health = Client(previous["url"], token, timeout=2).request("GET", "/v1/capabilities")
+            negotiate(health)
             return previous
         except EngineMismatch:
             raise
@@ -114,13 +137,17 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
             raise RuntimeError("Invalid node identity in cluster registry")
         command = ["ssh", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3", "-J", profile["host"], "-L", f"127.0.0.1:{local_port}:127.0.0.1:{int(start['port'])}", f"{user}@{node}"]
         if profile.get("transport") == "slurm":
+            from .engine import script_code
+            proxy_code = script_code('hpc_proxy.py')
             remote_command = ["srun", "--jobid=" + str(start["job_id"]), "--overlap", "-N1", "-n1", profile["remote_python"],
-                str(Path(profile["remote_root"]) / "blender_render/hpc_proxy.py"), "stdio", "--port", str(start["port"])]
+                '-c', proxy_code, "stdio", "--port", str(start["port"])]
             if start.get('cluster'):
                 remote_command[1:1] = ['--clusters=' + start['cluster']]
             ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=20", profile["host"], shlex.join(remote_command)]
             write_private(root / "proxy-command.json", json.dumps(ssh))
-            command = [sys.executable, str(Path(__file__).with_name("hpc_proxy.py")), "listen", "--port", str(local_port), "--command-file", str(root / "proxy-command.json")]
+            # Pass the proxy's SSH argv by value too; no mutable command file
+            # may redirect an already protected tunnel to another destination.
+            command = [sys.executable, '-c', proxy_code, "listen", "--port", str(local_port), "--command-json", json.dumps(ssh)]
         token_path = root / "token"
         write_private(token_path, start.pop("token"))
         controller_token_path = root / 'controller-token'
@@ -128,14 +155,17 @@ def connect(name, profile, *, attach_only=False, timeout=600, **ignored):
             raise RuntimeError('Worker lacks separate controller authentication; explicit upgrade required')
         write_private(controller_token_path, start.pop('controller_token'))
         with (root / "tunnel.log").open("a") as log:
+            from .engine import protect
+            protect('transfer')
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
         connection = {**start, "url":f"http://127.0.0.1:{local_port}", "token_file":str(token_path), "tunnel_pid":process.pid}
         connection['controller_token_file'] = str(controller_token_path)
         for _ in range(50):
             try:
-                health = Client(connection["url"], token_path.read_text(), 1).request("GET", "/health")
-                require_compatible(expected, health.get('controller_declaration'), [])
+                health = Client(connection["url"], token_path.read_text(), 1).request("GET", "/v1/capabilities")
+                negotiate(health)
                 connection['cached_observation'] = health
+                connection['observed_at'] = time.time()
                 write_private(root / "connection.json", json.dumps(connection))
                 print("Interactive GPU session ready", file=sys.stderr)
                 return connection
@@ -158,6 +188,23 @@ def existing_connection(name):
         return json.loads((config_root() / 'hpc' / name / 'connection.json').read_text())
     except (OSError, ValueError) as exc:
         raise RuntimeError('No existing HPC connection; read-only operations cannot allocate or create a tunnel.') from exc
+
+
+def cached_observation(name):
+    from .engine import sanitized_observation
+    try:
+        state = existing_connection(name)
+    except (RuntimeError, ValueError):
+        return None
+    result = sanitized_observation(state.get('cached_observation'))
+    if result is None:
+        return None
+    observed = state.get('observed_at')
+    if type(observed) in (int, float) and 0 <= observed <= time.time():
+        result['observed_at'] = observed
+        result['age_seconds'] = max(0, time.time()-observed)
+    result['source'] = 'connection_cache'
+    return result
 
 
 def stop(name, profile):

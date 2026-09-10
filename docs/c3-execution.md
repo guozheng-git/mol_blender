@@ -20,12 +20,115 @@ shared endpoint even when that endpoint would subsequently reject authentication
 
 The receiving controller validates the structure, schemas, digests, requirements
 and receiving resource/security policy without resolving or editing the snapshots.
-Policy conflicts fail. Exact builds are required in C3. The installed wheel
-contains `engine-manifest.json`; source processes calculate and cache the identity
-once. Workers report the identity loaded at startup and cached runtime versions.
-A stale warm worker is stopped and restarted once before dispatch. A mismatched
-replacement or unsupported requirement fails explicitly. Runtime setup and CCD
-provisioning are explicit setup/image activities, never ordinary render actions.
+Policy conflicts fail. New execution requires the exact admitted engine build.
+Artifact retrieval after a clean controller upgrade validates the original child
+identity without requiring that build to equal the recovering controller's build.
+
+## Inventory and protected actions
+
+`engine.package_inventory` recursively identifies runtime package inputs by
+normalized package-relative POSIX paths. All regular package files participate,
+including Python/native modules, schemas, presets, locks, scripts, shader/geometry
+assets, and packaged CCD when present. Included symlinks, path collisions and
+root escapes are rejected. Exclusions are `__pycache__`, `.pytest_cache`,
+`.mypy_cache`, `.ruff_cache`, `render_outputs`, and `.pyc`, `.pyo`, `.tmp`, `.log`
+and `.sif` files. SIFs are external launcher artifacts, not packaged engine inputs.
+External user/project presets are not package assets. The generated engine
+manifest is verified separately to avoid self-hashing.
+
+The broader reviewed-checkout input set additionally includes `setup.py`,
+`pyproject.toml`, README, LICENSE, THIRD_PARTY_NOTICES, LICENSES, and the C3
+acceptance/contract runners. These top-level inputs do not change engine_build
+unless packaged or consumed by the running engine. Packaging, staging, startup,
+mutation checks and recursive source/wheel/install comparisons share the runtime
+inventory; local and remote checkout checks share the broader scope definition.
+
+Startup compares the installed manifest with actual file hashes and declarations.
+Source processes seal the same inventory. Protected actions verify actual bytes,
+load their explicit `ACTION_MODULES` dependency closure and captured resources,
+then check again. Controller closures contain no Blender or provider SDK imports
+for inspection. Worker rendering loads the scene implementation in the worker.
+Package resources are captured by the process seal; request data remains the
+operation's immutable bundle/spec and private staging. A verification failure
+latches the process; it never refreshes its cached identity in place.
+Startup captures both physical and invocation package-root paths. Resource lookup
+classifies those paths before following mutable links, and retargeting a captured
+root alias latches the process.
+Image staging checks the current process seal before selecting a package capture,
+including when its requested root is a retargeted alias or a different package.
+Durable transactions share the seal's synchronization lock: detection before
+admission rejects the new job/reservation, while detection after its commit
+preserves the admitted operation. Conversion reservation uses the same gate.
+
+Action preloads compile captured Python bytes after checking integrity; included
+native modules load from a private captured package. Local controllers, converters
+and Blender workers launch from private package captures, including the generated
+manifest and nested resources. Workers keep their capture until termination.
+Remote helpers receive a captured verifier by value, verify the remote installation,
+then execute its captured helper. Allocation scripts reference a session-owned
+package; local and remote proxies receive captured code and command arguments by
+value. Captures are never refreshed or overwritten. Service/allocation captures
+remain private lifecycle state for later administrative cleanup; per-conversion
+and stopped-worker captures are removed. Configured runtime executables, external
+dependencies and SIF images remain explicit setup prerequisites.
+Administrative status/stop and attachment use the controller's captured stdlib
+helper by value; they can reach the existing registry even if the unused remote
+installation is damaged. Attachment still requires a clean controller and
+authenticated supported retrieval protocol. New start/identity actions verify
+the remote installation. Modal CLI staging and deferred image uploads use the
+same verified private package capture, excluding caches/SIFs and rejecting links.
+
+## Integrity and durable operations
+
+`restart_required` is process-local and independent of persistent operator drain.
+It closes new execution admission and pauses execution, conversion, startup,
+child submission and new transfer work. Passive status, cancellation/deletion,
+and already verified local artifact delivery remain available. Restart does not
+reopen operator-drained admission. Existing drain semantics still allow admitted
+work to drain when the process itself is clean.
+
+Lifecycle states remain queued/running/transfer_pending/terminal. Additive
+transactional migrations introduce orthogonal blocked_condition, resume_phase,
+and dispatch/recovery/timing metadata. Existing IDs, aliases, molecular snapshots,
+reservations, inventories, tombstones and receipts survive. A block alone does
+not release a reservation or introduce a new expiry policy.
+
+| Owner-visible condition | Next action |
+| --- | --- |
+| restart_required | restart_service |
+| compatibility_blocked | restore_exact_engine |
+| execution_unknown | inspect_execution |
+| recovery_required | recover_operation |
+
+A clean restart evaluates saved phase and execution identity before resuming the
+same operation. A known child is observed/recovered, never replaced. An older row
+without sufficient phase evidence remains recovery_required. An ambiguous leaf
+dispatch remains execution_unknown without automatic replay. A completed child
+retains transfer_pending while suspended. Conversion reservations are idempotent
+per admitted operation. Existing explicit cancellation/cleanup/expiry still apply.
+Legacy child identity alone is insufficient to resume without its saved execution
+envelope and phase. Cancellation racing with a compatibility or integrity block
+settles once; ambiguous execution conservatively consumes the reservation.
+
+A process latch pauses all execution. Operation-specific build blocks are excluded
+from runnable claiming; FIFO remains strict among runnable operations. Blocks
+retain original submission metadata and cannot spin through claim/requeue.
+Worker-only integrity failures permit replacement with a newly sealed worker
+while the controller is clean. Worker replacement cannot clear a controller latch.
+
+CCD is provisioned during explicit setup/image preparation. Actual workers verify
+an existing readable regular CCD file against runtime.lock.json at readiness and
+immediately before rendering. PRESS_BIOTITE_CCD_PATH takes precedence; otherwise
+Biotite's configured path is used. Runtime rendering does not restore, copy or
+download CCD bytes. Controllers declare requirements without importing Blender
+runtime dependencies to inspect worker files. Private worker diagnostics may
+include selected CCD path/hash evidence.
+Cold readiness, daemon preflight and the renderer's entry CCD guard return typed
+compatibility refusals through worker IPC. The admitted operation keeps its
+snapshots and reservation; an
+untyped worker exit retains an unknown execution outcome. File-import endpoints
+also preserve integrity/compatibility conditions instead of labelling them as
+malformed molecular structures.
 
 ## HPC profiles and lifecycle
 
@@ -44,8 +147,31 @@ operator inspection; they cannot silently create a new allocation.
 | `service start --profile NAME` | Explicit service/allocation start |
 | Render | Durable controller admission precedes conversion/allocation/dispatch |
 
-Health and capabilities distinguish controller declarations from loaded worker
-observations. They do not promise GPU availability until a worker actually selects
+Public /health and /healthz contain aggregate status only. Authenticated
+/v1/capabilities supplies controller declarations and sanitized cached worker
+observations. Private authenticated worker readiness supplies negotiation evidence.
+HTTP workers independently enforce explicit public atom/byte limits before backend
+construction (defaults: 100,000 atoms and 50 MiB). Doctor reads sanitized connection
+cache data only; it never probes or repairs the service.
+Authenticated HTTP worker responses preserve restart/compatibility/unknown
+conditions through the controller hop. An ambiguous response after submission
+retains the operation for recovery instead of declaring a generic render failure.
+
+ConnectionIntention separates inspect_cached (local cache reads), attach_existing
+(authenticated existing-service probes/tunnel recreation, no allocation/submission),
+and start_or_allocate (explicit start or post-admission execution). Legacy flags
+translate at one boundary; contradictions fail before external actions.
+
+| Launcher | Transport | Semantics |
+| --- | --- | --- |
+| slurm_sbatch | slurm | Private sbatch script; srun proxy in recorded allocation |
+| slurm_sbatch | ssh | Private sbatch script; ProxyJump to recorded GPU node |
+| ipd_qlogin | slurm | PTY/qlogin launcher; srun proxy using published Slurm job ID |
+| ipd_qlogin | ssh | PTY/qlogin launcher; ProxyJump to published GPU node |
+
+Missing/unknown transports or launchers fail profile validation. Scheduler cluster
+identity, credentials, locking and ambiguous-submission fences remain intact.
+Controller declarations and worker observations do not promise GPU availability until a worker actually selects
 a compatible device. `GPU/AUTO/require_gpu=true` allows host Metal and Slurm CUDA
 without rewriting the specification. Workers record actual device/hardware.
 
@@ -56,8 +182,12 @@ A `transfer_pending` parent reports `child_observation_pending`,
 `child_transfer_pending`, or `artifact_preparation_failed`; it does not claim that
 the child render failed. POST `/v1/jobs/{id}/recover-transfer` queues only recovery
 of this child. Status/result reads do not start a service or enqueue compute.
-Controller restart recovers this same child. An unknown initial submission is
+Controller restart recovers this same child using attach_existing, including
+recreating a dead tunnel. Current-build equality gates new execution, not
+retrieval of an older completed child through the supported protocol. An unknown initial submission is
 looked up by operation key; a missing lookup is not permission to resubmit.
+The initial invocation also switches to attach_existing immediately after binding
+the child ID. General status/download requests never inherit allocation permission.
 
 Verified bytes and receipts live in the controller's durable state, and its sync
 boundary completes before each acknowledgement. Acknowledgement loss retries the
@@ -66,11 +196,22 @@ required child artifacts, parent preparation failure and parent result readiness
 remain distinct. Child expiry/tombstones cannot be overridden by stale remote
 copies. Pending transfer expiry and explicit cancellation purge staging. State
 volume loss is not recoverable without a surviving verified copy.
+Integrity is checked before each new inventory, artifact and acknowledgement
+request. A latch between artifacts preserves already verified bytes and receipts.
+The same check precedes a request that resumes transfer at a downstream gateway.
 
 Timings contain only `phase`, `hop`, `status`, `duration_ms`, `attempt`. Status is
 one of executed/skipped/cached/unavailable/interrupted. Molecular data, credentials,
 private paths and signed URLs cannot enter these records. Each process uses its
-own monotonic clock. No cross-machine timestamp subtraction is used.
+own monotonic clock. No cross-machine timestamp subtraction is used. Child timing
+imports persist child ID, sanitized-list SHA-256, import time and record count in
+one transaction. The first set is imported once. A later differing set records
+timing_integrity_conflict while retaining the first set and continuing valid
+artifact recovery. Transfer/delivery attempts are separate and excluded from the
+child digest; a timing conflict never authorizes cancellation or rerendering.
+The original sanitized child set is also retained inside its import marker, even
+when the bounded aggregate timing window rotates. Restart transfer attempts
+increment independently of that marker.
 
 ## Validation
 
@@ -81,8 +222,16 @@ outside the checkout, asserts import locations and verifies every packaged file
 against the source and installed bytes. Installed contracts use prepared test
 dependencies, not a clean dependency installation. The audit loads before
 application imports and fails even when a forbidden boundary attempt was caught.
+The partial Modal image setup contract imports its copied runtime bootstrap in
+process and stops at a fake installer boundary. The provider-free conversion
+helper is preloaded before protection finishes, and sandbox creation checks
+integrity again. These contracts do not build or deploy a provider image.
 
-After review and commit, run `python scripts/validate_c3_acceptance.py --commit
+Real acceptance is not authorized in the correction checkpoint. For a separately
+authorized acceptance run, prefer an immutable clean worktree or exact verified
+wheel. Mutable-checkout guards check tracked and relevant untracked/ignored inputs
+locally and remotely; unrelated molecular fixtures outside the input scope are
+permitted. After the required review and authorization, run `python scripts/validate_c3_acceptance.py --commit
 EXACT_COMMIT --profile PRIVATE_PROFILE --output /temporary/acceptance`. The runner
 checks prerequisites first, asserts chains A/D, protein/peptide and PTR before
 one DSS export from `examples/1sps_pose.pse`, freezes one bundle/spec pair and uses

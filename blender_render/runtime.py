@@ -55,6 +55,8 @@ def existing_local(*, worker_profile=''):
 
 
 def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', pymol_python='', **ignored):
+    from .engine import protect
+    seal = protect('startup')
     root = controller_root(worker_profile)
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     state_file = root / "session.json"
@@ -64,7 +66,7 @@ def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', 
         try:
             state = json.loads(state_file.read_text())
             token = Path(state["token_file"]).read_text().strip()
-            health = Client(state["url"], token, 2).request("GET", "/health")
+            health = Client(state["url"], token, 2).request("GET", "/v1/capabilities")
             if state.get("version") != VERSION:
                 raise RuntimeError("A previous service version is running. Run blender-render service stop before upgrading.")
             try:
@@ -86,7 +88,13 @@ def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', 
             raise RuntimeError("No ready local session was found.")
         config = load_config()
         python = config.get("service_python", sys.executable)
-        check = subprocess.run([python, "-c", "import fastapi, uvicorn; import blender_render"], capture_output=True)
+        import tempfile
+        captured = seal.capture(Path(tempfile.mkdtemp(prefix='engine-', dir=root))/'blender_render')
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(captured.parent) + os.pathsep + env.get('PYTHONPATH', '')
+        protect('startup')
+        check = subprocess.run([python, "-c", "import fastapi, uvicorn; import blender_render"],
+                               cwd=captured.parent, env=env, capture_output=True)
         if check.returncode:
             raise RuntimeError("Install the service extra and run setup: python3.11 -m pip install 'pymol-plugin-bridge[server]'; blender-render setup")
         token_file = root / "token"
@@ -108,10 +116,11 @@ def ensure_local(*, blender="", image="", attach_only=False, worker_profile='', 
             command += ['--worker-profile', worker_profile]
         if pymol_python:
             command += ['--pymol-python', pymol_python]
-        env = os.environ.copy()
         env["BLENDER_RENDER_SESSION_ID"] = state["session_id"]
+        state['engine_root'] = str(captured.parent)
+        protect('startup')
         with (root / "service.log").open("a") as log:
-            process = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+            process = subprocess.Popen(command, cwd=captured.parent, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
         state["pid"] = process.pid
         write_private(state_file, json.dumps(state))
         deadline = time.monotonic() + 30
@@ -148,11 +157,18 @@ class LocalFileConverter:
 
 def export_file(path, *, python="", selection="(all)"):
     import tempfile
+    from .engine import protect
+    seal = protect('conversion')
     config = load_config()
     executable = python or config.get("pymol_python", sys.executable)
     with tempfile.TemporaryDirectory(prefix="blender-export-") as temp:
         destination = Path(temp) / "payload.json"
-        result = subprocess.run([executable, str(Path(__file__).with_name("export.py")), str(Path(path).expanduser().resolve()), str(destination), "--selection", selection], capture_output=True, text=True, timeout=120)
+        captured = seal.capture(Path(temp)/'blender_render')
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(captured.parent) + os.pathsep + env.get('PYTHONPATH', '')
+        protect('conversion')
+        result = subprocess.run([executable, str(captured/'export.py'), str(Path(path).expanduser().resolve()), str(destination), "--selection", selection],
+                                cwd=captured.parent, env=env, capture_output=True, text=True, timeout=120)
         if result.returncode:
             raise RuntimeError("PyMOL export failed. Configure --pymol-python with an interpreter containing pymol2.\n" + result.stderr[-3000:])
         return json.loads(destination.read_text())

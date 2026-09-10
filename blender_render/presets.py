@@ -88,7 +88,8 @@ def required_capabilities(style: dict) -> list[str]:
 def catalog() -> list[dict]:
     entries = []
     for identifier, filename, _, description, aliases, family in _PRESETS:
-        style = json.loads(preset_path(identifier).read_text())
+        from .engine import resource_bytes
+        style = json.loads(resource_bytes(preset_path(identifier)))
         entries.append({
             "id": identifier, "qualified_id": "builtin/" + identifier, "revision": "1",
             "source": "builtin", "source_json": filename, "aliases": list(aliases),

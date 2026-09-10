@@ -1,5 +1,123 @@
 # Blender Render implementation progress
 
+## C3 review corrections — 2026-09-10
+
+Starting HEAD verified as `1969365e069504b21bc77b33d0811c31bea2debc` on
+`codex/c3-execution-review`. Unrelated `1qys.cif` and external SIF are preserved.
+One direct-child correction commit is authorized; no push, D, real acceptance,
+Blender, SSH, Slurm, provider action, Modal deployment or paid compute.
+
+Phase 1 introduced recursive package identity, actual-byte seals, process-local
+integrity latch, orthogonal durable operation blocks, migration compatibility,
+worker CCD checks and removal of renderer CCD restoration. Seven inventory/CCD
+regressions and four operation regressions failed before implementation. Initial
+focused verification passed 46 tests with zero audited external actions.
+
+Phase 2 introduced explicit connection intentions, attachment-only older-child
+recovery, and transactional child timing import identity. Three initial regressions
+failed. Integrated dead-tunnel/restart contracts use fake connection boundaries
+and in-process child services; no allocation or new leaf render during recovery.
+
+Phase 3 addresses aggregate-only public health, authenticated negotiation, worker
+resource limits, explicit launcher/transport validation, sanitized passive cache
+observations and shared reviewed-checkout cleanliness. Eight initial regressions
+failed. Integrated focused verification passed 72 tests (two inherited dependency
+warnings), with zero audited process/network actions.
+
+The integrated pre-review run passed 407 repository tests (two deliberately
+excluded child-process tests) and 213 installed-wheel contracts. The outside-
+checkout build/install and recursive comparison verified 83 package files.
+Independent read-only task `c3_review_one` found seven blockers: mutable subprocess
+entrypoints, entrypoint drain reset, retained allocation permission after child
+submission, cancellation/block races, insufficient legacy-child evidence,
+transfer continuation after a latch, and resource symlink substitution. It also
+noted reused transfer attempt numbers on restart.
+
+Twelve new regressions failed before fixing those paths. Additional checks cover
+captured worker/helper launch, changed-code preloading, timing-window retention,
+and the final remote start identity check. A full rerun found a recovery-condition
+precedence regression; the explicit dispatch fence now takes precedence for leaf
+operations while legacy child metadata remains conservative. Six additional HTTP
+worker regressions failed before preserving nonterminal conditions through that
+transport. The latest focused run passed 26 tests with zero audited external
+actions. Complete post-fix evidence and final independent review follow below.
+
+Post-fix verification: 430 repository tests passed; the two inherited A/B
+child-process tests remain excluded by the audit guard and have the documented
+in-process contract replacements. All 236 installed-wheel contracts passed.
+Both runs recorded zero audited process/network attempts and four dependency
+deprecation warnings. Offline wheel build/install ran outside the checkout;
+the shared recursive inventory matched all 83 source, wheel and installed files.
+Import-location assertions and `git diff --check` passed. Evidence is retained in
+the correction task's `c3-corrections-final-evidence` runner output (repository,
+installed, build/install logs and evidence.json). Wheel SHA-256:
+`030a1b0c441fb33aa53d51807d0855f0138d6c5cc64654c18c5d9b87389da026`.
+Engine build: `95c86b12b5a1552fefe5ad377d4dbfd26d83472ebbaded3138fe8509dd56f09e`.
+Independent task `c3_review_final` reviewed that staged implementation and evidence
+without edits. Its 57 guarded checks passed, but it found three blockers: the
+partial Modal runtime image omitted the new engine dependency, the Modal helper
+was missing from the conversion closure, and downstream recover-transfer lacked
+its own integrity guard. Four regressions failed before fixes. The setup layer
+now includes its dependency; the provider-free helper preloads and guards sandbox
+creation; downstream recovery checks integrity before requesting new work.
+All 27 focused review regressions passed. The next repository run passed 434 tests;
+a new package-root alias regression, added during that run, failed both in its
+focused check and the installed-wheel run. Resource lookup now captures invocation
+and physical root identities before following links and latches if an alias moves.
+Final renewed verification passed 435 repository tests (two intentional inherited
+child-process skips) and 241 installed-wheel contracts, with zero audited external
+actions and four dependency deprecation warnings. Offline build/install, import
+locations, recursive comparison of all 83 source/wheel/install files and whitespace
+checks passed. The authoritative final runner output is
+`c3-corrections-sealed-evidence`, superseding earlier correction evidence.
+Wheel SHA-256: `7f2c1a0ae259578ce387ef5796a6be8dbd55a511f7d28727d4a1dec2abd2b021`.
+Engine build: `6c862ce114c48fe8effc2ca17382ed6f820b9510f872988875e0af50e1648a14`.
+Independent read-only task `c3_review_sealed_final` checked the integrated diff,
+evidence and 62 guarded correction tests (all passed). It found five remaining
+boundary gaps: latch races at durable admission, conversion exception masking,
+CCD refusals losing operation state over worker IPC, remote installation damage
+preventing administrative controls, and Modal staging bypassing the inventory.
+Seven regressions failed before implementation. The fixes synchronize admission
+with detection, preserve typed conditions, retain cold/warm worker refusals,
+use captured administrative helpers, and use the same private inventory capture
+for Modal CLI and image staging. The first affected run passed 50 tests with zero
+external attempts; the admission/lifecycle follow-up passed 42 tests. Renewed
+complete verification passed 442 repository tests (two intentional inherited
+child-process skips) and 248 installed-wheel contracts. Both audit logs contain
+zero external attempts; four dependency deprecation warnings remain. Offline
+wheel build/install, installed import checks, the shared 83-file recursive
+source/wheel/install comparison, and whitespace checks passed.
+That runner output is `c3-corrections-complete-evidence`.
+Wheel SHA-256: `17f4314e3ad8678eda686a88fd38c7bb06578b672f130fee375abe51e83641c4`.
+Engine build: `896ce82ec04b55912d9df01efbb1fbefbd08c24b3411f82388f3fc6362a4416a`.
+Post-fix independent inspection passed 58 guarded checks but found two residual
+edges: the renderer-entry CCD guard still returned an untyped error, and image
+staging could reseal a retargeted package alias. Three regressions reproduced the
+failures. The CCD test replaces only the Blender preload boundary and compiles
+the actual renderer entry and guard from sealed bytes; it proves retention through
+daemon IPC, worker manager and controller. The entry guard now preserves the
+typed pre-execution refusal, while staging checks the existing process seal and
+lexical root identity before capture. All 57 affected focused checks passed.
+Renewed complete verification passed 445 repository tests (two intentional
+inherited child-process skips) and 251 installed-wheel contracts, with zero
+audited external attempts and four dependency deprecation warnings. Offline
+build/install, installed import checks, all 83 recursive source/wheel/install
+file comparisons, and whitespace checks passed. The authoritative output is
+`c3-corrections-final-seal-20260910-v2`, superseding earlier correction evidence.
+Wheel SHA-256: `1cc6b8e4fa0a476e93c457636a768775f65c15a61f39e86e9885f8754c6cd442`.
+Engine build: `dca932f6ff6c520d69583e5facdc4a0502a12018bdd67dc38df709ebb6ae00b9`.
+Final independent read-only inspection by `c3_review_sealed_final` found no
+remaining blocking findings. Its independent guarded run passed 72 tests with
+zero external attempts and four dependency warnings. It checked the final 44
+staged paths, migration/recovery preservation, tests, documentation and complete
+evidence, and independently compared all 83 files across source, staging, wheel
+and installation. The final Git boundary requires the single correction commit's
+direct parent to remain `1969365e069504b21bc77b33d0811c31bea2debc`; no reviewed
+commit is rewritten, unrelated files are preserved, and nothing is pushed.
+
+Modal implemented and contract-tested; real backend execution unverified.
+Real local/Slurm parity and recovery stress remain unexecuted.
+
 ## C3 execution record — 2026-09-09 (in progress)
 
 Authorized starting point: `codex/public-release`, C2 `70bcbfa`. The existing

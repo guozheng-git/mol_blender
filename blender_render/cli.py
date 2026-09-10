@@ -117,7 +117,6 @@ def serve(args):
     token = args.token_file.expanduser().read_text().strip()
     with file_lock(args.root / "service.lock", blocking=False):
         store = JobStore(args.root, Policy(max_job_seconds=args.job_timeout))
-        store.resume()
         if args.worker_profile:
             from .gateway import GatewayBackend
             backend = GatewayBackend(store, args.worker_profile)
@@ -177,7 +176,7 @@ def execute(args):
     if args.command == "doctor":
         from .runtime import diagnose
         if args.profile not in {'local', 'apptainer'}:
-            from .hpc import validate_profile
+            from .hpc import validate_profile, cached_observation
             from .engine import engine_identity
             profile = load_config().get('profiles', {}).get(args.profile)
             if not profile:
@@ -186,7 +185,7 @@ def execute(args):
                 validate_profile(profile)
             return {'profile': args.profile, 'kind': profile.get('kind'), 'configuration_valid': True,
                     'controller_declaration': engine_identity(), 'runtime_verified': False,
-                    'cached_observation': profile.get('cached_observation')}
+                    'cached_observation': cached_observation(args.profile) if profile.get('kind') == 'hpc' else None}
         return diagnose()
     if args.command == "login":
         from .oauth_client import access_token
@@ -206,7 +205,7 @@ def execute(args):
                 raise ValueError("profile add requires NAME --file profile.json")
             doc = json.loads(args.file.read_text())
             if doc.get("kind") == "hpc":
-                from .hpc import validate_profile
+                from .hpc import validate_profile, cached_observation
                 validate_profile(doc)
             elif not doc.get("url"):
                 raise ValueError("An endpoint profile requires url and token_file or token_env")

@@ -8,12 +8,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-try:
-    from blender_render import core as _bridge_runner
-    from blender_render.render_worker_manager import WorkerError
-except ImportError:
-    import core as _bridge_runner
-    from render_worker_manager import WorkerError
+from blender_render import core as _bridge_runner
+from blender_render.render_worker_manager import WorkerError
 
 @dataclass
 class RenderServerState:

@@ -29,4 +29,5 @@ def save_config(config: dict) -> Path:
 
 
 def runtime_versions() -> dict:
-    return json.loads(Path(__file__).with_name("runtime.lock.json").read_text())
+    from .engine import resource_bytes
+    return json.loads(resource_bytes(Path(__file__).with_name("runtime.lock.json")))

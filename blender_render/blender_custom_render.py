@@ -29,12 +29,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
-    from chain_palette import expand_polymer_styles_for_multichain_palette
+    from blender_render.chain_palette import expand_polymer_styles_for_multichain_palette
 except Exception:  # pragma: no cover - package import fallback
     from blender_render.chain_palette import expand_polymer_styles_for_multichain_palette
 
 try:
-    from ligand_selection import (
+    from blender_render.ligand_selection import (
         coordinates_from_atom_array,
         expand_mask_to_residues,
         ligand_reference_mask,
@@ -49,7 +49,7 @@ except Exception:  # pragma: no cover - package import fallback
     )
 
 try:
-    from cutout_planes import (
+    from blender_render.cutout_planes import (
         DEFAULT_PLANE_ENABLED,
         resolve_frame_axes,
         resolve_plane_enabled,
@@ -65,6 +65,10 @@ except Exception:  # pragma: no cover - package import fallback
 
 
 def _configure_molecularnodes_import_path() -> None:
+    global _mn_path_configured
+    if globals().get("_mn_path_configured"):
+        return
+    _mn_path_configured = True
     raw = str(os.getenv("PRESS_MN_SITE_PACKAGES", "") or "").strip()
     if not raw:
         return
@@ -94,7 +98,8 @@ def _configure_molecularnodes_import_path() -> None:
 
 
 
-from bridge_runner import StyleValidationError, validate_style_document
+from blender_render.core import StyleValidationError, validate_style_document
+from blender_render.engine import resource_bytes
 
 
 NUCLEIC_RES_NAMES = ("DA", "DT", "DG", "DC", "A", "U", "G", "C")
@@ -849,211 +854,14 @@ def _activate_biotite_ccd_path(ccd_path: Path) -> None:
             pass
 
 
-def _biotite_ccd_target_paths() -> list[Path]:
-    targets: list[Path] = []
-    override = str(os.getenv("PRESS_BIOTITE_CCD_PATH", "") or "").strip()
-    if override:
-        # An explicit request-local cache must not mirror into the installed
-        # addon or the user's shared cache.
-        return [Path(override).expanduser()]
-
-    try:
-        from biotite.structure.info import ccd as ccd_module  # type: ignore
-
-        raw_path = getattr(ccd_module, "_CCD_FILE", None)
-        if raw_path:
-            canonical = Path(raw_path)
-            targets.append(canonical)
-            if canonical.name == "components.bcif":
-                # Support both layouts seen in Biotite/MN combinations:
-                #   .../structure/info/components.bcif
-                #   .../structure/info/ccd/components.bcif
-                if canonical.parent.name == "ccd":
-                    targets.append(canonical.parent.parent / "components.bcif")
-                else:
-                    targets.append(canonical.parent / "ccd" / "components.bcif")
-    except Exception:
-        pass
-
-    # Fallback targets even when _CCD_FILE is unavailable.
-    try:
-        import biotite.structure.info as info_module  # type: ignore
-
-        info_dir = Path(getattr(info_module, "__file__", "")).expanduser().resolve().parent
-        if info_dir.is_dir():
-            targets.append(info_dir / "components.bcif")
-            targets.append(info_dir / "ccd" / "components.bcif")
-    except Exception:
-        pass
-
-    targets.append(Path.home() / ".cache" / "pymol_bridge" / "components.bcif")
-    targets.append(Path.home() / ".cache" / "pymol_bridge" / "ccd" / "components.bcif")
-
-    seen: set[str] = set()
-    unique: list[Path] = []
-    for raw in targets:
-        path = Path(raw).expanduser()
-        key = str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(path)
-    return unique
-
-
-def _read_packaged_biotite_ccd_bytes() -> tuple[bytes | None, str]:
-    try:
-        package_root = importlib.resources.files("biotite.structure.info")
-    except Exception as exc:
-        return (None, f"biotite.structure.info resources unavailable: {type(exc).__name__}: {exc}")
-
-    resource_candidates = [
-        ("components.bcif", package_root.joinpath("components.bcif")),
-        ("ccd/components.bcif", package_root.joinpath("ccd").joinpath("components.bcif")),
-    ]
-    errors: list[str] = []
-    for label, resource in resource_candidates:
-        try:
-            with importlib.resources.as_file(resource) as local_path:
-                path = Path(local_path)
-                if path.is_file():
-                    return (path.read_bytes(), f"resource:{path}")
-        except Exception:
-            pass
-        try:
-            return (resource.read_bytes(), f"resource:biotite.structure.info/{label}")
-        except Exception as exc:
-            errors.append(f"{label}: {type(exc).__name__}: {exc}")
-            continue
-    return (None, "biotite packaged CCD unreadable: " + " | ".join(errors))
-
-
-def _biotite_wheel_candidates() -> list[Path]:
-    candidates: list[Path] = []
-    seen: set[str] = set()
-
-    def _add(path: Path) -> None:
-        expanded = Path(path).expanduser()
-        key = str(expanded)
-        if key in seen:
-            return
-        seen.add(key)
-        if expanded.is_file():
-            candidates.append(expanded)
-
-    mn_module = sys.modules.get("molecularnodes")
-    mn_file = str(getattr(mn_module, "__file__", "") or "").strip()
-    if mn_file:
-        try:
-            mn_path = Path(mn_file).expanduser().resolve()
-            for parent in (mn_path.parent, *mn_path.parents):
-                wheels_dir = parent / "wheels"
-                if not wheels_dir.is_dir():
-                    continue
-                for wheel in sorted(wheels_dir.glob("biotite-*.whl")):
-                    _add(wheel)
-                break
-        except Exception:
-            pass
-
-    common_roots = [
-        Path.home() / "Library" / "Application Support" / "Blender",
-        Path.home() / ".config" / "blender",
-        Path.home() / "AppData" / "Roaming" / "Blender Foundation" / "Blender",
-    ]
-    for root in common_roots:
-        if not root.exists():
-            continue
-        try:
-            for wheel in root.glob("**/extensions/*/molecularnodes/wheels/biotite-*.whl"):
-                _add(wheel)
-                if len(candidates) >= 8:
-                    return candidates
-        except Exception:
-            continue
-    return candidates
-
-
-def _read_biotite_ccd_bytes_from_wheels() -> tuple[bytes | None, str]:
-    members = [
-        "biotite/structure/info/components.bcif",
-        "biotite/structure/info/ccd/components.bcif",
-    ]
-    wheel_errors: list[str] = []
-    for wheel in _biotite_wheel_candidates():
-        try:
-            with zipfile.ZipFile(wheel) as archive:
-                for member in members:
-                    try:
-                        data = archive.read(member)
-                    except KeyError:
-                        continue
-                    return (data, f"wheel:{wheel}::{member}")
-        except Exception as exc:
-            wheel_errors.append(f"{wheel}: {type(exc).__name__}: {exc}")
-            continue
-    if wheel_errors:
-        return (None, "wheel lookup failed: " + " | ".join(wheel_errors[:4]))
-    return (None, "no Molecular Nodes biotite wheel with CCD payload found")
-
-
-def _write_ccd_bytes(ccd_bytes: bytes, target_paths: list[Path], source_label: str) -> Path | None:
-    if not ccd_bytes:
-        return None
-    written_path: Path | None = None
-    for target in target_paths:
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(ccd_bytes)
-            if target.is_file():
-                if written_path is None:
-                    written_path = target
-                if _env_bool("PRESS_DEBUG_LOADER", False):
-                    print(f"Bridge Custom loader: restored CCD from {source_label} -> {target}")
-        except Exception:
-            continue
-    if written_path is not None:
-        _activate_biotite_ccd_path(written_path)
-    return written_path
-
-
-def _ensure_biotite_ccd_database() -> None:
-    target_paths = _biotite_ccd_target_paths()
-    existing_path: Path | None = None
-    for path in target_paths:
-        if path.is_file():
-            existing_path = path
-            break
-    if existing_path is not None:
-        try:
-            # Mirror an existing CCD to all known paths so both legacy and
-            # current Biotite/MN loaders succeed.
-            _write_ccd_bytes(existing_path.read_bytes(), target_paths, f"existing:{existing_path}")
-        except Exception:
-            _activate_biotite_ccd_path(existing_path)
-        return
-
-    debug_notes: list[str] = []
-
-    ccd_bytes, note = _read_packaged_biotite_ccd_bytes()
-    if ccd_bytes:
-        written = _write_ccd_bytes(ccd_bytes, target_paths, note)
-        if written is not None:
-            return
-        debug_notes.append(f"packaged CCD read succeeded but write failed (targets={target_paths})")
-    elif note:
-        debug_notes.append(note)
-
-    wheel_bytes, wheel_note = _read_biotite_ccd_bytes_from_wheels()
-    if wheel_bytes:
-        written = _write_ccd_bytes(wheel_bytes, target_paths, wheel_note)
-        if written is not None:
-            return
-        debug_notes.append(f"wheel CCD read succeeded but write failed (targets={target_paths})")
-    elif wheel_note:
-        debug_notes.append(wheel_note)
-
-    raise RuntimeError('Missing prepared CCD data; run explicit runtime setup or prepare the image before rendering')
+def _ensure_biotite_ccd_database(*, before_execution: bool = False) -> None:
+    from blender_render.engine import ccd_observation, RuntimeUnavailable
+    evidence = ccd_observation()
+    if not evidence['verified']:
+        if before_execution:
+            raise RuntimeUnavailable('Missing or corrupt prepared CCD; explicit runtime setup required')
+        raise RuntimeError('Missing or corrupt prepared CCD; explicit runtime setup required')
+    _activate_biotite_ccd_path(Path(evidence['path']))
 
 
 def _load_molecule_with_fallback(structure_path: Path, object_name: str):
@@ -1228,7 +1036,7 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
 
         nt.links.new(coord.outputs["Window"], separate.inputs["Vector"])
         direction = world_cfg.get("gradient_direction", [0.0, 1.0])
-        from reference_effects import directional_factor
+        from blender_render.reference_effects import directional_factor
         factor = directional_factor(nt, coord.outputs["Window"], [*direction, 0.0])
         nt.links.new(factor, ramp.inputs["Fac"])
         nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
@@ -1388,7 +1196,7 @@ def _set_bsdf_input(node: bpy.types.ShaderNodeBsdfPrincipled, names: tuple[str, 
 
 def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
     if cfg.get("paint"):
-        from paint import make_paint_material
+        from blender_render.paint import make_paint_material
         material = make_paint_material(cfg["paint"])
         material.name = name
         return material
@@ -1487,7 +1295,7 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         _set_bsdf_input(bsdf, ("Emission Color", "Emission"), _hex_to_rgba(str(emission_color), 1.0))
         _set_bsdf_input(bsdf, ("Emission Strength",), emission_strength)
 
-    from reference_effects import apply_material_effects
+    from blender_render.reference_effects import apply_material_effects
     apply_material_effects(nt, bsdf, cfg, _hex_to_rgba)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
 
@@ -1878,7 +1686,7 @@ def _add_style(load_result: Any, style_cfg: dict[str, Any], selection: Any,
     result = load_result.add_style(_native_style_from_cfg(style_cfg), selection=selection,
         color=None, name=style_cfg.get("name"), material=material)
     if "nucleic_base_scale" in style_cfg:
-        from reference_effects import scale_nucleic_bases
+        from blender_render.reference_effects import scale_nucleic_bases
         branches = [node for node in load_result.tree.nodes if node.as_pointer() not in before
                     and getattr(getattr(node, "node_tree", None), "name", "").startswith("Style Cartoon")]
         if not branches:
@@ -3851,6 +3659,9 @@ def _apply_pymol_ss_hints(load_result: Any, view_doc: dict[str, Any]) -> int:
 
 
 def _render(args: argparse.Namespace) -> None:
+    from blender_render.engine import protect
+    protect('render')
+    _ensure_biotite_ccd_database(before_execution=True)
     import time
     import importlib.metadata
     from blender_render.operation_progress import record_stage, read_stages
@@ -3907,7 +3718,7 @@ def _render(args: argparse.Namespace) -> None:
     load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
     _apply_auth_chain_override(load_result, structure_path)
     ss_applied = _apply_pymol_ss_hints(load_result, view_doc)
-    from geometry import apply_atom_attributes, round_edges
+    from blender_render.geometry import apply_atom_attributes, round_edges
     apply_atom_attributes(load_result, view_doc, style_doc)
     if ss_applied > 0 and _env_bool("PRESS_DEBUG_STYLE_SELECTIONS", False):
         print(f"Bridge Custom: applied PyMOL SS hints atoms={ss_applied} object=BridgeCustom")
@@ -4505,7 +4316,7 @@ def _render(args: argparse.Namespace) -> None:
                      "Molecular Nodes assets and Blender API scripts retain GPL-3.0-or-later.\n"
                      "Source and build instructions: https://github.com/magnusbauer/blender_render\n"
                      "Upstream Molecular Nodes: https://github.com/BradyAJohnston/MolecularNodes\n\n")
-        notice.write(Path(__file__).with_name("GPL-3.0-or-later.txt").read_text())
+        notice.write(resource_bytes(Path(__file__).with_name("GPL-3.0-or-later.txt")).decode())
         bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), copy=True)
         print(f"Custom blend saved: {blend_output}")
     run_manifest_raw = str(getattr(args, "run_manifest", "") or "").strip()

@@ -93,11 +93,14 @@ def main():
     parser.add_argument("mode", choices=["stdio", "listen"])
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--command-file", type=Path)
+    parser.add_argument("--command-json")
     args = parser.parse_args()
     if args.mode == "stdio":
         Multiplexer(sys.stdin.buffer, sys.stdout.buffer, args.port).run()
         return
-    command = json.loads(args.command_file.read_text())
+    if args.command_json is not None and args.command_file is not None:
+        raise ValueError('Choose one proxy command source')
+    command = json.loads(args.command_json if args.command_json is not None else args.command_file.read_text())
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=sys.stderr)
     tunnel = Multiplexer(process.stdout, process.stdin)
     reader = threading.Thread(target=tunnel.run, daemon=True)

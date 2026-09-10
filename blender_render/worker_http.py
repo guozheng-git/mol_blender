@@ -13,10 +13,15 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 
 
-def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
+def create_worker(token: str, *, timeout: int = 600, backend_factory=None,
+                  max_atoms: int = 100000, max_bytes: int = 50*1024**2):
     from fastapi.responses import JSONResponse
     from .api import BoundedBody
     from .service import HostBackend
+    from .engine import protect, process_seal, RestartRequired, EngineMismatch, ExecutionUnknown
+    protect('admission')
+    if type(max_atoms) is not int or max_atoms < 1 or type(max_bytes) is not int or max_bytes < 1:
+        raise ValueError('Worker limits must be positive integers')
     if len(token) < 32:
         raise ValueError('A worker token is required')
     app = FastAPI()
@@ -35,8 +40,12 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
 
     @app.get('/health')
     async def health():
-        from .engine import engine_identity
-        return {'ready':True, 'controller_declaration': engine_identity(), 'worker_observation': None}
+        from .engine import engine_identity, RestartRequired
+        try:
+            process_seal().check()
+        except RestartRequired:
+            return JSONResponse({'ready':False, 'condition':'restart_required'}, status_code=503)
+        return {'ready':not process_seal().latched, 'controller_declaration': engine_identity(), 'worker_observation': None}
 
     @app.post('/cancel/{job_id}')
     async def cancel(job_id: str):
@@ -66,10 +75,13 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
                     or context.get('operation_id') != job_id or not isinstance(context.get('owner_id'), str)
                     or not 1 <= len(context['owner_id']) <= 128):
                 raise ValueError('Invalid authenticated execution context')
-            validate_snapshot(request_snapshot(payload), public=True, timeout=timeout)
+            protect('admission')
+            validate_snapshot(request_snapshot(payload), public=True, timeout=timeout,
+                              max_atoms=max_atoms, max_bytes=max_bytes)
             def run():
                 try:
                     with tempfile.TemporaryDirectory(prefix='blender-render-worker-') as root:
+                        protect('dispatch')
                         backend = factory(Path(root))
                         try:
                             return backend.render(payload, job_id, flag.is_set)
@@ -81,6 +93,11 @@ def create_worker(token: str, *, timeout: int = 600, backend_factory=None):
                     busy.release()
             task = asyncio.create_task(asyncio.to_thread(run))
             return await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except (RestartRequired, EngineMismatch, ExecutionUnknown) as exc:
+            condition = ('restart_required' if isinstance(exc, RestartRequired) else
+                         'compatibility_blocked' if isinstance(exc, EngineMismatch) else 'execution_unknown')
+            return JSONResponse({'condition':condition, 'error':'Worker execution retained for recovery',
+                'before_execution':getattr(exc, 'before_execution', not isinstance(exc, (RestartRequired, ExecutionUnknown)))}, status_code=503)
         except Exception as exc:
             # Only code locations and fixed diagnostic categories may enter
             # provider logs. Exception messages can contain molecular data.
@@ -119,12 +136,31 @@ class HTTPBackend:
     def render(self, request, identifier, cancelled):
         import concurrent.futures
         import httpx
+        from .engine import protect, ExecutionUnknown, RestartRequired, EngineMismatch
+        def retained_condition(response, *, submitted):
+            if response.status_code < 400:
+                return
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            condition = data.get('condition') if isinstance(data, dict) else None
+            if condition == 'restart_required':
+                exc = RestartRequired('restart_required: replace the affected worker')
+                exc.before_execution = not submitted or data.get('before_execution') is True
+                raise exc
+            if condition == 'compatibility_blocked':
+                raise EngineMismatch('Worker compatibility blocked; restore the required runtime')
+            if condition == 'execution_unknown' or submitted:
+                raise ExecutionUnknown('HTTP worker execution outcome unknown; no automatic replay')
+        protect('submission')
         with httpx.Client(headers=self.headers, timeout=self.timeout+30) as client:
             deadline = time.monotonic()+180
             while True:
                 if cancelled():
                     raise RuntimeError('Cancelled')
                 response = client.get(self.url+'/health', timeout=15)
+                retained_condition(response, submitted=False)
                 if response.status_code == 200:
                     from .engine import require_compatible
                     require_compatible(request.get('expected_engine'), response.json().get('controller_declaration'),
@@ -136,16 +172,20 @@ class HTTPBackend:
             self.active = identifier
             try:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    protect('submission')
                     pending = pool.submit(client.post, self.url+'/render/'+identifier, json=request)
                     while True:
                         try:
                             response = pending.result(timeout=.25)
+                            retained_condition(response, submitted=True)
                             response.raise_for_status()
                             return response.json()
                         except concurrent.futures.TimeoutError:
                             if cancelled():
                                 self.stop()
                                 raise RuntimeError('Cancelled')
+                        except httpx.RequestError as exc:
+                            raise ExecutionUnknown('HTTP worker outcome unknown; no automatic replay') from exc
             finally:
                 self.active = None
 

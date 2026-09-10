@@ -42,7 +42,7 @@ def test_absent_status_does_not_create_registry_or_allocate(tmp_path, monkeypatc
 def test_replacement_waits_for_previous_writer_and_preserves_its_token(tmp_path, monkeypatch, capsys):
     registry(tmp_path)
     profile = {"registry":str(tmp_path), "remote_root":str(tmp_path), "remote_python":"python",
-               'host':'fake', 'image':'fake.sif', 'version':2,
+               'host':'fake', 'image':'fake.sif', 'version':2, 'transport':'slurm',
                'launcher':{'kind':'slurm_sbatch', 'arguments':[]}}
     monkeypatch.setattr(hpc_remote.sys, "argv", ["hpc_remote", "start"])
     monkeypatch.setattr(hpc_remote.sys, "stdin", io.StringIO(json.dumps({"profile":profile})))

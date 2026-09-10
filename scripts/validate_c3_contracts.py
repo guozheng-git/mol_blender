@@ -19,7 +19,9 @@ CONTRACTS = ['test_execution_envelope.py', 'test_gateway_recovery.py', 'test_hpc
              'test_hpc_lifecycle.py', 'test_runtime_contracts.py', 'test_worker_http.py',
              'test_operation_lifecycle.py', 'test_result_recovery.py', 'test_jobs_api.py',
              'test_cli_operation_routing.py', 'test_gateway_isolation.py', 'test_c3_inprocess.py',
-             'test_engine_package.py']
+             'test_engine_package.py', 'test_c3_integrity.py', 'test_c3_operation_blocks.py',
+             'test_c3_connections.py', 'test_c3_recovery_integration.py', 'test_c3_policy.py', 'test_c3_migrations.py',
+             'test_c3_review_regressions.py', 'test_c3_final_boundaries.py']
 
 
 def run(command, cwd, env, log):
@@ -42,15 +44,17 @@ def main():
     run(pytest, ROOT, env, out/'repository.log')
     staging = out/'source'
     staging.mkdir()
-    for name in ('pyproject.toml', 'setup.py', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'):
-        shutil.copy2(ROOT/name, staging/name)
-    shutil.copytree(ROOT/'LICENSES', staging/'LICENSES')
-    # Stage only package source/resources, never ignored render caches or SIFs.
     import runpy
-    generate = runpy.run_path(str(ROOT/'blender_render/engine.py'))['generate_manifest']
-    (staging/'blender_render').mkdir()
-    for name in generate(ROOT/'blender_render')['files']:
-        shutil.copy2(ROOT/'blender_render'/name, staging/'blender_render'/name)
+    inventory_api = runpy.run_path(str(ROOT/'blender_render/engine.py'))
+    generate = inventory_api['generate_manifest']
+    for name in inventory_api['BUILD_INPUTS']:
+        (staging/name).parent.mkdir(parents=True, exist_ok=True)
+        if (ROOT/name).is_dir():
+            shutil.copytree(ROOT/name, staging/name)
+        else:
+            shutil.copy2(ROOT/name, staging/name)
+    # Stage only package source/resources, never ignored render caches or SIFs.
+    inventory_api['stage_package'](ROOT/'blender_render', staging/'blender_render')
     run([sys.executable, '-m', 'build', '--wheel', '--no-isolation', '--outdir', str(out/'wheels')],
         staging, env, out/'build.log')
     wheel = next((out/'wheels').glob('*.whl'))
@@ -63,6 +67,20 @@ def main():
     run([*pytest, *(str(out/'tests'/name) for name in CONTRACTS)], out, env, out/'installed.log')
     with zipfile.ZipFile(wheel) as archive:
         manifest = json.loads(archive.read('blender_render/engine-manifest.json'))
+        extracted = out/'wheel-inventory'
+        for member in archive.infolist():
+            if not member.filename.startswith('blender_render/') or member.is_dir():
+                continue
+            name = Path(member.filename)
+            if '..' in name.parts or '\\' in member.filename:
+                raise ValueError('Invalid package path in built wheel')
+            target = extracted/name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                raise ValueError('Duplicate package path in built wheel')
+            target.write_bytes(archive.read(member))
+        inventory = inventory_api['package_inventory']
+        assert inventory(ROOT/'blender_render') == inventory(extracted/'blender_render') == inventory(site/'blender_render') == manifest['files']
         for name, digest in manifest['files'].items():
             data = archive.read('blender_render/'+name)
             assert hashlib.sha256(data).hexdigest() == digest

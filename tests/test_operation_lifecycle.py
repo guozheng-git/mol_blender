@@ -366,7 +366,11 @@ def test_gateway_distinct_outer_and_retry_map_to_intended_children(monkeypatch, 
     outer.close()
 
 
-def test_worker_timeout_holds_slot_until_late_exit(payload):
+def test_worker_timeout_holds_slot_until_late_exit(payload, monkeypatch):
+    # This test isolates slot ownership from filesystem preflight latency.
+    from blender_render import engine
+    protect = engine.protect
+    monkeypatch.setattr(engine, 'protect', lambda action: None if action == 'dispatch' else protect(action))
     entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
     active = [0]
     class Backend:

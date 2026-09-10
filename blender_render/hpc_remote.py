@@ -84,6 +84,7 @@ def check_session(root):
 
 
 def main():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     action = sys.argv[1]
     if action == "worker":
         root = Path(sys.argv[2])
@@ -99,10 +100,14 @@ def main():
                          job_id=os.environ["SLURM_JOB_ID"], worker_started=time.time())
             write(root / 'session.json', state)
         os.environ["BLENDER_RENDER_SESSION_ID"] = state["session_id"]
-        os.chdir(profile["remote_root"])
-        os.environ["PYTHONPATH"] = profile["remote_root"] + os.pathsep + os.environ.get("PYTHONPATH","")
-        command = ["apptainer", "exec", "--nv", "--cleanenv", "--bind", profile["remote_root"] + ":" + profile["remote_root"],
-                   "--env", "PYTHONPATH=" + profile["remote_root"] + ":/opt/runtime/site:/opt",
+        engine_root = str(Path(__file__).resolve().parent.parent)
+        from blender_render.engine import protect
+        protect('startup')
+        os.chdir(engine_root)
+        os.environ["PYTHONPATH"] = engine_root + os.pathsep + os.environ.get("PYTHONPATH","")
+        command = ["apptainer", "exec", "--nv", "--cleanenv", "--bind", engine_root + ":" + engine_root,
+                   "--bind", str(root) + ':' + str(root),
+                   "--env", "PYTHONPATH=" + engine_root + ":/opt/runtime/site:/opt",
                    "--env", "BLENDER_RENDER_SITE=/opt/runtime/site",
                    "--env", "BLENDER_RENDER_SESSION_ID=" + state["session_id"],
                    profile["image"], "/usr/local/bin/python", "-m", "blender_render.cli", "serve",
@@ -116,15 +121,20 @@ def main():
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from blender_render.hpc import validate_profile
         validate_profile(profile)
+        from blender_render.engine import engine_identity, require_compatible
+        expected = data.get('expected_engine') or profile.get('expected_engine')
+        if expected:
+            require_compatible(expected, engine_identity(), [])
     if action == 'identity':
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from blender_render.engine import engine_identity
+        from blender_render.engine import engine_identity, reviewed_checkout
         identity = {'engine': engine_identity(), 'python_supported': sys.version_info >= (3, 10)}
         if profile.get('expected_commit'):
             result = subprocess.run(['git', '-C', profile['remote_root'], 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True, timeout=5)
-            clean = subprocess.run(['git', '-C', profile['remote_root'], 'diff', '--quiet', 'HEAD', '--'], timeout=5)
+            clean = reviewed_checkout(profile['remote_root'])
             identity['commit'] = result.stdout.strip()
-            identity['tracked_clean'] = clean.returncode == 0
+            identity['tracked_clean'] = clean['clean']
+            identity['reviewed_clean'] = clean['clean']
         print(json.dumps(identity))
         return
     root = Path(profile["registry"]).expanduser()
@@ -183,7 +193,10 @@ def main():
                 service_token = root / 'controller-token'
                 service_token.write_text(secrets.token_urlsafe(32)); service_token.chmod(0o600)
                 session_id = secrets.token_hex(12)
-                script=Path(profile["remote_root"]) / "blender_render/hpc_remote.py"
+                from blender_render.engine import protect
+                seal = protect('startup')
+                captured = seal.capture(root/'engines'/session_id/'blender_render')
+                script=captured/'hpc_remote.py'
                 shell=root / "worker.sh"
                 shell.write_text("#!/bin/sh\nexec " + shlex.join([profile["remote_python"],str(script),"worker",str(root),session_id]) + "\n")
                 shell.chmod(0o700)
@@ -194,11 +207,13 @@ def main():
                 state={"status":"submission_unknown","session_id":session_id,"started_at":time.time(),"allocator_pid":0}
                 write(root / "session.json",state)
                 if profile['launcher']['kind'] == 'slurm_sbatch':
+                    protect('startup')
                     response = subprocess.run(['sbatch', '--parsable', *allocation, str(shell)], capture_output=True, text=True, timeout=20)
                     if response.returncode:
                         raise RuntimeError('sbatch submission failed; inspect scheduler before retrying')
                     state['job_id'], state['cluster'] = parse_sbatch(response.stdout)
                 else:
+                    protect('startup')
                     with (root / "allocation.log").open("a") as log:
                         process=subprocess.Popen(command,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
                     state['allocator_pid'] = process.pid

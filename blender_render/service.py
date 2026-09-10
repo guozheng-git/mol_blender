@@ -17,6 +17,7 @@ from typing import Protocol
 
 from . import core
 from .jobs import JobError, JobStore
+from .engine import protect, process_seal, RestartRequired, EngineMismatch, ExecutionUnknown
 
 log = logging.getLogger(__name__)
 
@@ -138,9 +139,12 @@ def freeze_file_options(options):
 
 class RenderService:
     def __init__(self, store: JobStore, backend: Backend, *, recover: bool = True, converter=None):
+        self.integrity = protect('admission')
         self._imports_guard = threading.Lock()
         self._imports = {}
         self.store = store
+        self.store.process_blocked = lambda: self.integrity.latched
+        self.store.integrity_lock = self.integrity.lock
         self.backend = backend
         self.converter = converter
         if hasattr(backend, 'set_progress'):
@@ -152,6 +156,9 @@ class RenderService:
         self.last_activity = time.time()
         if recover:
             self.store.recover_interrupted()
+
+    def _protect(self, action):
+        return protect(action)
 
     def start(self):
         if self.stopping.is_set() or self.thread and self.thread.is_alive():
@@ -194,6 +201,7 @@ class RenderService:
                     del self._imports[owner]
 
     def import_payload(self, owner: str, payload: dict, name: str = "structure.cif", *, source_key: str | None = None) -> dict:
+        self._protect('admission')
         with self._owner_import(owner):
             self.last_activity = time.time()
             p = self.store.policy
@@ -201,6 +209,7 @@ class RenderService:
             return self.store.add_input(owner, data, name, source_key=source_key)
 
     def import_file(self, owner: str, data: bytes, suffix: str, name: str, converter) -> dict:
+        self._protect('conversion')
         if suffix not in {'.pse', '.cif', '.mmcif', '.pdb'}:
             raise JobError("Choose a .pse, .cif, or .pdb file.")
         if len(data) > self.store.policy.max_upload_bytes:
@@ -213,6 +222,8 @@ class RenderService:
             self.store.reserve_conversion(owner)
             try:
                 payload = converter(data, suffix)
+            except (RestartRequired, EngineMismatch, ExecutionUnknown):
+                raise
             except Exception as exc:
                 raise JobError("The molecular file could not be converted. Attach a valid PSE, CIF, or PDB file.", "invalid_structure", 422) from exc
             return self.import_payload(owner, payload, name, source_key=key)
@@ -241,6 +252,7 @@ class RenderService:
     def render_file(self, owner, data, suffix, name, converter, options, *, idempotency_key=None,
                     operation_key=None, rerender=False, selection='(all)'):
         """Commit the existing queue's handle before conversion or compute."""
+        self._protect('admission')
         from .spec import _check_options
         try:
             _check_options(options)
@@ -289,6 +301,7 @@ class RenderService:
             return job
 
     def submit(self, owner: str, input_id: str, options: dict, idempotency_key: str, *, rerender: bool = False, operation_key=None) -> dict:
+        self._protect('admission')
         self.last_activity = time.time()
         if not isinstance(rerender, bool):
             raise JobError('rerender must be a boolean')
@@ -325,17 +338,21 @@ class RenderService:
     def _run(self):
         while not self.stopping.is_set():
             try:
+                self.integrity.check()
                 job = self.store.claim()
                 if not job:
                     self.wakeup.wait(2)
                     self.wakeup.clear()
                     continue
                 self._execute(job)
+            except RestartRequired:
+                self.stopping.wait(2)
             except Exception:
                 log.exception("Job dispatcher failed; admission remains conservative")
                 self.stopping.wait(2)
 
     def submit_resolved(self, controller, envelope):
+        self._protect('admission')
         from .execution import validate_snapshot, scoped_owner
         try:
             context = {k: envelope[k] for k in ('controller_id', 'owner_id', 'operation_id')}
@@ -372,6 +389,7 @@ class RenderService:
         from .gateway import TransferPending
         sink = lambda timing: self.store.add_timings(identifier, [timing])
         try:
+            self._protect('admission')
             request = json.loads(job["options"])
             payload = json.loads(job['execution'])['bundle'] if job.get('execution') else self.store.input(job["owner"], job["input_id"])
             if 'prepare_file' in request:
@@ -383,6 +401,8 @@ class RenderService:
                 if self.converter is None:
                     raise RuntimeError('File converter unavailable after restart; execution was not retried')
                 kwargs = {'selection': raw['selection']} if raw['selection'] != '(all)' else {}
+                self._protect('conversion')
+                self.store.checkpoint(identifier, 'conversion', dispatched=True)
                 with measure(sink, 'conversion', 'converter'):
                     payload = self.converter(base64.b64decode(raw['data'], validate=True), raw['suffix'], **kwargs)
                 p = self.store.policy
@@ -395,6 +415,7 @@ class RenderService:
                 request = prepare_options(request['prepare_file'], payload, public=p.public,
                                           timeout=p.max_job_seconds, preset_definition=definition)
                 self.store.bind_spec(identifier, request, payload)
+                self.store.checkpoint(identifier, 'dispatch')
             elif not job.get('remote_phase'):
                 sink(record('conversion', 'converter', status='skipped'))
             if self.store.cancelled(identifier) or self.stopping.is_set():
@@ -406,9 +427,12 @@ class RenderService:
                 raise RuntimeError('Queued legacy job lacks an execution envelope; no runtime was dispatched')
             snapshot = validate_snapshot(json.loads(frozen), public=self.store.policy.public,
                 max_atoms=self.store.policy.max_atoms if self.store.policy.public else 10000000,
-                max_bytes=self.store.policy.max_upload_bytes, timeout=self.store.policy.max_job_seconds)
+                max_bytes=self.store.policy.max_upload_bytes, timeout=self.store.policy.max_job_seconds,
+                for_execution=not bool(job.get("remote_phase") or job.get("remote_id")))
             request = dispatch_request(snapshot, 'controller', job['owner'], identifier)
+            self._protect('transfer' if job.get('remote_phase') else 'dispatch')
             self.store.stage(identifier, 'waiting_for_compute')
+            self.store.checkpoint(identifier, 'transfer' if job.get('remote_phase') else 'dispatch', dispatched=True)
             compute_started = True
             result = self.backend.render(request, identifier, lambda: self.stopping.is_set() or self.store.cancelled(identifier))
             if self.stopping.is_set():
@@ -428,6 +452,22 @@ class RenderService:
             self.store.finish(identifier, result=artifacts, seconds=time.monotonic() - started)
             if self.store.cancelled(identifier):
                 shutil.rmtree(self.store.artifacts / identifier, ignore_errors=True)
+        except RestartRequired as exc:
+            # A worker's explicit pre-render rejection is safe to resume. An
+            # unobserved transport failure is handled conservatively elsewhere.
+            with self.store.lock:
+                current = dict(self.store.db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone())
+            has_child = bool(current['remote_id'] or current['remote_phase'])
+            phase = 'transfer' if has_child else (current['resume_phase'] or 'admitted')
+            condition = 'execution_unknown' if compute_started and not getattr(exc, 'before_execution', False) and not has_child else 'restart_required'
+            if condition == 'restart_required':
+                self.store.checkpoint(identifier, phase)
+            self.store.block(identifier, condition, phase)
+        except ExecutionUnknown:
+            self.store.block(identifier, 'execution_unknown', 'dispatch')
+        except EngineMismatch:
+            self.store.checkpoint(identifier, 'dispatch')
+            self.store.block(identifier, 'compatibility_blocked', 'dispatch')
         except TransferPending as exc:
             if self.store.cancelled(identifier):
                 self.store.finish(identifier, error='Parent transfer cancelled', seconds=time.monotonic()-started)

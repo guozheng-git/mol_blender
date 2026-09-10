@@ -8,8 +8,6 @@ import sys
 import time
 import re
 import math
-import shutil
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -106,11 +104,10 @@ def deploy(*, development=False, staging_user=None, personal=None, budget_usd=No
     # Freeze a build snapshot. Modal uploads local files lazily; a developer
     # editing the checkout during a long image build must not create a mixed
     # deployment or invalidate an otherwise completed image build.
-    with tempfile.TemporaryDirectory(prefix="blender-render-deploy-") as snapshot:
-        shutil.copytree(Path(__file__).parent, Path(snapshot) / "blender_render",
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        env["PYTHONPATH"] = snapshot
-        subprocess.run([sys.executable,"-m","modal","deploy","-m","blender_render.modal_app","--strategy","recreate","--tag",VERSION],env=env,cwd=snapshot,check=True)
+    from .modal_boundaries import package_snapshot
+    with package_snapshot(Path(__file__).parent) as captured:
+        env["PYTHONPATH"] = str(captured.parent)
+        subprocess.run([sys.executable,"-m","modal","deploy","-m","blender_render.modal_app","--strategy","recreate","--tag",VERSION],env=env,cwd=captured.parent,check=True)
     actual_url = modal.Server.from_name(name,"gateway").get_url()
     if actual_url.rstrip("/") != expected_url:
         raise RuntimeError("Deployment URL differed from its configured OAuth URL. Keep admission closed and update credentials before use: " + actual_url)

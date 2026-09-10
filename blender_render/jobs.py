@@ -71,6 +71,7 @@ class JobStore:
         self._queue_clocks = {}
         self.sync = sync or (lambda: None)
         self.lock = threading.RLock()
+        self.integrity_lock = self.lock  # Bound to the process seal by its controller.
         self.healthy = True
         self.db = sqlite3.connect(str(self.root / "jobs.sqlite3"), check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
@@ -100,6 +101,23 @@ class JobStore:
         CREATE TABLE IF NOT EXISTS artifact_roots (path TEXT PRIMARY KEY);
         """)
         columns = {row[1] for row in self.db.execute('PRAGMA table_info(jobs)')}
+        # One additive transaction; NULL resume_phase identifies genuinely older
+        # rows rather than asserting they never crossed an execution boundary.
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            for column, definition in (('blocked_condition', 'TEXT'), ('resume_phase', 'TEXT'),
+                                       ('dispatch_fenced', 'INTEGER NOT NULL DEFAULT 0'),
+                                       ('child_timing_import', 'TEXT'), ('timing_conflict', 'INTEGER NOT NULL DEFAULT 0'),
+                                       ('recovery_ready', 'INTEGER NOT NULL DEFAULT 0'),
+                                       ('conversion_reserved', 'INTEGER NOT NULL DEFAULT 0')):
+                if column not in columns:
+                    self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' ' + definition)
+            self.db.execute('CREATE INDEX IF NOT EXISTS runnable_jobs ON jobs(state,blocked_condition,submitted)')
+            self.db.execute('COMMIT')
+        except BaseException:
+            self.db.execute('ROLLBACK')
+            raise
+        self.process_blocked = lambda: False
         for column in ('expected_artifacts', 'artifact_states'):
             if column not in columns:
                 self.db.execute('ALTER TABLE jobs ADD COLUMN ' + column + ' TEXT')
@@ -174,7 +192,10 @@ class JobStore:
 
     @contextmanager
     def transaction(self):
-        with self.lock:
+        # Serialize durable admission with integrity detection. Detection either
+        # precedes the reservation (and rejects it) or follows its commit (and
+        # preserves the already-admitted operation). Operator drain is separate.
+        with self.lock, self.integrity_lock:
             if not self.healthy:
                 raise JobError("Persistent state is unavailable; compute admission is closed.", "state_unavailable", 503)
             changes = self.db.total_changes
@@ -210,6 +231,9 @@ class JobStore:
             raise JobError('Upload/snapshot storage capacity is temporarily full', 'storage_full', 503)
 
     def _admit(self, db, amount: int, *, dispatch: bool = False):
+        if self.process_blocked():
+            from .engine import RestartRequired
+            raise RestartRequired('restart_required: execution admission is paused')
         if not dispatch and db.execute("SELECT value FROM settings WHERE key='admission'").fetchone()[0] != "open":
             raise JobError("Service is draining. Please retry later or use your own compute.", "admission_closed", 503)
         if self.policy.public:
@@ -258,8 +282,12 @@ class JobStore:
             if job_id is not None and not db.execute(
                     "SELECT 1 FROM jobs WHERE id=? AND owner=? AND state='running'", (job_id, owner)).fetchone():
                 raise JobError('Conversion requires the admitted running job')
+            if job_id and db.execute('SELECT conversion_reserved FROM jobs WHERE id=?', (job_id,)).fetchone()[0]:
+                return
             self._admit(db, amount, dispatch=job_id is not None)
             db.execute("INSERT INTO operations(owner,created,amount,note) VALUES (?,?,?,'conversion')", (owner, self.clock(), amount))
+            if job_id:
+                db.execute('UPDATE jobs SET conversion_reserved=1 WHERE id=?', (job_id,))
 
     def input_path(self, identifier):
         path = self.inputs / (identifier + '.json')
@@ -472,6 +500,7 @@ class JobStore:
                 if owner not in self.policy.quota_exempt_owners and count >= self.policy.daily_jobs:
                     raise JobError("Your daily free render quota is used up.", "daily_quota", 429)
             db.execute("INSERT INTO jobs(id,owner,input_id,idempotency_key,request_hash,options,state,submitted,reserved) VALUES (?,?,?,?,?,?,'queued',?,?)", (identifier, owner, input_id, idempotency_key, request_hash, encoded, now, reservation))
+            db.execute("UPDATE jobs SET resume_phase='admitted' WHERE id=?", (identifier,))
             db.execute("UPDATE jobs SET session_id=?,submitted_by=?,client_request_hash=?,render_fingerprint=?,source_key=? WHERE id=?", (self.session_id,owner,client_hash,fingerprint,source['source_key'],identifier))
             self._remember_submission(db, owner, input_id, idempotency_key, client_hash, request_hash, identifier)
             db.execute('UPDATE jobs SET operation_key=?,stage_history=?,input_sha256=? WHERE id=?',
@@ -554,7 +583,13 @@ class JobStore:
             stage = 'conversion_pending'
         if stage == 'validation' and row['state'] == 'done':
             stage = 'result_ready'  # Legacy terminal row; no fabricated timing.
+        condition = ('restart_required' if pending and self.process_blocked() else row['blocked_condition']) if pending else None
+        actions = {'restart_required':'restart_service', 'compatibility_blocked':'restore_exact_engine',
+                   'execution_unknown':'inspect_execution', 'recovery_required':'recover_operation'}
         return {"job_id": row["id"], "operation_id": row["id"], "status": status, "queue_position": position,
+                'condition': condition, 'blocked_condition': row['blocked_condition'] if pending else None,
+                'resume_phase': row['resume_phase'] if pending else None,
+                'timing_integrity_conflict': bool(row['timing_conflict']),
                 "stage": stage, "stage_history": json.loads(row['stage_history']),
                 "result_available": available,
                 "bundle_sha256": execution.get('bundle_sha256'),
@@ -567,7 +602,7 @@ class JobStore:
                 "cancel_requested": bool(row["cancel_requested"]), "error": error,
                 "estimated_cost_usd": row["charged"] / 1_000_000,
                 "expires_at": row['result_expires'],
-                "next_action": 'recover_transfer' if status == 'transfer_pending' else ('render_status' if pending else ('render_result' if status=='done' else 'stop')),
+                "next_action": actions[condition] if condition else ('recover_transfer' if status == 'transfer_pending' else ('render_status' if pending else ('render_result' if status=='done' else 'stop'))),
                 "poll_after_seconds": 5 if pending else None,
                 "reused": False}
 
@@ -603,7 +638,7 @@ class JobStore:
                     'inventory_complete': known,
                     'artifacts': [a for a in items if a['availability'] == 'available']}
             metadata = self._public_job(row)
-            data.update({key: metadata[key] for key in ('bundle_sha256', 'render_spec_sha256', 'engine_build', 'timings')})
+            data.update({key: metadata[key] for key in ('bundle_sha256', 'render_spec_sha256', 'engine_build', 'timings', 'timing_integrity_conflict')})
             data['bytes'] = sum(a['size'] for a in data['artifacts'])
             if not inventory and not complete:
                 raise JobError('Render artifacts are unavailable; recovery never starts a replacement render.', 'artifact_unavailable', 410)
@@ -635,8 +670,10 @@ class JobStore:
         return {'job_id': identifier, 'deleted': deleted, 'files_deleted': files, 'bytes_deleted': byte_count}
 
     def claim(self) -> dict | None:
+        if self.process_blocked():
+            return None
         with self.transaction() as db:
-            row = db.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY submitted,rowid LIMIT 1").fetchone()
+            row = db.execute("SELECT * FROM jobs WHERE (state='queued' OR (state='transfer_pending' AND recovery_ready=1)) AND blocked_condition IS NULL ORDER BY submitted,rowid LIMIT 1").fetchone()
             if not row:
                 return None
             # A durable admission reservation already exists. Expiration or an
@@ -645,13 +682,33 @@ class JobStore:
                 self._admit(db, 0, dispatch=True)
             except JobError:
                 return None
-            db.execute("UPDATE jobs SET state='running',started=? WHERE id=?", (self.clock(), row["id"]))
+            db.execute("UPDATE jobs SET state='running',started=?,recovery_ready=0 WHERE id=?", (self.clock(), row["id"]))
             from .telemetry import record
             queued = self._queue_clocks.pop(row['id'], None)
             timing = record('queue', 'controller', time.monotonic()-queued if queued is not None else 0,
                             'executed' if queued is not None else 'unavailable', row['transfer_attempt']+1)
             db.execute('UPDATE jobs SET timings=? WHERE id=?', (json.dumps((json.loads(row['timings'])+[timing])[-256:]), row['id']))
             return dict(row)
+
+    def checkpoint(self, identifier, phase, *, dispatched=False):
+        with self.transaction() as db:
+            db.execute('UPDATE jobs SET resume_phase=?,dispatch_fenced=? WHERE id=?', (phase, int(dispatched), identifier))
+
+    def block(self, identifier, condition, phase):
+        if condition not in {'restart_required', 'compatibility_blocked', 'execution_unknown', 'recovery_required'}:
+            raise ValueError('Unsupported operation condition')
+        with self.transaction() as db:
+            db.execute("""UPDATE jobs SET blocked_condition=?,resume_phase=?,
+                state=CASE WHEN remote_completed_at IS NOT NULL OR state='transfer_pending' THEN 'transfer_pending' ELSE 'queued' END
+                WHERE id=? AND state IN ('queued','running','transfer_pending')""", (condition, phase, identifier))
+            # Cancellation may arrive while the backend is returning a block.
+            # Settle it in this transaction; it must not need another claim.
+            row = db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if row and row['cancel_requested'] and row['state'] in {'queued','transfer_pending'}:
+                charged = row['reserved'] if row['remote_phase'] or row['dispatch_fenced'] or condition in {'execution_unknown','recovery_required'} else 0
+                db.execute("UPDATE jobs SET state='cancelled',finished=?,charged=?,options='{}',error='Render cancelled by a user or operator request.' WHERE id=?", (self.clock(), charged, identifier))
+                self._stage(db, identifier, 'cancelled')
+                self._release_finished_inputs(db)
 
     def set_remote_id(self, identifier: str, remote_id: str):
         with self.transaction() as db:
@@ -677,6 +734,8 @@ class JobStore:
             row = db.execute('SELECT * FROM jobs WHERE id=? AND owner=?', (identifier, owner)).fetchone()
             if not row:
                 raise JobError('Job not found', 'not_found', 404)
+            if self.process_blocked() or row['blocked_condition']:
+                raise JobError('Operation is blocked; inspect its condition', row['blocked_condition'] or 'restart_required', 409)
             if row['state'] == 'transfer_pending':
                 if row['cancel_requested']:
                     raise JobError('Transfer cancelled', 'cancelled', 409)
@@ -688,6 +747,25 @@ class JobStore:
         with self.transaction() as db:
             row = db.execute('SELECT timings FROM jobs WHERE id=?', (identifier,)).fetchone()
             db.execute('UPDATE jobs SET timings=? WHERE id=?', (json.dumps(sanitize(json.loads(row['timings']) + sanitize(records))), identifier))
+
+    def import_child_timings(self, identifier, child_id, records):
+        from .telemetry import sanitize
+        records = sanitize(records)
+        digest = hashlib.sha256(json.dumps(records, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        with self.transaction() as db:
+            row = db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone()
+            if row['remote_id'] != child_id:
+                raise JobError('Child timing operation identity mismatch')
+            previous = json.loads(row['child_timing_import']) if row['child_timing_import'] else None
+            conflict = bool(previous and (previous['child_operation_id'] != child_id or previous['sha256'] != digest))
+            if conflict:
+                db.execute('UPDATE jobs SET timing_conflict=1 WHERE id=?', (identifier,))
+            elif previous is None:
+                marker = {'child_operation_id':child_id, 'sha256':digest,
+                          'imported_at':self.clock(), 'record_count':len(records), 'records':records}
+                db.execute('UPDATE jobs SET child_timing_import=?,timings=? WHERE id=?',
+                           (json.dumps(marker), json.dumps(sanitize(json.loads(row['timings'])+records)), identifier))
+            return bool(row['timing_conflict']) or conflict
 
     def cancelled(self, identifier: str) -> bool:
         with self.lock:
@@ -701,7 +779,7 @@ class JobStore:
                 raise JobError("Job not found.", "not_found", 404)
             if row["state"] in {'queued', 'transfer_pending'}:
                 db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Render cancelled by a user or operator request.' WHERE id=?", (self.clock(), identifier))
-                if row['remote_phase']:
+                if row['remote_phase'] or row['dispatch_fenced'] or row['blocked_condition'] in {'execution_unknown', 'recovery_required'}:
                     db.execute('UPDATE jobs SET charged=reserved WHERE id=?', (identifier,))
                 self._stage(db, identifier, 'cancelled')
             elif row["state"] == "running":
@@ -849,19 +927,33 @@ class JobStore:
 
     def recover_interrupted(self):
         with self.transaction() as db:
-            # A gateway resume observes the already admitted child and transfers
-            # output. It cannot call the fresh child submission path again.
-            db.execute("UPDATE jobs SET state='queued',transfer_attempt=transfer_attempt+1 WHERE state IN ('running','transfer_pending') AND remote_phase IS NOT NULL")
-            interrupted = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='running'")]
-            # Never retry an unknown paid execution or refund its reservation.
-            db.execute("UPDATE jobs SET state='failed',finished=?,charged=reserved,gpu_seconds=?,options='{}',error='Service interrupted. Execution was not retried; submit a new request.' WHERE state='running'", (self.clock(), self.policy.max_job_seconds))
-            for identifier in interrupted:
-                self._stage(db, identifier, 'failed')
-            for row in db.execute("SELECT id,input_id,execution FROM jobs WHERE state='queued'").fetchall():
-                if not row['execution'] and not self.input_path(row['input_id']).is_file():
-                    db.execute("UPDATE jobs SET state='failed',finished=?,options='{}',error='Temporary input lost on restart; upload again.' WHERE id=?", (self.clock(), row['id']))
-                    self._stage(db, row['id'], 'failed')
-            self._release_finished_inputs(db)
+            for row in db.execute("SELECT * FROM jobs WHERE state IN ('queued','running','transfer_pending')").fetchall():
+                condition = row['blocked_condition']
+                child = bool(row['remote_id'] or row['remote_phase'])
+                if condition in {'execution_unknown', 'recovery_required'}:
+                    continue
+                if row['dispatch_fenced'] and not child:
+                    condition = 'execution_unknown'
+                elif not row['resume_phase'] or (not row['execution'] and (child or 'prepare_file' not in json.loads(row['options']))):
+                    condition = 'recovery_required'
+                elif child:
+                    condition = None  # Only observe the same child/lookup key.
+                elif not row['execution'] and not self.input_path(row['input_id']).is_file():
+                    condition = 'recovery_required'
+                else:
+                    from .engine import engine_identity, require_compatible, EngineMismatch
+                    try:
+                        if row['execution']:
+                            frozen = json.loads(row['execution'])
+                            require_compatible(frozen['expected_engine'], engine_identity(), frozen['request']['render_spec']['required_capabilities'])
+                        condition = None
+                    except (ValueError, KeyError):
+                        condition = 'compatibility_blocked'
+                state = 'transfer_pending' if row['remote_completed_at'] is not None else 'queued'
+                # Recovery work is claimable without pretending a completed
+                # child is queued for rendering; claim() handles this below.
+                ready = int(child and condition is None)
+                db.execute('UPDATE jobs SET state=?,blocked_condition=?,recovery_ready=?,transfer_attempt=transfer_attempt+? WHERE id=?', (state, condition, ready, ready, row['id']))
 
     def drain(self):
         with self.transaction() as db:
@@ -875,7 +967,7 @@ class JobStore:
         """Close queued work when operating funds no longer cover execution."""
         with self.transaction() as db:
             queued = [row['id'] for row in db.execute("SELECT id FROM jobs WHERE state='queued'")]
-            db.execute("UPDATE jobs SET charged=reserved WHERE state='queued' AND remote_phase IS NOT NULL")
+            db.execute("UPDATE jobs SET charged=reserved WHERE state='queued' AND (remote_phase IS NOT NULL OR dispatch_fenced=1 OR blocked_condition IN ('execution_unknown','recovery_required'))")
             db.execute("UPDATE jobs SET state='cancelled',cancel_requested=1,finished=?,options='{}',error='Service operating budget exhausted' WHERE state='queued'", (self.clock(),))
             for identifier in queued:
                 self._stage(db, identifier, 'cancelled')

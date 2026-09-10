@@ -1,7 +1,25 @@
 """Provider-injected contracts usable without importing or contacting Modal."""
 from __future__ import annotations
 import json
+import os
 import shlex
+from contextlib import contextmanager
+from pathlib import Path
+import tempfile
+
+
+@contextmanager
+def package_snapshot(root):
+    """One verified inventory for CLI staging and deferred provider image uploads."""
+    from .engine import EngineSeal, process_seal
+    current = process_seal()
+    current.check()
+    root = Path(os.path.abspath(root))
+    seal = current if root in current.aliases or root.resolve() == current.root else EngineSeal(root)
+    with tempfile.TemporaryDirectory(prefix='blender-image-source-') as directory:
+        captured = seal.capture(Path(directory)/'blender_render')
+        current.check()
+        yield captured
 
 
 def convert_file(data, suffix, *, selection='(all)', create_sandbox):
@@ -9,6 +27,8 @@ def convert_file(data, suffix, *, selection='(all)', create_sandbox):
         raise ValueError('Invalid molecular upload')
     if not isinstance(selection, str) or not selection.strip() or '\x00' in selection:
         raise ValueError('Invalid selection')
+    from .engine import protect
+    protect('conversion')
     sandbox = create_sandbox()
     try:
         sandbox.filesystem.write_bytes(data, '/tmp/input' + suffix)

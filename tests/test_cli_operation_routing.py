@@ -242,7 +242,7 @@ def test_controller_launch_carries_deferred_profile_and_converter(monkeypatch):
 def test_explicit_hpc_cold_start_recovers_token_after_status(monkeypatch):
     profile = {'kind': 'hpc', 'host': 'fake-login', 'remote_python': 'python',
                'remote_root': '/fake', 'registry': '/fake/registry', 'image': '/fake.sif',
-               'version': 2, 'launcher': {'kind':'slurm_sbatch', 'arguments': []}}
+               'version': 2, 'transport':'ssh', 'launcher': {'kind':'slurm_sbatch', 'arguments': []}}
     from blender_render.engine import engine_identity
     monkeypatch.setattr(config, 'load_config', lambda: {'profiles': {'lab': profile}})
     calls = []

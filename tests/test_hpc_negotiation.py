@@ -9,7 +9,7 @@ from blender_render import cli, hpc, hpc_remote
 
 
 def profile(tmp_path):
-    return {'version': 2, 'kind':'hpc', 'host':'fake', 'remote_root':str(tmp_path),
+    return {'version': 2, 'transport':'slurm', 'kind':'hpc', 'host':'fake', 'remote_root':str(tmp_path),
             'remote_python':'python', 'registry':str(tmp_path/'registry'), 'image':'fake.sif',
             'launcher': {'kind':'slurm_sbatch', 'arguments':['--gres=gpu:1']}}
 

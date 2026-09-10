@@ -10,17 +10,20 @@ import socket
 import subprocess
 import threading
 import time
+import tempfile
+from blender_render.engine import EngineMismatch, ExecutionUnknown
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
-try:
-    import core as _bridge_runner
-except Exception:  # pragma: no cover - package import fallback
-    from blender_render import core as _bridge_runner
+from blender_render import core as _bridge_runner
 
 
 class WorkerError(RuntimeError):
     """Raised for worker startup/communication failures."""
+
+
+class WorkerNotReady(WorkerError, EngineMismatch):
+    """Known pre-execution rejection, safe to retain for runtime repair."""
 
 
 class PersistentBlenderWorker:
@@ -61,6 +64,8 @@ class PersistentBlenderWorker:
         self._last_command: list[str] = []
         self._logger = logger
         self.observation = None
+        self._capture = None
+        self._captured_package = None
 
     def _log(self, message: str) -> None:
         if self._logger is None:
@@ -71,7 +76,9 @@ class PersistentBlenderWorker:
             return
 
     def _daemon_script_path(self) -> Path:
-        return Path(__file__).resolve().with_name("blender_worker_daemon.py")
+        if self._captured_package is None:
+            raise WorkerError('Worker package has not been captured')
+        return self._captured_package/'blender_worker_daemon.py'
 
     def _resolve_blender_executable(self) -> str:
         blender = str(self.blender_exe)
@@ -86,8 +93,7 @@ class PersistentBlenderWorker:
         daemon_script = self._daemon_script_path()
         if not daemon_script.is_file():
             raise WorkerError(f"Worker daemon script not found: {daemon_script}")
-        if not self.custom_script.is_file():
-            raise WorkerError(f"Custom render script not found: {self.custom_script}")
+        custom_script = self._captured_package/'blender_custom_render.py'
 
         blender_exe = self._resolve_blender_executable()
         command = [
@@ -100,7 +106,7 @@ class PersistentBlenderWorker:
             "--socket",
             str(self.socket_path),
             "--custom-script",
-            str(self.custom_script),
+            str(custom_script),
         ]
 
         if self.use_apptainer:
@@ -110,7 +116,7 @@ class PersistentBlenderWorker:
             bind_paths = [
                 self.root_dir,
                 daemon_script.parent,
-                self.custom_script.parent,
+                custom_script.parent,
                 Path.cwd(),
                 Path.home(),
             ]
@@ -128,10 +134,10 @@ class PersistentBlenderWorker:
         env = os.environ.copy()
         from blender_render.config import load_config, config_root
         runtime_site = env.get("BLENDER_RENDER_SITE") or load_config().get("runtime_site", str(config_root() / "runtime" / "site"))
-        env["PYTHONPATH"] = str(self.custom_script.parent.parent) + os.pathsep + runtime_site + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(self._captured_package.parent) + os.pathsep + runtime_site + os.pathsep + env.get("PYTHONPATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         if self.use_apptainer:
-            env["APPTAINERENV_PYTHONPATH"] = "/opt/runtime/site:/opt:" + env["PYTHONPATH"]
+            env["APPTAINERENV_PYTHONPATH"] = str(self._captured_package.parent) + ":/opt/runtime/site:/opt"
             env["APPTAINERENV_BLENDER_RENDER_SITE"] = "/opt/runtime/site"
         env.setdefault("PRESS_CYCLES_DEVICE", "GPU")
         env.setdefault("PRESS_CYCLES_COMPUTE_TYPE", "AUTO")
@@ -208,17 +214,21 @@ class PersistentBlenderWorker:
                 raise WorkerError("Worker process object is missing during startup.")
             exit_code = process.poll()
             if exit_code is not None:
-                raise WorkerError(
+                raise ExecutionUnknown(
                     "Blender worker exited during startup. "
                     f"exit_code={exit_code} stdout_log={self.stdout_log} stderr_log={self.stderr_log}"
                 )
             if self.socket_path.exists():
                 try:
                     response = self._send_request_locked({"action": "ping"}, timeout=2.0)
+                    if response.get('condition') in {'restart_required','compatibility_blocked'} or response.get('runtime', {}).get('verified') is False:
+                        raise WorkerNotReady('Worker runtime/integrity unavailable; explicit setup or restart required')
                     if str(response.get("status", "")).strip().lower() == "ready":
                         self._log("worker-ready")
                         return
                     last_error = str(response)
+                except WorkerNotReady:
+                    raise
                 except Exception as exc:  # pragma: no cover - startup race path
                     last_error = str(exc)
             now = time.time()
@@ -240,7 +250,13 @@ class PersistentBlenderWorker:
         )
 
     def _start_locked(self) -> None:
+        from blender_render.engine import protect
+        seal = protect('startup')
         self.root_dir.mkdir(parents=True, exist_ok=True)
+        if self.custom_script.resolve() != seal.root/'blender_custom_render.py':
+            raise WorkerError('Renderer script must belong to the sealed engine')
+        self._capture = tempfile.TemporaryDirectory(prefix='engine-', dir=self.root_dir)
+        self._captured_package = seal.capture(Path(self._capture.name)/'blender_render')
         if self.socket_path.exists():
             try:
                 self.socket_path.unlink()
@@ -254,30 +270,39 @@ class PersistentBlenderWorker:
         self._last_command = list(command)
         self._log("worker-start " + " ".join(shlex.quote(part) for part in command))
         try:
+            env = self._subprocess_env()
+            protect('startup')
             self._process = subprocess.Popen(
                 command,
                 stdout=self._stdout_handle,
                 stderr=self._stderr_handle,
                 stdin=subprocess.DEVNULL,
                 text=True,
-                cwd=str(Path.cwd()),
-                env=self._subprocess_env(),
+                cwd=str(self._captured_package.parent),
+                env=env,
                 start_new_session=True,
             )
         except FileNotFoundError as exc:
             self._close_logs_locked()
+            self._discard_capture()
             missing = exc.filename or (command[0] if command else "<unknown>")
-            raise WorkerError(f"Failed to launch Blender worker. Missing executable: {missing}") from exc
+            raise WorkerNotReady(f"Failed to launch Blender worker. Missing executable: {missing}") from exc
         except Exception:
             self._close_logs_locked()
+            self._discard_capture()
             raise
 
-        self._wait_until_ready_locked(timeout=self.worker_start_timeout)
+        try:
+            self._wait_until_ready_locked(timeout=self.worker_start_timeout)
+        except Exception:
+            self._stop_locked()
+            raise
 
     def _stop_locked(self) -> None:
         process = self._process
         if process is None:
             self._close_logs_locked()
+            self._discard_capture()
             if self.socket_path.exists():
                 try:
                     self.socket_path.unlink()
@@ -313,12 +338,18 @@ class PersistentBlenderWorker:
             except subprocess.TimeoutExpired:
                 self._log('worker-exit-wait admission-retained')
         self._process = None
+        self._discard_capture()
         self._close_logs_locked()
         if self.socket_path.exists():
             try:
                 self.socket_path.unlink()
             except Exception:
                 pass
+
+    def _discard_capture(self):
+        if self._capture is not None:
+            self._capture.cleanup()
+        self._capture = self._captured_package = None
 
     def _ensure_started_locked(self) -> None:
         process = self._process
@@ -338,18 +369,21 @@ class PersistentBlenderWorker:
             self._ensure_started_locked()
 
     def _negotiate_locked(self, expected, requirements):
-        from blender_render.engine import require_compatible
+        from blender_render.engine import require_compatible, protect, RestartRequired
+        protect("startup")
         for attempt in range(2):
             observed = self._send_request_locked({'action': 'ping'}, timeout=2)
             self.observation = observed
             try:
+                if observed.get('condition') == 'restart_required':
+                    raise RestartRequired('restart_required: worker integrity changed')
                 require_compatible(expected, observed.get('engine'), requirements)
                 if not observed.get('runtime', {}).get('verified'):
                     raise ValueError('Worker runtime missing or incompatible; explicit setup required')
                 return
             except ValueError as exc:
                 if attempt:
-                    raise WorkerError(str(exc)) from exc
+                    raise WorkerNotReady(str(exc)) from exc
                 self._stop_locked()
                 self._start_locked()
 
@@ -389,6 +423,8 @@ class PersistentBlenderWorker:
             "run_manifest": str(Path(run_manifest).expanduser()),
         }
 
+        from blender_render.engine import protect, RestartRequired
+        protect('startup')
         with self._lock:
             startup_started = time.monotonic()
             was_warm = self._process is not None and self._process.poll() is None
@@ -421,13 +457,17 @@ class PersistentBlenderWorker:
                 f"structure={structure_path} output={output_png} timeout={float(timeout):.1f}s"
             )
             try:
+                protect('dispatch')
                 response = self._send_request_locked(request_payload, timeout=timeout)
-            except Exception:
+            except Exception as exc:
                 # An ambiguous result must never replay paid work. The next
                 # distinct job starts a fresh worker after this one is stopped.
                 self.interrupt()
                 self._stop_locked()
-                raise
+                if isinstance(exc, RestartRequired):
+                    exc.before_execution = True
+                    raise
+                raise ExecutionUnknown('Worker execution outcome unknown; no automatic replay') from exc
             finally:
                 completed.set()
                 watcher.join()
@@ -435,6 +475,14 @@ class PersistentBlenderWorker:
 
         status = str(response.get("status", "")).strip().lower()
         response['timings'] = [startup_timing, *response.get('timings', [])]
+        if response.get('condition') == 'restart_required':
+            error = RestartRequired('restart_required: worker rejected render before execution')
+            error.before_execution = True
+            raise error
+        if response.get('condition') == 'compatibility_blocked':
+            raise WorkerNotReady('Worker refused execution; explicit runtime setup required')
+        if response.get('condition') == 'execution_unknown':
+            raise ExecutionUnknown('Worker outcome unknown; no automatic replay')
         if status != "completed":
             message = str(response.get("error", "")).strip() or f"Worker returned status={status or '<unknown>'}"
             raise WorkerError(message)

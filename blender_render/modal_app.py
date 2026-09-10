@@ -17,26 +17,30 @@ APP_NAME = os.environ.get("BLENDER_RENDER_APP_NAME") or ("blender-render-beta" i
 PERSONAL = APP_NAME not in {"blender-render-beta", "blender-render-beta-dev"}
 JOB_TIMEOUT = int(os.environ.get("BLENDER_RENDER_JOB_TIMEOUT", "600"))
 app = modal.App(APP_NAME)
-package = Path(__file__).resolve().parent
+from .modal_boundaries import package_snapshot
+# Modal consumes local files lazily. Retain this private verified capture for
+# the module lifetime so image descriptors never upload caches or changed source.
+_package_snapshot = package_snapshot(Path(__file__).parent)
+package = _package_snapshot.__enter__()
 shared_env = {"PYTHONPATH":"/opt:/opt/runtime/site", "BLENDER_RENDER_SITE":"/opt/runtime/site", "BLENDER_RENDER_PUBLIC":"1" if PUBLIC else "0", "PYTHONUNBUFFERED":"1"}
 shared_env.update(BLENDER_RENDER_APP_NAME=APP_NAME, BLENDER_RENDER_JOB_TIMEOUT=str(JOB_TIMEOUT))
 
 controller_image = (modal.Image.debian_slim(python_version="3.11")
     .add_local_file(package / "service-requirements.txt", "/tmp/service-requirements.txt", copy=True)
     .run_commands("python -m pip install --require-hashes --only-binary=:all: -r /tmp/service-requirements.txt")
-    .env(shared_env).add_local_dir(package, "/opt/blender_render", copy=True, ignore=["__pycache__", "*.pyc"]))
+    .env(shared_env).add_local_dir(package, "/opt/blender_render", copy=True))
 
 renderer_image = (modal.Image.debian_slim(python_version="3.11")
     .apt_install("curl", "xz-utils", "libgl1", "libegl1", "libx11-6", "libxi6", "libxrender1", "libxfixes3", "libxxf86vm1", "libxkbcommon0", "libsm6", "libice6", "libglib2.0-0", "libfontconfig1", "libxrandr2", "libxinerama1", "libxcursor1", "libwayland-client0", "libpulse0")
     .env(shared_env))
-for filename in ("__init__.py", "config.py", "runtime.lock.json", "runtime-requirements.txt", "runtime_install.py", "runtime_initialize.py"):
+for filename in ("__init__.py", "config.py", "engine.py", "runtime.lock.json", "runtime-requirements.txt", "runtime_install.py", "runtime_initialize.py"):
     renderer_image = renderer_image.add_local_file(package / filename, "/opt/blender_render/" + filename, copy=True)
 renderer_image = (renderer_image.run_commands("python -c 'from blender_render.runtime_install import install; install(root=\"/opt/runtime\")'")
     .add_local_file(package / "service-requirements.txt", "/tmp/service-requirements.txt", copy=True)
     # Hide Blender's --target directory from pip's installed-package discovery:
     # otherwise upgrading an HTTP dependency can uninstall a renderer wheel.
     .run_commands("PYTHONPATH= python -m pip install --require-hashes --only-binary=:all: -r /tmp/service-requirements.txt")
-    .add_local_dir(package, "/opt/blender_render", copy=True, ignore=["__pycache__", "*.pyc"])
+    .add_local_dir(package, "/opt/blender_render", copy=True)
     .run_commands('/opt/runtime/blender-5.0.1-linux-x64/blender --background --python-use-system-env --python-exit-code 1 --python /opt/blender_render/runtime_initialize.py'))
 
 converter_image = (modal.Image.debian_slim(python_version="3.11")
@@ -57,7 +61,7 @@ class GPUWorker:
     @modal.enter()
     def start(self):
         from blender_render.worker_http import create_worker
-        self.server, self.thread = start_http(create_worker(os.environ['BLENDER_RENDER_WORKER_TOKEN'], timeout=JOB_TIMEOUT))
+        self.server, self.thread = start_http(create_worker(os.environ['BLENDER_RENDER_WORKER_TOKEN'], timeout=JOB_TIMEOUT, max_atoms=100000, max_bytes=50*1024**2))
 
     @modal.exit()
     def stop(self):

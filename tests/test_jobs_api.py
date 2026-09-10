@@ -229,11 +229,13 @@ def test_unknown_execution_is_never_replayed_or_refunded(tmp_path, payload):
     source = store.add_input("a", payload)
     one = store.submit("a", source["input_id"], {}, "one")
     store.claim()
+    store.checkpoint(one['job_id'], 'dispatch', dispatched=True)
     store.close()
     store = JobStore(tmp_path, Policy(public=True))
     service = RenderService(store, Compute())
-    assert store.get("a", one["job_id"])["status"] == "failed"
-    assert store.quota("a")["estimated_spent_usd"] == pytest.approx(.312)
+    assert store.get("a", one["job_id"])["condition"] == "execution_unknown"
+    reservation = store.db.execute('SELECT reserved,charged FROM jobs').fetchone()
+    assert reservation['reserved'] == 312000 and reservation['charged'] == 0
     assert store.claim() is None
     store.close()
 
@@ -671,8 +673,9 @@ def test_abandoned_upload_cleanup_and_new_worker_restart_loses_no_privacy_data(t
     store.close()
     restarted = JobStore(tmp_path/'state', data_root=tmp_path/'second', clock=lambda:now[0])
     service = RenderService(restarted, Compute())
-    assert restarted.get('a', job['job_id'])['status'] == 'failed'
-    assert restarted.list_inputs('a')['structures'] == []
+    assert restarted.get('a', job['job_id'])['condition'] == 'recovery_required'
+    assert restarted.db.execute('SELECT input_id FROM jobs WHERE id=?', (job['job_id'],)).fetchone()[0] == source['input_id']
+    assert restarted.claim() is None
     assert service.backend.calls == []
     restarted.close()
     normal = prepare_options({"save_blend":True}, payload, public=True, timeout=600)

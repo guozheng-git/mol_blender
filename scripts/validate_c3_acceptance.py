@@ -41,7 +41,7 @@ def prerequisites(config, fixture, blender, profile):
 def main():
     from blender_render.config import load_config, save_config
     from blender_render.core import _detect_host_blender_executable
-    from blender_render.engine import engine_identity
+    from blender_render.engine import engine_identity, reviewed_checkout
     from blender_render.execution import freeze_execution
     from blender_render.service import prepare_options, validate_input
     from blender_render.client import Client
@@ -56,7 +56,8 @@ def main():
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     if commit != args.commit:
         raise ValueError('Acceptance requires the exact reviewed commit')
-    subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--'], cwd=ROOT, check=True)
+    if not reviewed_checkout(ROOT)['clean']:
+        raise ValueError('Acceptance requires clean reviewed inputs, including relevant untracked/ignored files')
     config = load_config()
     profile = config.get('profiles', {}).get(args.profile)
     blender = args.blender or config.get('blender') or _detect_host_blender_executable()

@@ -132,25 +132,52 @@ class Client:
         return self.request('POST', '/v1/jobs/' + quote(job_id, safe='') + '/recover-transfer')
 
 
+from enum import Enum
+
+
+class ConnectionIntention(str, Enum):
+    INSPECT_CACHED = 'inspect_cached'
+    ATTACH_EXISTING = 'attach_existing'
+    START_OR_ALLOCATE = 'start_or_allocate'
+
+
+def connection_intention(intention=None, *, read_only=None, attach_only=None):
+    legacy = (ConnectionIntention.ATTACH_EXISTING if attach_only else
+              ConnectionIntention.INSPECT_CACHED if read_only else None)
+    if attach_only and read_only:
+        raise ValueError('Conflicting connection intentions')
+    selected = ConnectionIntention(intention) if intention is not None else legacy
+    if legacy is not None and selected != legacy:
+        raise ValueError('Conflicting connection intentions')
+    return selected
+
+
 class ConfiguredClient(Client):
     """Construction and all reads are inert with respect to service startup."""
-    def __init__(self, profile, read_only, options):
-        self.profile, self.read_only, self.options = profile, read_only, options
+    def __init__(self, profile, intention, options):
+        self.profile, self.intention, self.options = profile, intention, options
 
     def request(self, method, path, body=None, **kwargs):
         start = method == 'POST' and (path == '/v1/structures' or path in {'/v1/jobs', '/internal/v1/resolved'}
             or path.startswith(('/v1/files/', '/v1/render-files/')))
-        connection = _connect_client(self.profile, read_only=self.read_only or not start, **self.options)
+        intention = self.intention or (ConnectionIntention.START_OR_ALLOCATE if start else ConnectionIntention.INSPECT_CACHED)
+        if not start and intention == ConnectionIntention.START_OR_ALLOCATE:
+            intention = ConnectionIntention.INSPECT_CACHED
+        if start and intention != ConnectionIntention.START_OR_ALLOCATE:
+            raise ClientError('Connection intention prohibits new execution submission')
+        connection = _connect_client(self.profile, intention=intention, **self.options)
         return connection.request(method, path, body, **kwargs)
 
     def download(self, job_id, output):
         # Resolve credentials without startup, then scope receipts to this
         # concrete service and credential. No upload/submit fallback exists.
-        return _connect_client(self.profile, read_only=True, **self.options).download(job_id, output)
+        intention = (ConnectionIntention.ATTACH_EXISTING if self.intention == ConnectionIntention.ATTACH_EXISTING
+                     else ConnectionIntention.INSPECT_CACHED)
+        return _connect_client(self.profile, intention=intention, **self.options).download(job_id, output)
 
 
-def configured_client(profile='local', *, read_only=False, **kwargs):
-    return ConfiguredClient(profile, read_only, kwargs)
+def configured_client(profile='local', *, read_only=None, intention=None, attach_only=None, **kwargs):
+    return ConfiguredClient(profile, connection_intention(intention, read_only=read_only, attach_only=attach_only), kwargs)
 
 
 def start_service(profile='local', **kwargs):
@@ -158,7 +185,9 @@ def start_service(profile='local', **kwargs):
     return _connect_client(profile, read_only=False, **kwargs).request('GET', '/health')
 
 
-def _connect_client(profile="local", *, read_only=False, admission=False, **kwargs):
+def _connect_client(profile="local", *, read_only=None, admission=False, intention=None, attach_only=None, **kwargs):
+    intention = connection_intention(intention, read_only=read_only, attach_only=attach_only) or ConnectionIntention.START_OR_ALLOCATE
+    read_only = intention != ConnectionIntention.START_OR_ALLOCATE
     controller_owner = kwargs.pop('controller_owner', None)
     from .config import load_config
     if profile in {"local", "apptainer"}:
@@ -180,7 +209,8 @@ def _connect_client(profile="local", *, read_only=False, admission=False, **kwar
                               else ensure_local(worker_profile=profile, **kwargs))
             else:
                 from .hpc import connect, existing_connection
-                connection = existing_connection(profile) if read_only else connect(profile, connection, **kwargs)
+                connection = (existing_connection(profile) if intention == ConnectionIntention.INSPECT_CACHED
+                              else connect(profile, connection, intention=intention, **kwargs))
     if connection.get("auth") == "oauth" and controller_owner is None:
         from .oauth_client import access_token
         return Client(connection["url"], access_token(connection["url"]), timeout=120)

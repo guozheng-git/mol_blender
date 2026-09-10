@@ -25,6 +25,7 @@ def test_identity_cache_and_source_change(tmp_path):
     root = Path(engine.__file__).resolve().parent
     (tmp_path/'package').mkdir()
     for name in engine.generate_manifest(root)['files']:
+        (tmp_path/'package'/name).parent.mkdir(parents=True, exist_ok=True)
         copy2(root/name, tmp_path/'package'/name)
     first = engine.generate_manifest(tmp_path/'package')
     script = tmp_path/'package'/'geometry.py'

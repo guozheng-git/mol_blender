@@ -64,7 +64,8 @@ from blender_render.presets import PRESET_OUTPUT_FILENAMES, PRESET_STYLE_FILENAM
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
 
 # Derive accepted keys from the packaged schema instead of duplicating them.
-_SCHEMA = json.loads(STYLE_SCHEMA_PATH.read_text(encoding="utf-8"))
+from blender_render.engine import resource_bytes
+_SCHEMA = json.loads(resource_bytes(STYLE_SCHEMA_PATH))
 _STYLE_VALIDATOR = Draft202012Validator(_SCHEMA)
 REQUIRED_STYLE_TOP_KEYS = tuple(_SCHEMA["required"])
 STYLE_TOP_LEVEL_OPTIONAL_KEYS = set(_SCHEMA["properties"]) - set(REQUIRED_STYLE_TOP_KEYS)
@@ -133,7 +134,7 @@ def _default_remote_python_executable() -> str:
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(resource_bytes(path))
     except FileNotFoundError as exc:
         raise RunnerError(f"JSON file not found: {path}") from exc
     except json.JSONDecodeError as exc:

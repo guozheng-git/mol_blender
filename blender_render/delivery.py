@@ -35,7 +35,8 @@ def recover_result(client, job_id, output):
         return _recover(client, job_id, output, receipt_path)
 
 
-def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ack=False, expected_execution=None):
+def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ack=False, expected_execution=None,
+             on_child_timings=None, attempt=1, before_action=None):
     from .client import ClientError
     started = time.monotonic()
     output = Path(output).expanduser().resolve()
@@ -51,6 +52,7 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
     manifest = {}
     timings = []
     try:
+        if before_action: before_action()
         result = client.request('GET', base + '/result?inventory=true')
         if result.get('delivery_policy') != 'explicit_ack_v1':
             raise ClientError('Service does not support recoverable delivery; upgrade it before download. No render was submitted.')
@@ -67,6 +69,8 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
         manifest = result.get('manifest', {})
         from .telemetry import sanitize
         timings = sanitize(result.get('timings', []))
+        if on_child_timings is not None:
+            receipt['timing_integrity_conflict'] = on_child_timings(timings)
     except (ClientError, OSError):
         if not receipt['artifacts']:
             raise
@@ -106,6 +110,7 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
             if not verified:
                 if item.get('availability') != 'available' or item.get('sha256') is None or item.get('size') is None:
                     raise ClientError('artifact_unavailable: expected artifact has no verified local copy and is unavailable remotely')
+                if before_action: before_action()
                 raw = client.request('GET', base + '/artifacts/' + name + '?delivery=ack', binary=True)
                 if len(raw) != item['size'] or hashlib.sha256(raw).hexdigest() != item['sha256']:
                     item['checksum_failure'] = True
@@ -119,6 +124,7 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
             if before_ack:
                 before_ack()
             try:
+                if before_action: before_action()
                 client.request('POST', base + '/artifacts/' + name + '/ack', {'sha256': item['sha256']})
             except (ClientError, OSError) as exc:
                 # Output is safe locally; server retains it until ack or TTL.
@@ -137,12 +143,15 @@ def _recover(client, job_id, output, receipt_path, *, before_ack=None, strict_ac
     if not receipt.get('inventory_complete', False):
         errors['inventory'] = 'artifact_unavailable: original required inventory could not be reconstructed'
     from .telemetry import record, sanitize
-    timings = sanitize(timings + [record('delivery', 'gateway' if strict_ack else 'client', time.monotonic()-started,
-                                        'executed' if complete else 'interrupted')])
+    delivery_timings = [record('delivery', 'gateway' if strict_ack else 'client', time.monotonic()-started,
+                               'executed' if complete else 'interrupted', attempt)]
+    timings = sanitize(timings + delivery_timings)
     receipt['timings'] = timings
     _atomic(receipt_path, json.dumps(receipt).encode())
     return {'job_id': job_id, 'outputs': paths, 'manifest': manifest,
             'timings': timings,
+            'delivery_timings': delivery_timings,
+            'timing_integrity_conflict': receipt.get('timing_integrity_conflict', False),
             'complete': complete, 'errors': errors, 'missing_required': missing,
             'error_code': None if complete else 'artifact_unavailable',
             'artifacts': receipt['artifacts'],

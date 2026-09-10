@@ -36,11 +36,18 @@ def _load_renderer_module(custom_script: Path) -> ModuleType:
     if not path.is_file():
         raise RuntimeError(f"Renderer script not found: {path}")
 
+    from blender_render.engine import protect, RestartRequired
+    seal = protect('render')
+    if path.resolve() != seal.root / 'blender_custom_render.py':
+        raise RestartRequired('Renderer must be the sealed package entrypoint')
     spec = importlib.util.spec_from_file_location("bridge_custom_render_worker", str(path))
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not load renderer module from: {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    source = seal.inputs['blender_custom_render.py']
+    seal.check()
+    exec(compile(source, str(path), 'exec'), module.__dict__)
+    seal.check()
     if not hasattr(module, "_render"):
         raise RuntimeError("Renderer module does not define _render(args).")
     return module
@@ -73,11 +80,21 @@ def _write_json_response(conn: socket.socket, payload: dict[str, Any]) -> None:
     conn.sendall((json.dumps(payload, sort_keys=True) + "\n").encode("utf-8"))
 
 
+def _error_response(exc):
+    from blender_render.engine import RestartRequired, EngineMismatch, ExecutionUnknown
+    condition = ('restart_required' if isinstance(exc, RestartRequired) else
+                 'compatibility_blocked' if isinstance(exc, EngineMismatch) else
+                 'execution_unknown' if isinstance(exc, ExecutionUnknown) else None)
+    return {'status':'error', 'error':str(exc), 'condition':condition,
+            'before_execution':getattr(exc, 'before_execution', isinstance(exc, EngineMismatch)),
+            'traceback':traceback.format_exc(), 'pid':os.getpid()}
+
+
 def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]:
-    from blender_render.engine import engine_identity, require_compatible, runtime_observation
+    from blender_render.engine import engine_identity, require_compatible, runtime_observation, RuntimeUnavailable
     require_compatible(request.get('expected_engine'), engine_identity(), request.get('required_capabilities', []))
     if not runtime_observation()['verified']:
-        raise RuntimeError('Worker runtime mismatch; explicit setup required')
+        raise RuntimeUnavailable('Worker runtime mismatch; explicit setup required')
     structure_path = str(request.get("structure_path", "")).strip()
     view_json = str(request.get("view_json", "")).strip()
     style_json = str(request.get("style_json", "")).strip()
@@ -105,8 +122,12 @@ def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]
         output_png=output_png,
         run_manifest=run_manifest,
     )
-    started = time.monotonic()
+    from blender_render.engine import protect
+    protect('render')
+    if not runtime_observation()['verified']:
+        raise RuntimeUnavailable('Worker CCD/runtime mismatch; explicit setup required')
     renderer._bridge_dispatch_count = getattr(renderer, '_bridge_dispatch_count', 0) + 1
+    started = time.monotonic()
     renderer._render(args)
     elapsed = round(time.monotonic() - started, 3)
     manifest_path = Path(run_manifest)
@@ -131,15 +152,27 @@ def _run_server(args: argparse.Namespace) -> int:
         socket_path = (Path.cwd() / socket_path).absolute()
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 
+    from blender_render.engine import protect, RestartRequired, RuntimeUnavailable
+    startup_error = None
     try:
+        protect('render')
         renderer = _load_renderer_module(Path(args.custom_script))
         renderer._configure_molecularnodes_import_path()
+        # Worker-only runtime closure; no controller imports these dependencies.
+        import molecularnodes
+        import molecularnodes.nodes.styles
+        import biotite.structure
+        import biotite.structure.io.pdbx
+        renderer._ensure_molecularnodes_ready(molecularnodes)
+        protect('render')
         from blender_render.engine import engine_identity, runtime_observation
         loaded_engine = engine_identity()
         loaded_runtime = runtime_observation()
     except Exception as exc:
-        print(f"blender_worker_daemon: failed to load renderer: {exc}", file=sys.stderr)
-        return 1
+        # Remain available for a typed readiness refusal and shutdown. An exit
+        # without this report would make the controller infer a generic failure.
+        startup_error = _error_response(exc if isinstance(exc, RestartRequired) else
+                                         RuntimeUnavailable('Worker runtime initialization unavailable; explicit setup required'))
 
     if socket_path.exists():
         try:
@@ -182,20 +215,25 @@ def _run_server(args: argparse.Namespace) -> int:
             try:
                 request = _read_json_request(conn)
                 action = str(request.get("action", "")).strip().lower()
+                if action == "shutdown":
+                    _write_json_response(conn, {"status": "shutting_down", "pid": os.getpid()})
+                    running = False
+                    continue
+                if startup_error:
+                    _write_json_response(conn, startup_error)
+                    continue
                 if action == "ping":
+                    protect('render')
+                    loaded_runtime = runtime_observation()
                     _write_json_response(
                         conn,
                         {
-                            "status": "ready",
+                            "status": "ready" if loaded_runtime["verified"] else "unavailable",
                             "pid": os.getpid(),
                             'engine': loaded_engine,
                             'runtime': loaded_runtime,
                         },
                     )
-                    continue
-                if action == "shutdown":
-                    _write_json_response(conn, {"status": "shutting_down", "pid": os.getpid()})
-                    running = False
                     continue
                 if action != "render_job":
                     raise RuntimeError(f"Unsupported action: {action or '<empty>'}")
@@ -204,15 +242,7 @@ def _run_server(args: argparse.Namespace) -> int:
                 result["pid"] = os.getpid()
                 _write_json_response(conn, result)
             except Exception as exc:
-                _write_json_response(
-                    conn,
-                    {
-                        "status": "error",
-                        "error": str(exc),
-                        "traceback": traceback.format_exc(),
-                        "pid": os.getpid(),
-                    },
-                )
+                _write_json_response(conn, _error_response(exc))
 
     try:
         server.close()

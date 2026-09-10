@@ -13,7 +13,8 @@ import threading
 import time
 from pathlib import Path
 
-from .client import configured_client
+from .client import configured_client, ConnectionIntention
+from .engine import protect, RestartRequired
 from .jobs import JobError
 
 
@@ -38,7 +39,9 @@ class GatewayBackend:
         child_id = row['remote_id']
         completed = row['remote_completed_at'] is not None
         owner = row['owner']
-        client = configured_client(self.profile, read_only=bool(child_id or row['remote_phase']), controller_owner=owner)
+        protect('transfer' if child_id or row['remote_phase'] else 'submission')
+        client = configured_client(self.profile, intention=(ConnectionIntention.ATTACH_EXISTING
+            if child_id or row['remote_phase'] else ConnectionIntention.START_OR_ALLOCATE), controller_owner=owner)
         key = 'gateway-' + identifier
         sink = lambda record: self.store.add_timings(identifier, [record])
         try:
@@ -53,9 +56,14 @@ class GatewayBackend:
                     envelope = {**request_snapshot(request), 'controller_id':'controller',
                                 'owner_id':owner, 'operation_id':key}
                     with measure(sink, 'allocation', 'gateway'):
+                        protect('submission')
                         job = client.request('POST', '/internal/v1/resolved', envelope)
                 child_id = job['job_id']
                 self.store.set_remote_id(identifier, child_id)
+                # Submission permission ends when a child is known. Every
+                # subsequent repair is attachment to that allocation only.
+                client = configured_client(self.profile, intention=ConnectionIntention.ATTACH_EXISTING,
+                                           controller_owner=owner)
             self.active = client, child_id, completed
             deadline = time.monotonic() + request.get('job_timeout_seconds', 1800)
             recovery_requested = False
@@ -73,6 +81,7 @@ class GatewayBackend:
                 if state['status'] == 'transfer_pending':
                     if recovery_requested:
                         raise TransferPending('child_observation_pending')
+                    protect('transfer')
                     client.request('POST', '/v1/jobs/' + child_id + '/recover-transfer')
                     recovery_requested = True
                 if cancelled():
@@ -86,13 +95,17 @@ class GatewayBackend:
             if cancelled():
                 raise TransferPending('child_transfer_pending')
             root = self.store.root / 'child-results' / identifier
+            protect('transfer')
             with measure(sink, 'transfer', 'gateway', row['transfer_attempt'] + 1):
                 result = _recover(client, child_id, root / 'render.png', root / 'receipt.json',
                                   before_ack=self.store.sync, strict_ack=True,
+                                  before_action=lambda:protect('transfer'),
+                                  attempt=row['transfer_attempt'] + 1,
+                                  on_child_timings=lambda records:self.store.import_child_timings(identifier, child_id, records),
                                   expected_execution={'bundle_sha256':request['bundle_sha256'],
                                       'render_spec_sha256':request['render_spec']['sha256'],
                                       'engine_build':request['expected_engine']['engine_build']})
-            self.store.add_timings(identifier, result.get('timings', []))
+            self.store.add_timings(identifier, result.get('delivery_timings', []))
             if not result['complete']:
                 raise TransferPending('child_transfer_pending')
             response = {'status':'completed', 'manifest':result['manifest'], 'runtime_seconds':None, 'timings':[]}
@@ -102,6 +115,8 @@ class GatewayBackend:
             if 'png_base64' not in response or request.get('save_blend') and 'blend_base64' not in response:
                 raise TransferPending('child_transfer_pending')
             return response
+        except RestartRequired:
+            raise
         except EngineMismatch as exc:
             raise TransferPending('execution_incompatible') from exc
         except ChildRenderFailed:
@@ -154,11 +169,15 @@ class ApptainerConverter:
         with self.lock, tempfile.TemporaryDirectory(prefix='blender-convert-') as directory:
             root = Path(directory)
             (root / ('input' + suffix)).write_bytes(data)
+            seal = protect('conversion')
+            seal.capture(root/'engine'/'blender_render')
             command = [self.executable, 'exec', '--containall', '--cleanenv', '--no-eval',
                        '--net', '--network', 'none', '--no-home', '--no-mount', 'hostfs,bind-paths,home,cwd',
                        '--writable-tmpfs', '--bind', str(root) + ':/work', '--pwd', '/work',
-                       self.image, '/usr/bin/python3', '/opt/blender_render/export.py',
+                       '--env', 'PYTHONPATH=/work/engine',
+                       self.image, '/usr/bin/python3', '/work/engine/blender_render/export.py',
                        '/work/input' + suffix, '/work/payload.json', '--selection', selection]
+            protect('conversion')
             process = subprocess.Popen(command, cwd=directory, env={'PATH':os.defpath, 'QT_QPA_PLATFORM':'offscreen'},
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             try:
@@ -211,7 +230,6 @@ def serve_gateway(args):
         raise ValueError('The gateway credentials file is incomplete')
     with file_lock(args.root / 'service.lock', blocking=False):
         store = JobStore(args.root, Policy(max_job_seconds=args.job_timeout))
-        store.resume()
         backend = GatewayBackend(store, args.profile)
         service = RenderService(store, backend)
         provider = github_provider(store, client_id=credentials['GITHUB_CLIENT_ID'], client_secret=credentials['GITHUB_CLIENT_SECRET'],

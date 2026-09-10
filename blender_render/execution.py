@@ -29,7 +29,7 @@ def freeze_execution(payload, request):
             'request': copy.deepcopy(request), 'expected_engine': engine_identity()}
 
 
-def validate_snapshot(snapshot, *, public=False, max_atoms=10000000, max_bytes=50*1024**2, timeout=600):
+def validate_snapshot(snapshot, *, public=False, max_atoms=10000000, max_bytes=50*1024**2, timeout=600, for_execution=True):
     from .service import validate_input
     from .core import validate_style_document
     from .presets import required_capabilities
@@ -82,9 +82,11 @@ def validate_snapshot(snapshot, *, public=False, max_atoms=10000000, max_bytes=5
                    or output['samples'] > 512 or style['renderer']['engine'] != 'CYCLES'
                    or style['renderer'].get('device') != 'GPU' or style['renderer'].get('require_gpu') is not True):
         raise ValueError('Resolved request conflicts with receiving resource/security policy')
-    require_compatible(snapshot['expected_engine'], engine_identity(), metadata['required_capabilities'])
-    if snapshot['expected_engine'] != engine_identity():
-        raise ValueError('Resolved engine manifest does not match the exact installed build declaration')
+    if for_execution:
+        require_compatible(snapshot['expected_engine'], engine_identity(), metadata['required_capabilities'])
+        if snapshot['expected_engine'] != engine_identity():
+            from .engine import EngineMismatch
+            raise EngineMismatch('Resolved engine manifest does not match the exact installed build declaration')
     if style['version'] not in snapshot['expected_engine']['schema_versions'] or bundle['version'] not in snapshot['expected_engine']['bundle_versions']:
         raise ValueError('Unsupported engine schema or bundle version')
     return copy.deepcopy(snapshot)

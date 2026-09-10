@@ -17,6 +17,7 @@ from starlette.background import BackgroundTask
 from .config import VERSION
 from .jobs import JobError
 from .service import RenderService
+from .engine import RestartRequired, EngineMismatch, ExecutionUnknown
 
 
 class Downloads:
@@ -131,6 +132,19 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
     async def job_error(request, exc):
         return JSONResponse({"error": str(exc), "code": exc.code}, status_code=exc.status)
 
+    @app.exception_handler(RestartRequired)
+    async def restart_required(request, exc):
+        return JSONResponse({'error':'Service integrity changed; restart required',
+                             'code':'restart_required', 'next_action':'restart_service'}, status_code=503)
+
+    @app.exception_handler(EngineMismatch)
+    @app.exception_handler(ExecutionUnknown)
+    async def execution_condition(request, exc):
+        unknown = isinstance(exc, ExecutionUnknown)
+        return JSONResponse({'error':'Execution requires recovery or compatible runtime setup',
+                             'code':'execution_unknown' if unknown else 'compatibility_blocked',
+                             'next_action':'inspect_execution' if unknown else 'restore_exact_engine'}, status_code=503)
+
     @app.middleware("http")
     async def size_limit(request: Request, call_next):
         raw_length = request.headers.get("content-length", "0")
@@ -209,10 +223,8 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
         with service.store.lock:
             queue = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='queued'").fetchone()[0]
             running = service.store.db.execute("SELECT COUNT(*) FROM jobs WHERE state='running'").fetchone()[0]
-        from .engine import engine_identity
-        return {"status": "ok" if service.store.healthy else "unavailable", "version": VERSION, "queue_depth": queue, "running": running,
-                'controller_declaration': engine_identity(),
-                'worker_observation': getattr(getattr(service.backend, 'worker', None), 'observation', None)}
+        return {"status": "restart_required" if service.integrity.latched else ("ok" if service.store.healthy else "unavailable"),
+                "version": VERSION, "queue_depth": queue, "running": running}
 
     @app.get("/v1/quota")
     async def quota(identity=Depends(owner)):
@@ -225,11 +237,13 @@ def create_app(service: RenderService, *, token: str, public_url: str = "", sign
 
     @app.get('/v1/capabilities')
     async def capabilities(identity=Depends(owner)):
-        from .engine import engine_identity
+        from .engine import engine_identity, sanitized_observation
         from .config import runtime_versions
         return {'version': VERSION, 'required_runtime': runtime_versions(), 'runtime_verified': False,
                 'capabilities': engine_identity()['capabilities'], 'controller_declaration': engine_identity(),
-                'worker_observation': getattr(getattr(service.backend, 'worker', None), 'observation', None),
+                'worker_observation': sanitized_observation(getattr(getattr(service.backend, 'worker', None), 'observation', None)),
+                'retrieval_protocol': 'explicit_ack_v1',
+                'condition': 'restart_required' if service.integrity.latched else None,
                 'limitation': 'Installed controller declaration, not a live compute probe.'}
 
     @app.post("/v1/structures")
