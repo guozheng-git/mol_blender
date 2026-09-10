@@ -116,6 +116,33 @@ commit; exact-commit real acceptance is the next step, subject to prerequisites.
 Modal implemented and contract-tested; real backend execution unverified.
 No D work, deployment, hosted-policy modification, push or publication occurred.
 
+### C3 exact-commit acceptance prerequisite result
+
+Implementation and runner committed as
+`1eb9ee41ffe44845b3be3b464aee8d1dcadf1562` on `codex/public-release`; no push.
+After that commit, the acceptance runner executed:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /tmp/blender-c3-test-env311/bin/python scripts/validate_c3_acceptance.py --commit 1eb9ee41ffe44845b3be3b464aee8d1dcadf1562 --output /tmp/blender-c3-acceptance-1eb9ee4
+```
+
+Exit **2**, `status=prerequisites`. It verified the exact clean tracked commit
+and matching engine identity, then stopped because this workspace has no detected
+local host Blender executable, configured PyMOL Python interpreter, or configured
+private HPC profile. The required PSE fixture exists. Chain A/D and PTR/peptide
+assertions, DSS export and both GPU renders remain **unexecuted**. The existing
+container image was not substituted for host acceptance. No service, Blender,
+SSH, scheduler, allocation, provider action or paid compute was started.
+
+C3 implementation/contract coverage is committed. Real local/Slurm parity remains
+blocked on those runtime/configuration prerequisites. Real filesystem/tunnel
+recovery, controller/storage replacement under failure, physical power loss,
+concurrent stress, and Modal worker/Volume recovery remain separately unverified.
+The proposed personal Modal checkpoint is documented in
+`docs/plans/c3-modal-validation.md`; it still requires explicit deployment/paid
+execution authorization. This evidence update changes documentation only; the
+reviewed package, engine identity, wheel and runner are unchanged.
+
 ## Starting point and scope
 
 - Started 2026-09-07 on `codex/public-release`, HEAD `b1bb7d1c5d0d832b75c096eeea855b306815d79f`, matching the live private draft PR #1 head. No checkout, reset, commit, push or deployment.
