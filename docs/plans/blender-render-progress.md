@@ -1,5 +1,44 @@
 # Blender Render implementation progress
 
+## C3 exact-commit local and Slurm acceptance passed — 2026-09-10
+
+Rendered candidate: `8741242d585dc4cf0a0ef76ca96c78e892a7cea4`.
+The unchanged runner ran once from fresh clean detached local/shared-remote
+worktrees after passive, engine, guard and prerequisite gates passed. The
+established external one-submission guard permitted exactly one allocation.
+No source, runtime, SIF or qlogin argument was changed. This documentation-only
+evidence commit is a direct child of the rendered candidate; it was not itself
+rendered. See [the full sanitized acceptance record](../c3-acceptance-8741242.md)
+for commands, immutable identities, checksums, timings and retained evidence.
+
+Local job `2985a7b2984355c57a6c3c18916e2b07` rendered on CUDA/NVIDIA GeForce
+RTX 4080 SUPER. Slurm job `da01e86e31d4aacf8d7b1d2ec56f19cc` rendered on
+CUDA/NVIDIA RTX A4000 in allocation **23432476**. Both had one logical operation
+and one leaf render, matching bundle/spec/engine identity and 1,106 atoms / 110
+residues across chains A/D. Export verified peptide/PTR, DSS and saved camera.
+Both PNGs are valid 512 × 384 rough outputs with protein cartoon and native
+ligand sticks, no spheres or `.blend`. Both workers verified the pinned runtime
+and captured CCD. Paired visual inspection passed for orientation, framing,
+representation and absence of obvious clipping or missing counterpart.
+
+The same long NFS base produced an 88-byte durable registry path, which would
+have produced the historical 115-byte socket. The actual Slurm socket was only
+**43 bytes**, independent of durable state. Outer base provisioning, same-path
+Apptainer binding, container verification and both inner/outer cleanup passed.
+The local 33-byte socket was also removed after worker exit. Durable logs stayed
+under the configured roots. The validation session stopped, allocation 23432476
+was cancelled after successful delivery and disappeared from the queue, and all
+owned processes exited. No retry, recovery, replacement allocation, developer
+preview or Modal action occurred. Historical database and `1qys.cif` hashes
+remain unchanged. Private evidence identifier: `acceptance-8741242-y2pny9ue`.
+
+This supersedes earlier candidate-specific statements that normal local/Slurm
+parity and IPC acceptance were still pending. Real recovery/stress scenarios,
+macOS Metal and hosted/UI gates remain unverified as detailed in the linked
+record. D has not begun. Modal implemented and contract-tested; real backend
+execution unverified. Repository consolidation follows the separately authorized
+archive-first procedure only after this successful acceptance and visual gate.
+
 ## Outer Slurm service-container IPC correction — 2026-09-10
 
 Starting candidate is `1dd0cf96d1091510b3ae859b11fb1357a41a79ba` on
