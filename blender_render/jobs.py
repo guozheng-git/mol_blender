@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import artifacts as artifact_lifecycle
+from .compatibility import sanitize, message
 
 
 class JobError(ValueError):
@@ -106,6 +107,7 @@ class JobStore:
         self.db.execute('BEGIN IMMEDIATE')
         try:
             for column, definition in (('blocked_condition', 'TEXT'), ('resume_phase', 'TEXT'),
+                                       ('compatibility_diagnostic', 'TEXT'),
                                        ('dispatch_fenced', 'INTEGER NOT NULL DEFAULT 0'),
                                        ('child_timing_import', 'TEXT'), ('timing_conflict', 'INTEGER NOT NULL DEFAULT 0'),
                                        ('recovery_ready', 'INTEGER NOT NULL DEFAULT 0'),
@@ -584,10 +586,18 @@ class JobStore:
         if stage == 'validation' and row['state'] == 'done':
             stage = 'result_ready'  # Legacy terminal row; no fabricated timing.
         condition = ('restart_required' if pending and self.process_blocked() else row['blocked_condition']) if pending else None
+        diagnostic = None
+        if pending and row['blocked_condition'] and row['compatibility_diagnostic'] and condition == row['blocked_condition']:
+            try:
+                diagnostic = sanitize(json.loads(row['compatibility_diagnostic']))
+            except (ValueError, TypeError):
+                diagnostic = sanitize(None)
+            error = message(diagnostic)
         actions = {'restart_required':'restart_service', 'compatibility_blocked':'restore_exact_engine',
                    'execution_unknown':'inspect_execution', 'recovery_required':'recover_operation'}
         return {"job_id": row["id"], "operation_id": row["id"], "status": status, "queue_position": position,
                 'condition': condition, 'blocked_condition': row['blocked_condition'] if pending else None,
+                'compatibility_diagnostic': diagnostic,
                 'resume_phase': row['resume_phase'] if pending else None,
                 'timing_integrity_conflict': bool(row['timing_conflict']),
                 "stage": stage, "stage_history": json.loads(row['stage_history']),
@@ -694,13 +704,14 @@ class JobStore:
         with self.transaction() as db:
             db.execute('UPDATE jobs SET resume_phase=?,dispatch_fenced=? WHERE id=?', (phase, int(dispatched), identifier))
 
-    def block(self, identifier, condition, phase):
+    def block(self, identifier, condition, phase, *, diagnostic=None):
         if condition not in {'restart_required', 'compatibility_blocked', 'execution_unknown', 'recovery_required'}:
             raise ValueError('Unsupported operation condition')
+        encoded = json.dumps(sanitize(diagnostic)) if diagnostic is not None else None
         with self.transaction() as db:
-            db.execute("""UPDATE jobs SET blocked_condition=?,resume_phase=?,
+            db.execute("""UPDATE jobs SET blocked_condition=?,resume_phase=?,compatibility_diagnostic=?,
                 state=CASE WHEN remote_completed_at IS NOT NULL OR state='transfer_pending' THEN 'transfer_pending' ELSE 'queued' END
-                WHERE id=? AND state IN ('queued','running','transfer_pending')""", (condition, phase, identifier))
+                WHERE id=? AND state IN ('queued','running','transfer_pending')""", (condition, phase, encoded, identifier))
             # Cancellation may arrive while the backend is returning a block.
             # Settle it in this transaction; it must not need another claim.
             row = db.execute('SELECT * FROM jobs WHERE id=?', (identifier,)).fetchone()
@@ -953,7 +964,9 @@ class JobStore:
                 # Recovery work is claimable without pretending a completed
                 # child is queued for rendering; claim() handles this below.
                 ready = int(child and condition is None)
-                db.execute('UPDATE jobs SET state=?,blocked_condition=?,recovery_ready=?,transfer_attempt=transfer_attempt+? WHERE id=?', (state, condition, ready, ready, row['id']))
+                db.execute('UPDATE jobs SET state=?,blocked_condition=?,compatibility_diagnostic=?,recovery_ready=?,transfer_attempt=transfer_attempt+? WHERE id=?',
+                    (state, condition, row['compatibility_diagnostic'] if condition == row['blocked_condition'] else None,
+                     ready, ready, row['id']))
 
     def drain(self):
         with self.transaction() as db:

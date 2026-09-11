@@ -17,7 +17,10 @@ SOCKET_NAME = 'w.sock'
 
 
 class IPCUnavailable(RuntimeError):
-    pass
+    def __init__(self, *args):
+        super().__init__(*args)
+        from .compatibility import make
+        self.diagnostic = make('worker_ipc_unavailable', phase='startup', component='worker', before_execution=True)
 
 
 def _bases():

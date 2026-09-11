@@ -309,3 +309,57 @@ container execution cannot satisfy host acceptance. Successful renders do not
 prove unexecuted remote recovery/stress scenarios.
 
 Modal implemented and contract-tested; real backend execution unverified.
+## Compatibility diagnostics
+
+Compatibility evidence is informational. It does not determine execution certainty,
+condition classification, retries, charging, reservations, or operation identity.
+The controller preserves the existing `execution_unknown` rules, including the
+conservative classification of a worker exiting during startup. Existing generic
+readiness timeouts remain generic failures; adding evidence does not reclassify them.
+Their exception carries a readiness diagnostic, but this current-block status field
+does not expose diagnostics for generic terminal failures.
+
+Authenticated owner status adds `compatibility_diagnostic` for the current durable
+block, and derives a non-null `error` from a fixed message catalog when a diagnostic
+exists. Legacy blocked rows remain valid with no diagnostic. A process integrity
+latch does not relabel evidence from a different durable block. Recovery clears
+the diagnostic when it clears or changes the associated block. Public health
+remains aggregate-only.
+
+Version 1 contains `version`, `reason`, `phase`, `component`, `before_execution`,
+`expected`, `observed`, and `log_refs`, with a 4096-byte serialized limit. Reasons:
+`engine_build_mismatch`, `engine_protocol_mismatch`, `engine_schema_mismatch`,
+`capability_missing`, `runtime_version_mismatch`, `runtime_dependency_missing`,
+`ccd_missing`, `ccd_checksum_mismatch`, `ccd_activation_failed`,
+`worker_ipc_unavailable`, `worker_startup_failed`, `worker_readiness_failed`, and
+`unknown_compatibility`. Phases are negotiation/startup/readiness/dispatch/unknown;
+components are engine/runtime/ccd/worker/controller/unknown.
+
+Evidence keys are engine_build, manifest_version, protocol_version, bundle_versions,
+schema_versions, capabilities, versions, dependency, ccd_sha256, ccd_captured,
+ccd_activated, and exit_code. Values are bounded typed identifiers, numeric version
+strings, SHA-256 hashes, known capabilities/dependencies, and booleans. Unknown
+keys are dropped; malformed or unsupported values produce a fixed unknown record.
+No arbitrary exception text, traceback, URL, command arguments, molecular names,
+credentials, or private paths enter compatibility metadata. Relative log references
+are limited to worker.stdout.log, worker.stderr.log, and allocation.log; `exists`
+is true/false/null (null means not observed).
+
+Exceptions carry sanitized evidence from their source through private daemon IPC,
+worker management, and controller blocking. Private stderr may contain detailed
+tracebacks; compatibility IPC messages and owner errors use fixed safe text.
+Traceback writes are best-effort and cannot suppress a typed refusal. Formatter
+helpers load before the first worker/service seal and belong to all action closures.
+Standalone engine-verifier exceptions never import package code: they use the
+already loaded sanitizer or a fixed unknown record if it is unavailable.
+Existing non-compatibility error text used by the explicit CIF/PDB fallback is
+unchanged. A nullable JSON column is added transactionally; block condition,
+resume phase and diagnostic are stored in one update without rewriting old rows.
+
+On a compatibility-blocked acceptance wait, the runner attempts one bounded owner
+status read and writes `validation-result.json` before cleanup. It separately hashes
+allowlisted validation-owned local/shared logs (regular files, no symlink paths,
+32 MiB each, two-second loop budget). Missing/inaccessible/changed logs are marked;
+log text is not copied. There is no reconnect, allocation, submission or recovery
+in evidence collection. Collection errors preserve the original failure and cannot
+skip validation-owned cleanup. These are guarded contracts, not new real acceptance.

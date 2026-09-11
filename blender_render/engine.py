@@ -33,8 +33,21 @@ CAPABILITIES = sorted({
 })
 
 
+def _exception_diagnostic(value):
+    # This file also runs as a standalone stdlib verifier before a remote package
+    # is trusted. Never import package code while reporting an integrity failure.
+    module = sys.modules.get('blender_render.compatibility')
+    if module is not None:
+        return module.sanitize(value)
+    return {'version':1, 'reason':'unknown_compatibility', 'phase':'unknown',
+            'component':'unknown', 'before_execution':False, 'expected':{}, 'observed':{}, 'log_refs':[]}
+
+
 class EngineMismatch(ValueError):
     """A known compatibility failure; never a reason to launch fallback work."""
+    def __init__(self, *args, diagnostic=None):
+        super().__init__(*args)
+        self.diagnostic = _exception_diagnostic(diagnostic)
 
 
 class RestartRequired(EngineMismatch):
@@ -43,6 +56,10 @@ class RestartRequired(EngineMismatch):
 
 class ExecutionUnknown(RuntimeError):
     code = 'execution_unknown'
+
+    def __init__(self, *args, diagnostic=None):
+        super().__init__(*args)
+        self.diagnostic = _exception_diagnostic(diagnostic)
 
 
 class RuntimeUnavailable(EngineMismatch, RuntimeError):
@@ -251,6 +268,7 @@ ACTION_MODULES = {
     'render': ('core', 'bridge_runner', 'chain_palette', 'ligand_selection', 'cutout_planes',
                'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry', 'worker_ccd'),
 }
+ACTION_MODULES = {action: ('compatibility', *modules) for action, modules in ACTION_MODULES.items()}
 
 
 class _SealedLoader(importlib.abc.Loader):
@@ -336,14 +354,29 @@ def ccd_observation(*, path=None, expected=None):
 
 
 def require_compatible(expected, observed, requirements):
+    from .compatibility import make
     if not isinstance(expected, dict) or not isinstance(observed, dict):
-        raise EngineMismatch('Engine identity unavailable; explicit runtime setup required')
+        raise EngineMismatch('Engine identity unavailable; explicit runtime setup required',
+            diagnostic=make(phase='negotiation', component='engine', before_execution=True))
     for key in ('manifest_version', 'protocol_version', 'bundle_versions', 'schema_versions', 'engine_build', 'runtime_requirements'):
         if key not in expected or expected[key] != observed.get(key):
-            raise EngineMismatch('Incompatible engine ' + key + '; install the exact controller build')
+            reason = ('engine_build_mismatch' if key == 'engine_build' else
+                      'engine_schema_mismatch' if key in {'bundle_versions','schema_versions'} else
+                      'runtime_version_mismatch' if key == 'runtime_requirements' else 'engine_protocol_mismatch')
+            evidence_key = 'versions' if key == 'runtime_requirements' else key
+            def evidence(value):
+                if value is None: return {}
+                if key == 'runtime_requirements':
+                    value = {k:v for k,v in value.items() if k in {'blender','python','molecularnodes','numpy','biotite'}} if isinstance(value, dict) else value
+                return {evidence_key:value}
+            raise EngineMismatch('Incompatible engine ' + key + '; install the exact controller build',
+                diagnostic=make(reason, phase='negotiation', component='engine', before_execution=True,
+                                expected=evidence(expected.get(key)), observed=evidence(observed.get(key))))
     missing = set(requirements) - set(observed.get('capabilities', []))
     if missing:
-        raise EngineMismatch('Unsupported engine capabilities: ' + ', '.join(sorted(missing)))
+        raise EngineMismatch('Unsupported engine capabilities: ' + ', '.join(sorted(missing)),
+            diagnostic=make('capability_missing', phase='negotiation', component='engine', before_execution=True,
+                            expected={'capabilities':sorted(requirements)}, observed={'capabilities':sorted(observed.get('capabilities', []))}))
 
 
 def require_retrieval(observation):
@@ -351,7 +384,10 @@ def require_retrieval(observation):
     # result itself must still supply and validate that delivery policy.
     declaration = observation.get('controller_declaration', {})
     if declaration.get('protocol_version') != 1:
-        raise EngineMismatch('Unsupported artifact retrieval protocol')
+        from .compatibility import make
+        raise EngineMismatch('Unsupported artifact retrieval protocol', diagnostic=make('engine_protocol_mismatch',
+            phase='negotiation', component='engine', expected={'protocol_version':1},
+            observed={'protocol_version':declaration['protocol_version']} if 'protocol_version' in declaration else {}))
 
 
 def sanitized_observation(value):

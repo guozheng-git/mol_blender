@@ -17,10 +17,14 @@ from typing import Any, Callable, TextIO
 
 from blender_render import core as _bridge_runner
 from blender_render.worker_ipc import IPCUnavailable, WorkerIPC
+from blender_render import compatibility as diagnostics
 
 
 class WorkerError(RuntimeError):
     """Raised for worker startup/communication failures."""
+    def __init__(self, *args, diagnostic=None):
+        super().__init__(*args)
+        self.diagnostic = diagnostics.sanitize(diagnostic)
 
 
 class WorkerNotReady(WorkerError, EngineMismatch):
@@ -211,6 +215,19 @@ class PersistentBlenderWorker:
             raise WorkerError("Worker response must be a JSON object.")
         return parsed
 
+    def _diagnostic(self, value=None, *, reason=None, phase='readiness', before_execution=True):
+        result = (diagnostics.make(reason, phase=phase, component='worker', before_execution=before_execution)
+                  if reason else diagnostics.sanitize(value))
+        refs = {ref['name']:ref for ref in result['log_refs']}
+        for name, path in (('worker.stdout.log', self.stdout_log), ('worker.stderr.log', self.stderr_log)):
+            try:
+                exists = path.is_file() and not path.is_symlink()
+            except OSError:
+                exists = None
+            refs[name] = {'name':name, 'exists':exists}
+        result['log_refs'] = list(refs.values())
+        return diagnostics.sanitize(result)
+
     def _wait_until_ready_locked(self, *, timeout: float) -> None:
         deadline = time.time() + max(1.0, float(timeout))
         last_error = ""
@@ -218,18 +235,22 @@ class PersistentBlenderWorker:
         while time.time() < deadline:
             process = self._process
             if process is None:
-                raise WorkerError("Worker process object is missing during startup.")
+                raise WorkerError("Worker process object is missing during startup.", diagnostic=self._diagnostic(
+                    reason='worker_startup_failed', phase='startup'))
             exit_code = process.poll()
             if exit_code is not None:
                 raise ExecutionUnknown(
                     "Blender worker exited during startup. "
-                    f"exit_code={exit_code} stdout_log={self.stdout_log} stderr_log={self.stderr_log}"
+                    f"exit_code={exit_code} stdout_log={self.stdout_log} stderr_log={self.stderr_log}",
+                    diagnostic={**self._diagnostic(reason='worker_startup_failed', phase='startup', before_execution=False),
+                                'observed':{'exit_code':exit_code}}
                 )
             if self.socket_path.exists():
                 try:
                     response = self._send_request_locked({"action": "ping"}, timeout=2.0)
                     if response.get('condition') in {'restart_required','compatibility_blocked'} or response.get('runtime', {}).get('verified') is False:
-                        raise WorkerNotReady('Worker runtime/integrity unavailable; explicit setup or restart required')
+                        raise WorkerNotReady('Worker runtime/integrity unavailable; explicit setup or restart required',
+                            diagnostic=self._diagnostic(response.get('compatibility_diagnostic')))
                     if str(response.get("status", "")).strip().lower() == "ready":
                         self._log("worker-ready")
                         return
@@ -253,7 +274,8 @@ class PersistentBlenderWorker:
             "Timed out waiting for Blender worker readiness. "
             f"command={' '.join(shlex.quote(p) for p in self._last_command)} "
             f"stdout_log={self.stdout_log} stderr_log={self.stderr_log}"
-            + (f" last_error={last_error}" if last_error else "")
+            + (f" last_error={last_error}" if last_error else ""),
+            diagnostic=self._diagnostic(reason='worker_readiness_failed')
         )
 
     def _start_locked(self) -> None:
@@ -264,7 +286,8 @@ class PersistentBlenderWorker:
             try:
                 self._ipc = WorkerIPC()
             except (IPCUnavailable, OSError) as exc:
-                raise WorkerNotReady('Worker IPC unavailable; explicit runtime storage repair required') from exc
+                raise WorkerNotReady('Worker IPC unavailable; explicit runtime storage repair required',
+                    diagnostic=self._diagnostic(reason='worker_ipc_unavailable', phase='startup')) from exc
             self.socket_path = self._ipc.socket_path
             self.root_dir.mkdir(parents=True, exist_ok=True)
             if self.custom_script.resolve() != seal.root/'blender_custom_render.py':
@@ -291,7 +314,8 @@ class PersistentBlenderWorker:
                 )
             except FileNotFoundError as exc:
                 missing = exc.filename or command[0]
-                raise WorkerNotReady(f"Failed to launch Blender worker. Missing executable: {missing}") from exc
+                raise WorkerNotReady(f"Failed to launch Blender worker. Missing executable: {missing}",
+                    diagnostic=self._diagnostic(reason='worker_startup_failed', phase='startup')) from exc
             self._wait_until_ready_locked(timeout=self.worker_start_timeout)
         except BaseException:
             self._stop_locked()
@@ -379,11 +403,14 @@ class PersistentBlenderWorker:
                     raise RestartRequired('restart_required: worker integrity changed')
                 require_compatible(expected, observed.get('engine'), requirements)
                 if not observed.get('runtime', {}).get('verified'):
-                    raise ValueError('Worker runtime missing or incompatible; explicit setup required')
+                    from blender_render.engine import RuntimeUnavailable
+                    raise RuntimeUnavailable('Worker runtime missing or incompatible; explicit setup required',
+                        diagnostic=observed.get('compatibility_diagnostic') or diagnostics.runtime_diagnostic(
+                            observed.get('runtime', {}), expected.get('runtime_requirements', {})))
                 return
             except ValueError as exc:
                 if attempt:
-                    raise WorkerNotReady(str(exc)) from exc
+                    raise WorkerNotReady(str(exc), diagnostic=self._diagnostic(getattr(exc, 'diagnostic', None))) from exc
                 self._stop_locked()
                 self._start_locked()
 
@@ -467,7 +494,8 @@ class PersistentBlenderWorker:
                 if isinstance(exc, RestartRequired):
                     exc.before_execution = True
                     raise
-                raise ExecutionUnknown('Worker execution outcome unknown; no automatic replay') from exc
+                raise ExecutionUnknown('Worker execution outcome unknown; no automatic replay',
+                    diagnostic=self._diagnostic(diagnostics.from_exception(exc, before_execution=False))) from exc
             finally:
                 completed.set()
                 watcher.join()
@@ -476,13 +504,16 @@ class PersistentBlenderWorker:
         status = str(response.get("status", "")).strip().lower()
         response['timings'] = [startup_timing, *response.get('timings', [])]
         if response.get('condition') == 'restart_required':
-            error = RestartRequired('restart_required: worker rejected render before execution')
+            error = RestartRequired('restart_required: worker rejected render before execution',
+                diagnostic=self._diagnostic(response.get('compatibility_diagnostic')))
             error.before_execution = True
             raise error
         if response.get('condition') == 'compatibility_blocked':
-            raise WorkerNotReady('Worker refused execution; explicit runtime setup required')
+            raise WorkerNotReady('Worker refused execution; explicit runtime setup required',
+                diagnostic=self._diagnostic(response.get('compatibility_diagnostic')))
         if response.get('condition') == 'execution_unknown':
-            raise ExecutionUnknown('Worker outcome unknown; no automatic replay')
+            raise ExecutionUnknown('Worker outcome unknown; no automatic replay',
+                diagnostic=self._diagnostic(response.get('compatibility_diagnostic')))
         if status != "completed":
             message = str(response.get("error", "")).strip() or f"Worker returned status={status or '<unknown>'}"
             raise WorkerError(message)

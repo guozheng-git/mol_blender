@@ -19,6 +19,67 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def compatibility_failure(out, client, job_id, backend, candidate_sha, *, allocation_id=None, log_paths=None):
+    """Read-only evidence collection, called before validation-owned cleanup.
+
+    One owner-status read; no attach, recovery, or submission. Hash only fixed
+    validation-owned log names available on this filesystem, never their text.
+    """
+    import hashlib
+    import stat
+    from blender_render.compatibility import sanitize, LOG_NAMES
+    diagnostic = sanitize(None)
+    status_available = False
+    try:
+        state = client.status(job_id)
+        diagnostic = sanitize(state.get('compatibility_diagnostic'))
+        status_available = True
+    except Exception:
+        pass
+    result = {'candidate_sha':candidate_sha, 'backend':backend, 'job_id':job_id,
+              'allocation_id':allocation_id, 'condition':'compatibility_blocked',
+              'next_action':'restore_exact_engine', 'owner_status_available':status_available,
+              'compatibility_diagnostic':diagnostic}
+    (out/'validation-result.json').write_text(json.dumps(result, indent=2)+'\n')
+    records = []
+    deadline = time.monotonic()+2
+    for name, path in (log_paths or {}).items():
+        if name not in LOG_NAMES:
+            continue
+        record = {'name':name, 'exists':None}
+        try:
+            path = Path(path).absolute()
+            if path.parent.resolve() != path.parent:
+                raise ValueError('Symlinked log parent')
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                    raise ValueError('Log not owned regular file')
+                record.update(exists=True, size=info.st_size)
+                if info.st_size > 32*1024**2:
+                    raise ValueError('Oversized log')
+                digest = hashlib.sha256()
+                remaining = info.st_size
+                while remaining:
+                    if time.monotonic() > deadline:
+                        raise ValueError('Log hash deadline')
+                    data = stream.read(min(remaining, 65536))
+                    if not data:
+                        raise ValueError('Log changed')
+                    digest.update(data); remaining -= len(data)
+                after = os.fstat(stream.fileno())
+                if (after.st_size, after.st_mtime_ns) != (info.st_size, info.st_mtime_ns):
+                    raise ValueError('Log changed')
+                record['sha256'] = digest.hexdigest()
+        except FileNotFoundError:
+            record['exists'] = False
+        except Exception:
+            record['hash_unavailable'] = True
+        records.append(record)
+    (out/'compatibility-log-hashes.json').write_text(json.dumps(records, indent=2)+'\n')
+
+
 def prerequisites(config, fixture, blender, profile):
     reasons = []
     if not fixture.is_file():
@@ -44,7 +105,7 @@ def main():
     from blender_render.engine import engine_identity, reviewed_checkout
     from blender_render.execution import freeze_execution
     from blender_render.service import prepare_options, validate_input
-    from blender_render.client import Client
+    from blender_render.client import Client, ClientError
     from blender_render import hpc
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True)
@@ -148,7 +209,25 @@ with pymol2.PyMOL() as instance:
             client.controller_owner = 'validation'
             envelope = {**frozen, 'controller_id':'controller', 'owner_id':'validation', 'operation_id':'validation-'+name}
             job = client.request('POST', '/internal/v1/resolved', envelope)
-            client.wait(job['job_id'], timeout=1800)
+            try:
+                client.wait(job['job_id'], timeout=1800)
+            except ClientError as exc:
+                if exc.code == 'compatibility_blocked':
+                    worker_root = out/'local'/'worker' if name == 'local' else Path(private_profile['registry'])/'service'/'worker'
+                    log_paths = {key:worker_root/key for key in ('worker.stdout.log','worker.stderr.log')}
+                    if name == 'slurm': log_paths['allocation.log'] = Path(private_profile['registry'])/'allocation.log'
+                    try:
+                        # A bounded read uses the already authenticated connection.
+                        previous_timeout = client.timeout
+                        client.timeout = min(previous_timeout, 5)
+                        compatibility_failure(out, client, job['job_id'], name, commit,
+                            allocation_id=allocation.get('job_id') if allocation else None, log_paths=log_paths)
+                    except Exception:
+                        # Preserve the original failure and always enter cleanup.
+                        print('Compatibility evidence collection incomplete', file=sys.stderr)
+                    finally:
+                        client.timeout = previous_timeout
+                raise
             result = client.download(job['job_id'], out/name/'render.png')
             assert result['complete'], result
             manifest = result['manifest']

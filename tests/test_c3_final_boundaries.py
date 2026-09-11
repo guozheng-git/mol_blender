@@ -118,7 +118,14 @@ def test_warm_ccd_loss_is_retained_through_worker_ipc(tmp_path, payload, monkeyp
 
 
 def test_cold_runtime_failure_reports_typed_readiness(tmp_path, monkeypatch):
+    import sys
     from blender_render import blender_worker_daemon as daemon, engine
+    monkeypatch.delitem(sys.modules, 'blender_render.compatibility', raising=False)
+    protected = engine.protect
+    def check_preloaded(action):
+        assert 'blender_render.compatibility' in sys.modules
+        return protected(action)
+    monkeypatch.setattr(engine, 'protect', check_preloaded)
     args = SimpleNamespace(socket=tmp_path/'worker.sock', custom_script=engine.process_seal().root/'blender_custom_render.py', idle_timeout=0)
     def missing(*a): raise ImportError('CCD/runtime unavailable')
     monkeypatch.setattr(daemon, '_load_renderer_module', missing)
@@ -138,6 +145,7 @@ def test_cold_runtime_failure_reports_typed_readiness(tmp_path, monkeypatch):
     monkeypatch.setattr(daemon, '_write_json_response', lambda conn, value:replies.append(value))
     assert daemon._run_server(args) == 0
     assert replies[0]['condition'] == 'compatibility_blocked' and replies[0]['before_execution']
+    assert replies[0]['compatibility_diagnostic']['reason'] == 'runtime_dependency_missing'
 
 
 def test_administration_uses_captured_helper_despite_remote_damage(tmp_path, monkeypatch):

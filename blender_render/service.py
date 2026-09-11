@@ -18,6 +18,7 @@ from typing import Protocol
 from . import core
 from .jobs import JobError, JobStore
 from .engine import protect, process_seal, RestartRequired, EngineMismatch, ExecutionUnknown
+from .compatibility import from_exception
 
 log = logging.getLogger(__name__)
 
@@ -471,12 +472,15 @@ class RenderService:
             condition = 'execution_unknown' if compute_started and not getattr(exc, 'before_execution', False) and not has_child else 'restart_required'
             if condition == 'restart_required':
                 self.store.checkpoint(identifier, phase)
-            self.store.block(identifier, condition, phase)
-        except ExecutionUnknown:
-            self.store.block(identifier, 'execution_unknown', 'dispatch')
-        except EngineMismatch:
+            self.store.block(identifier, condition, phase,
+                diagnostic=from_exception(exc, before_execution=condition == 'restart_required'))
+        except ExecutionUnknown as exc:
+            self.store.block(identifier, 'execution_unknown', 'dispatch',
+                diagnostic=from_exception(exc, before_execution=False))
+        except EngineMismatch as exc:
             self.store.checkpoint(identifier, 'dispatch')
-            self.store.block(identifier, 'compatibility_blocked', 'dispatch')
+            self.store.block(identifier, 'compatibility_blocked', 'dispatch',
+                diagnostic=from_exception(exc, before_execution=True))
         except TransferPending as exc:
             if self.store.cancelled(identifier):
                 self.store.finish(identifier, error='Parent transfer cancelled', seconds=time.monotonic()-started)

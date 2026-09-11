@@ -1,5 +1,66 @@
 # Blender Render implementation progress
 
+## Structured compatibility diagnostics correction — 2026-09-10
+
+Starting HEAD is `17fce7350242c3467501db40ff2810ba558b64b6` on the review branch.
+The real acceptance at that candidate passed locally but retained a Slurm job as
+compatibility_blocked without an underlying exception. Subsequent authorized
+non-rendering SIF probes matched the engine inventory, locked runtime versions,
+and CCD capture/activation/checksum/cleanup. They did not establish the original
+GPU-node failure cause. This correction adds diagnosis, not an inferred runtime fix.
+
+Eighteen initial diagnostic regressions and two acceptance-reporter regressions
+failed before implementation. The version-1 bounded allowlist travels from typed
+sources through daemon IPC and worker management into an additive nullable jobs
+column and authenticated owner status. Safe catalog messages replace null errors
+for diagnosed blocks. Existing legacy blocks remain valid. Informational evidence
+does not alter lifecycle classification, execution certainty, retries, reservations,
+charging, or operation identity. The runner records owner diagnostics before cleanup
+and hashes accessible validation-owned logs separately without copying their text.
+
+Focused integration covered all thirteen reasons, real in-process daemon CCD/import
+boundaries, owner isolation/public health, atomic persistence, old database opening,
+and preserved job/accounting state. A further regression caught a potential change
+to existing non-compatibility CIF fallback error text; that text remains unchanged.
+Only compatibility error messages use the fixed safe catalog.
+
+Independent read-only review found two error-path blockers:
+relative imports in standalone verifier exceptions and a private stderr error
+suppressing a typed refusal. Both were reproduced by failing tests and fixed.
+A further failing regression required the daemon diagnostic formatter to load before
+the first seal. Exception construction now imports nothing; unavailable formatting
+uses a fixed unknown record. Private traceback output is best-effort. Migration
+coverage now includes a populated receipt. The partial full-v1 run was stopped and
+marked superseded before these fixes; it is not passing evidence. Post-review
+focused verification passed **77 tests**, with zero audited external actions.
+
+Complete post-fix verification (`c3-diagnostics-l4ly8neb/full-v2`) passed:
+**546 guarded repository tests**, two inherited A/B child-process skips, and
+**346 installed-wheel contracts**. Repository duration was 222.38 seconds;
+installed duration was 23.80 seconds. Both logs report zero audited external
+process/network attempts. Four inherited dependency warnings remain. The runner
+performed an outside-checkout wheel build and offline target install, verified
+installed import origins, and compared **86 package files** recursively across
+source, wheel and installation. This uses prepared runner dependencies, not a
+clean dependency-install or real backend gate. Command:
+`<prepared-python> scripts/validate_c3_contracts.py --output <outside-checkout>/full-v2`.
+Wheel SHA-256:
+`a345c14838ebb2d6b3fafa256ae0ac392ff877affd6149877b30a11fca8c1233`.
+Engine build:
+`0d0fe1a673bb9b4f5782e3da1ac29150a6e05225525993c085bf46934a0ca793`.
+`git diff --check` passed. The preserved Slurm operation database remains
+byte-identical to its pre-edit checksum. HEAD remains the starting candidate
+until the scoped correction commit; unrelated `1qys.cif` remains untracked.
+Final independent read-only review approved the post-fix staged implementation,
+documentation and completed verification evidence with no remaining blockers.
+
+No acceptance, real Blender, SSH/Slurm compute, Modal, SIF
+rebuild, branch consolidation or D work is authorized in this correction. Both
+historical blocked operations and their databases remain untouched; no recovery or
+replay occurred. Modal implemented and contract-tested; real backend execution
+unverified. Real GPU-node failure diagnosis and recovery/stress scenarios remain
+unverified; passing fake contracts do not establish real acceptance.
+
 ## Worker IPC lifecycle correction — 2026-09-10
 
 Starting HEAD verified as `880c3c37ec38b7c404a105f48070bdcec1c9d358` on

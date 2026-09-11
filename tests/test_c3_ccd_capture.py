@@ -165,5 +165,6 @@ def test_actual_daemon_captures_before_readiness_and_cleans_up(runtime, tmp_path
         assert len(captured) == 1 and not captured[0].exists()
     else:
         assert replies[0]['condition'] == 'compatibility_blocked' and replies[0]['before_execution']
+        assert replies[0]['compatibility_diagnostic']['reason'] == 'ccd_activation_failed'
     assert worker.observation()['verified'] is False
     assert not list((tmp_path/'capture-root').iterdir())

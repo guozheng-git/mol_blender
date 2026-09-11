@@ -84,19 +84,28 @@ def _write_json_response(conn: socket.socket, payload: dict[str, Any]) -> None:
 
 def _error_response(exc):
     from blender_render.engine import RestartRequired, EngineMismatch, ExecutionUnknown
+    from blender_render.compatibility import from_exception, message
     condition = ('restart_required' if isinstance(exc, RestartRequired) else
                  'compatibility_blocked' if isinstance(exc, EngineMismatch) else
                  'execution_unknown' if isinstance(exc, ExecutionUnknown) else None)
-    return {'status':'error', 'error':str(exc), 'condition':condition,
-            'before_execution':getattr(exc, 'before_execution', isinstance(exc, EngineMismatch)),
-            'traceback':traceback.format_exc(), 'pid':os.getpid()}
+    before = getattr(exc, 'before_execution', isinstance(exc, EngineMismatch))
+    diagnostic = from_exception(exc, before_execution=before)
+    try:
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+    except Exception:
+        pass  # Private logging must never suppress the typed IPC refusal.
+    return {'status':'error', 'error':message(diagnostic) if condition else str(exc),
+            'condition':condition, 'before_execution':before,
+            'compatibility_diagnostic':diagnostic, 'pid':os.getpid()}
 
 
 def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]:
     from blender_render.engine import engine_identity, require_compatible, runtime_observation, RuntimeUnavailable
     require_compatible(request.get('expected_engine'), engine_identity(), request.get('required_capabilities', []))
     if not runtime_observation()['verified']:
-        raise RuntimeUnavailable('Worker runtime mismatch; explicit setup required')
+        from blender_render.compatibility import runtime_diagnostic
+        raise RuntimeUnavailable('Worker runtime mismatch; explicit setup required', diagnostic=runtime_diagnostic(
+            runtime_observation(), engine_identity()['runtime_requirements']))
     structure_path = str(request.get("structure_path", "")).strip()
     view_json = str(request.get("view_json", "")).strip()
     style_json = str(request.get("style_json", "")).strip()
@@ -127,7 +136,9 @@ def _render_job(renderer: ModuleType, request: dict[str, Any]) -> dict[str, Any]
     from blender_render.engine import protect
     protect('render')
     if not runtime_observation()['verified']:
-        raise RuntimeUnavailable('Worker CCD/runtime mismatch; explicit setup required')
+        from blender_render.compatibility import runtime_diagnostic
+        raise RuntimeUnavailable('Worker CCD/runtime mismatch; explicit setup required', diagnostic=runtime_diagnostic(
+            runtime_observation(), engine_identity()['runtime_requirements']))
     renderer._bridge_dispatch_count = getattr(renderer, '_bridge_dispatch_count', 0) + 1
     started = time.monotonic()
     renderer._render(args)
@@ -159,6 +170,9 @@ def _serve(args: argparse.Namespace, cleanup: ExitStack) -> int:
         socket_path = (Path.cwd() / socket_path).absolute()
     socket_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Load the stdlib error formatter before the first seal check. A failed
+    # startup must not lazily execute an unverified diagnostics module.
+    from blender_render.compatibility import dependency_diagnostic, from_exception
     from blender_render.engine import protect, RestartRequired, RuntimeUnavailable
     startup_error = None
     try:
@@ -182,8 +196,13 @@ def _serve(args: argparse.Namespace, cleanup: ExitStack) -> int:
         cleanup.close()
         # Remain available for a typed readiness refusal and shutdown. An exit
         # without this report would make the controller infer a generic failure.
-        startup_error = _error_response(exc if isinstance(exc, RestartRequired) else
-                                         RuntimeUnavailable('Worker runtime initialization unavailable; explicit setup required'))
+        diagnostic = dependency_diagnostic(exc) if isinstance(exc, ImportError) else from_exception(exc, before_execution=True)
+        if isinstance(exc, RestartRequired):
+            startup_error = _error_response(exc)
+        else:
+            refusal = RuntimeUnavailable('Worker runtime initialization unavailable; explicit setup required', diagnostic=diagnostic)
+            refusal.__cause__ = exc
+            startup_error = _error_response(refusal)
 
     if socket_path.exists():
         try:
@@ -236,6 +255,7 @@ def _serve(args: argparse.Namespace, cleanup: ExitStack) -> int:
                 if action == "ping":
                     protect('render')
                     loaded_runtime = runtime_observation()
+                    from blender_render.compatibility import runtime_diagnostic
                     _write_json_response(
                         conn,
                         {
@@ -243,6 +263,8 @@ def _serve(args: argparse.Namespace, cleanup: ExitStack) -> int:
                             "pid": os.getpid(),
                             'engine': loaded_engine,
                             'runtime': loaded_runtime,
+                            **({'compatibility_diagnostic':runtime_diagnostic(loaded_runtime, loaded_engine['runtime_requirements'])}
+                               if not loaded_runtime['verified'] else {}),
                         },
                     )
                     continue

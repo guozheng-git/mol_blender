@@ -251,6 +251,7 @@ def test_ipc_failure_preserves_admitted_job_and_reservation(worker, tmp_path, mo
         service._execute(row)
         after = dict(store.db.execute('SELECT * FROM jobs').fetchone())
         assert after['blocked_condition'] == 'compatibility_blocked'
+        assert json.loads(after['compatibility_diagnostic'])['reason'] == 'worker_ipc_unavailable'
         assert after['state'] == 'queued'
         for key in ('id', 'input_id', 'execution', 'reserved', 'charged', 'remote_id'):
             assert after[key] == before[key]
