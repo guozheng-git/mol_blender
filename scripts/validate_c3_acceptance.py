@@ -80,6 +80,76 @@ def compatibility_failure(out, client, job_id, backend, candidate_sha, *, alloca
     (out/'compatibility-log-hashes.json').write_text(json.dumps(records, indent=2)+'\n')
 
 
+def collect_outer_ipc(profile, session_id, out, *, timeout=90):
+    """Bounded administrative evidence reads after stop; never reconnect/allocate."""
+    from blender_render import hpc
+    deadline = time.monotonic()+timeout
+    last = {}
+    while True:
+        last = hpc.remote(profile, 'ipc_evidence', session_id=session_id)
+        (out/'outer-ipc.json').write_text(json.dumps(last, indent=2)+'\n')
+        if last.get('child_exited') and last.get('cleanup_complete'):
+            return last
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Outer IPC cleanup evidence incomplete')
+        time.sleep(1)
+
+
+def require_outer_ipc(evidence):
+    worker = evidence.get('worker', {})
+    if not (all(evidence.get(key) is True for key in
+                ('base_provisioned', 'bind_configured', 'container_verified', 'child_exited', 'cleanup_complete'))
+            and worker.get('durable_root_independent') is True
+            and worker.get('cleanup_complete') is True
+            and type(worker.get('socket_path_bytes')) is int and 1 <= worker['socket_path_bytes'] <= 100):
+        raise RuntimeError('Outer container/worker IPC acceptance evidence incomplete')
+
+
+def cleanup_validation(out, process, allocation_attempted, allocation, private_profile, report):
+    """Stop only owned work; evidence failure cannot skip tunnel/token cleanup."""
+    from blender_render import hpc
+    ipc_evidence_error = False
+    try:
+        if process is not None:
+            process.terminate()
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+        if allocation_attempted:
+            state = hpc.remote(private_profile, 'status')
+            if state.get('session_id'):
+                hpc.remote(private_profile, 'stop', session_id=state['session_id'])
+                try:
+                    report['outer_ipc'] = collect_outer_ipc(private_profile, state['session_id'], out)
+                    if report.get('status') == 'renders_passed_visual_inspection_required':
+                        require_outer_ipc(report['outer_ipc'])
+                except Exception:
+                    ipc_evidence_error = True
+                    report['outer_ipc_evidence'] = 'incomplete'
+                    if report.get('status') == 'renders_passed_visual_inspection_required':
+                        report['status'] = 'ipc_evidence_incomplete'
+                try:
+                    (out/'acceptance.json').write_text(json.dumps(report, indent=2)+'\n')
+                except Exception:
+                    ipc_evidence_error = True
+            else:
+                ipc_evidence_error = True
+    finally:
+        try:
+            if allocation and allocation.get('tunnel_pid'):
+                try:
+                    os.killpg(allocation['tunnel_pid'], signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        finally:
+            for parent in (out/'home'/'hpc'/'c3-private', out):
+                for name in ('token','controller-token'):
+                    (parent/name).unlink(missing_ok=True)
+    return ipc_evidence_error
+
+
 def prerequisites(config, fixture, blender, profile):
     reasons = []
     if not fixture.is_file():
@@ -189,6 +259,7 @@ with pymol2.PyMOL() as instance:
     process = None
     allocation = None
     allocation_attempted = False
+    ipc_evidence_error = False
     try:
         with (out/'local-service.log').open('w') as log:
             process = subprocess.Popen([sys.executable, '-m', 'blender_render.cli', 'serve', '--port',str(port),
@@ -257,28 +328,9 @@ with pymol2.PyMOL() as instance:
         report['status'] = 'renders_passed_visual_inspection_required'
         save()
     finally:
-        if process is not None:
-            process.terminate()
-            try:
-                process.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=10)
-        if allocation_attempted:
-            # connect can fail after sbatch succeeded. This registry was proven
-            # absent and was generated solely for this validation invocation.
-            state = hpc.remote(private_profile, 'status')
-            if state.get('session_id'):
-                hpc.remote(private_profile, 'stop', session_id=state['session_id'])
-            if allocation and allocation.get('tunnel_pid'):
-                try:
-                    os.killpg(allocation['tunnel_pid'], signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-        for name in ('token','controller-token'):
-            (isolated_home/'hpc'/'c3-private'/name).unlink(missing_ok=True)
-        for name in ('token','controller-token'):
-            (out/name).unlink(missing_ok=True)
+        ipc_evidence_error = cleanup_validation(out, process, allocation_attempted, allocation, private_profile, report)
+        if ipc_evidence_error and sys.exc_info()[0] is None:
+            raise RuntimeError('Outer IPC acceptance evidence incomplete; do not rerun')
     print(json.dumps(report, indent=2))
     return 0
 

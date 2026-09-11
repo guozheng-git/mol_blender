@@ -1,5 +1,64 @@
 # Blender Render implementation progress
 
+## Outer Slurm service-container IPC correction — 2026-09-10
+
+Starting candidate is `1dd0cf96d1091510b3ae859b11fb1357a41a79ba` on
+`codex/c3-execution-review`. Its one authorized acceptance run passed locally,
+but Slurm operation `b38089ce229125e37e9325add58be12d` was blocked before
+execution with `worker_ipc_unavailable`. This correction addresses the missing
+IPC base at the outer Slurm service-container boundary. The preserved operation
+and all historical databases are untouched; no recovery or replay is authorized.
+
+Initial regressions produced **23 failures and one pass** before implementation;
+two additional acceptance-evidence regressions and the container bind-failure
+regression also failed first. The correction adds a mandatory explicit base,
+validated short node-local allocation storage, a same-path rw bind through
+`--cleanenv`, a contained pre-service Unix bind probe, and a bounded supervising
+child lifecycle. Probe and actual worker evidence are distinct. Durable state,
+launcher resource arguments, session publication/fencing, ownership, and
+reservations remain unchanged. An unconfirmed child exit or remaining inner
+worker directory retains storage and records incomplete cleanup rather than
+removing potentially live IPC. An uncatchable supervisor kill/node failure cannot
+guarantee finally cleanup and is not claimed as verified.
+
+Independent read-only review identified four blockers: stale same-session
+handshakes, a success marker preceding probe cleanup, finalization exceptions
+skipping signal restoration/evidence, and evidence-write failure skipping owned
+validation cleanup. Failing regressions reproduced all four before fixes. The
+handshake now uses a fresh invocation nonce and follows complete probe cleanup;
+signal restoration and client/tunnel cleanup have unconditional finally scopes.
+Cancellation coverage retains a live inner worker until contained shutdown.
+Probe directories have a separate prefix so a terminated pre-service probe is
+not mistaken for a possibly live Blender worker. The incomplete full-v1 run was
+stopped for these review fixes and is explicitly superseded, not passing evidence.
+Post-fix focused contracts passed **120 tests** with zero audited external
+actions. The complete `full-v2` runner passed **595 guarded repository tests**
+(two inherited A/B child-process skips, four warnings, 221.21 seconds) and
+**401 installed-wheel contracts** (four warnings, 24.00 seconds). Both logs report
+zero audited process/network attempts. The installed suite now includes outer
+service-container lifecycle and acceptance-evidence contracts. The runner built
+a wheel and installed it offline with `--no-index --no-deps --target` outside the
+checkout, using the prepared test dependencies. It verified import origins and
+recursive equality of **86 files** across source, wheel and installation. This is
+not a clean dependency install or real backend validation.
+
+Verification command:
+`<prepared-python> scripts/validate_c3_contracts.py --output <outside-checkout>/full-v2`.
+Private evidence identifier: `c3-outer-ipc-im4cfb_p/full-v2`.
+Wheel SHA-256:
+`ba980078e2bed27b73c3447a341a3d5614ca6ed41a75cfe3583db75f3e6e97f7`.
+Engine build:
+`37c731a7ceebeade49213b9399837dfe6fabc6eab2f3dd728c408ddca84cbd58`.
+`git diff --check` passed. Final independent read-only review approved the
+post-fix source, tests, documentation, completed verification evidence, and the
+eleven-file staged scope with no remaining blockers.
+All three historical operation databases and unrelated `1qys.cif` remain
+byte-identical to their starting hashes. No Blender, Apptainer, backend SSH/Slurm,
+Modal, acceptance, SIF rebuild, hosted-policy change, branch consolidation or D
+action ran during this correction. Modal implemented and contract-tested;
+real backend execution unverified. A new exact-commit Slurm acceptance remains
+required after this correction; fake contracts do not establish that gate.
+
 ## Structured compatibility diagnostics correction — 2026-09-10
 
 Starting HEAD is `17fce7350242c3467501db40ff2810ba558b64b6` on the review branch.

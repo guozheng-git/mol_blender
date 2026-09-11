@@ -162,28 +162,59 @@ malformed molecular structures.
 
 The worker's durable root holds logs and package captures. Its Unix socket uses
 an independent, newly created `br-*` directory with mode 0700 and a `w.sock`
-filename. A canonical, user-owned, mode-0700 writable `XDG_RUNTIME_DIR` is
-preferred when it contains no Apptainer bind delimiters (`:` or `,`) and the
-complete socket pathname fits within 100 encoded bytes;
-otherwise the worker uses node-local `/tmp`. `TMPDIR` and durable registry length
-do not select the socket path. Existing directories and stale sockets are never
-adopted. No short-path limit is imposed on a durable registry.
+filename, with a maximum of 100 encoded bytes. `BLENDER_RENDER_IPC_BASE`, when
+present, is mandatory: it must name an existing canonical absolute directory,
+without symlinks or bind delimiters (`:`/`,`), owned by the effective UID, mode
+0700, writable/searchable, and short enough for the generated worker socket.
+Invalid explicit configuration fails closed as `worker_ipc_unavailable`; it
+never falls back. Without it, a validated private `XDG_RUNTIME_DIR` is preferred,
+then validated `/tmp`. Arbitrary inherited `TMPDIR` and durable registry length
+never select IPC. Existing directories/sockets are not adopted.
 
-IPC is created before command construction and retained until child exit is
-observed. Startup/capture/command/readiness failures, interrupted startup, normal
-stop, forced termination and abandoned replacement attempts release it. A restart
-gets a fresh directory. Shutdown does not move or remove durable logs. Private
-status reports a socket only while the worker process is active. When the manager
-launches an outer Apptainer command, the IPC directory is explicitly bound at the
-same path; a controller already inside a container uses its own runtime directory.
+The Slurm allocation worker provisions a fresh `bi-*` outer base beneath a
+validated, sufficiently short `SLURM_TMPDIR`, otherwise validated `/tmp`. It
+retains `--cleanenv` and passes an explicit same-path read/write Apptainer bind
+plus `BLENDER_RENDER_IPC_BASE`. Before starting the contained service, its
+bootstrap requires that exact environment value, validates the base, and tests
+AF_UNIX binding in a fresh probe directory. A fresh invocation nonce binds the success handshake to that launch; success
+is recorded only after probe cleanup. Probe (`bp-*`) evidence is separate from
+actual worker (`br-*`) evidence. This adds no render, allocation, or dependency setup.
 
-IPC creation failure is a typed pre-execution readiness refusal: it starts no
-Blender process and preserves the admitted operation through the existing
-compatibility-blocked contract. It does not change ambiguous historical jobs.
-Acceptance preflight creates and removes a probe directory and reports the
-effective `worker_ipc` strategy, permissions and pathname length. It does not bind
-a socket or launch compute. Real Blender/container IPC acceptance for the corrected
-build remains a separate gate.
+The allocation helper supervises the Apptainer child instead of replacing itself
+with exec. SIGTERM/SIGINT/SIGHUP are forwarded to the child's process group;
+after 20 seconds it escalates to SIGKILL and allows 10 seconds for confirmation.
+IPC removal follows confirmed exit. If exit cannot be confirmed, or an inner
+worker directory remains after abrupt controller death, the helper retains the
+base and records incomplete cleanup. SIGKILL of the supervisor or node loss
+cannot run Python finally cleanup; these are unverified infrastructure failure
+cases, never reported as successful cleanup. A normal contained-service shutdown
+continues to stop its Blender child before releasing its per-worker directory.
+
+Durable logs, database, inputs, artifacts, engine captures, registry locks, tokens,
+session identity and allocation state remain in the configured registry. The
+per-worker manager still owns inner IPC for its complete child lifetime, cleans
+on normal/startup/readiness/forced shutdown, and binds it explicitly when the
+manager itself launches Apptainer. Restarts create distinct private directories.
+Private status reports sockets only while workers are alive.
+
+Outer provisioning, failed container IPC verification and explicit-base failures
+carry the existing bounded `worker_ipc_unavailable` startup/worker diagnostic with
+`before_execution=true`. Once the contained service has verified IPC, an unrelated
+service failure is not relabelled as IPC failure. No diagnostic changes render
+certainty, operation identity, reservations, charging, or recovery eligibility.
+Pre-service failures have no contained child operation: their typed diagnosis is
+allocation evidence. Failures in an admitted contained worker keep the existing
+owner-visible compatibility diagnostic. Ordinary connection exceptions and
+`hpc.connect` startup/retry semantics are unchanged by this correction.
+
+A session-scoped `ipc-evidence.json` in the durable registry records provisioning,
+bind configuration, container verification, actual worker socket byte length,
+durable-root independence, and confirmed cleanup without node-local paths. The
+administrative `ipc_evidence` helper reads this bounded record without scheduler
+probes, attachment, allocation, or package imports. Acceptance copies it after
+stopping its own allocation using bounded read-only polling, and requires actual
+worker evidence plus outer/inner cleanup before reporting success. Missing
+cleanup evidence never permits a rerender. Public health remains aggregate-only.
 
 ## HPC profiles and lifecycle
 

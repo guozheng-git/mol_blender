@@ -46,7 +46,7 @@ def remote(profile, action, **options):
     if action == 'start':
         from .engine import engine_identity
         options.setdefault('expected_engine', profile.get('expected_engine') or engine_identity())
-    passive = action in {'status', 'stop'}
+    passive = action in {'status', 'stop', 'ipc_evidence'}
     code = remote_bootstrap(Path(profile['remote_root'])/'blender_render', check=not passive,
                             administrative=action in {'status', 'stop', 'attach'})
     if not passive: protect('submission' if action == 'start' else 'transfer')

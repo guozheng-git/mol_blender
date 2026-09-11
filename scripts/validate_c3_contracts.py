@@ -23,7 +23,7 @@ CONTRACTS = ['test_execution_envelope.py', 'test_gateway_recovery.py', 'test_hpc
              'test_c3_connections.py', 'test_c3_recovery_integration.py', 'test_c3_policy.py', 'test_c3_migrations.py',
              'test_c3_review_regressions.py', 'test_c3_final_boundaries.py',
              'test_c3_blocked_clients.py', 'test_c3_stored_retrieval.py', 'test_c3_ccd_capture.py',
-             'test_developer_ccd_entry.py', 'test_worker_ipc.py', 'test_compatibility_diagnostics.py']
+             'test_developer_ccd_entry.py', 'test_worker_ipc.py', 'test_hpc_outer_ipc.py', 'test_acceptance_ipc.py', 'test_acceptance_diagnostics.py', 'test_compatibility_diagnostics.py']
 
 
 def run(command, cwd, env, log):
@@ -64,6 +64,8 @@ def main():
     run([sys.executable, '-m', 'pip', 'install', '--no-index', '--no-deps', '--target', str(site), str(wheel)],
         out, env, out/'install.log')
     shutil.copytree(ROOT/'tests', out/'tests', ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    (out/'scripts').mkdir()
+    shutil.copy2(ROOT/'scripts/validate_c3_acceptance.py', out/'scripts/validate_c3_acceptance.py')
     env['PYTHONPATH'] = os.pathsep.join([str(site), str(out/'tests')])
     env['C3_INSTALLED_SITE'] = str(site)
     run([*pytest, *(str(out/'tests'/name) for name in CONTRACTS)], out, env, out/'installed.log')

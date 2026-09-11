@@ -287,7 +287,8 @@ class PersistentBlenderWorker:
                 self._ipc = WorkerIPC()
             except (IPCUnavailable, OSError) as exc:
                 raise WorkerNotReady('Worker IPC unavailable; explicit runtime storage repair required',
-                    diagnostic=self._diagnostic(reason='worker_ipc_unavailable', phase='startup')) from exc
+                    diagnostic=self._diagnostic(getattr(exc, 'diagnostic', None),
+                        reason=None if isinstance(exc, IPCUnavailable) else 'worker_ipc_unavailable', phase='startup')) from exc
             self.socket_path = self._ipc.socket_path
             self.root_dir.mkdir(parents=True, exist_ok=True)
             if self.custom_script.resolve() != seal.root/'blender_custom_render.py':

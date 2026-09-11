@@ -60,8 +60,12 @@ def _evidence(value):
             valid = type(item) is int and 0 <= item <= 65535
         elif key == 'exit_code':
             valid = type(item) is int and -255 <= item <= 255
-        elif key in ('ccd_captured', 'ccd_activated'):
+        elif key in ('ccd_captured', 'ccd_activated', 'base_available', 'bind_configured'):
             valid = type(item) is bool
+        elif key == 'base_kind':
+            valid = item in ('slurm_tmpdir', 'tmp') if isinstance(item, str) else False
+        elif key == 'socket_path_bytes':
+            valid = type(item) is int and 0 <= item <= 100
         elif key == 'dependency':
             valid = isinstance(item, str) and item in DEPENDENCIES
         elif key in ('bundle_versions', 'schema_versions', 'capabilities'):
