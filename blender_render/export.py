@@ -473,11 +473,7 @@ def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_
 
 
 def from_file(path, selection="(all)", state=-1):
-    """Load trusted local files, or run only inside an isolated public converter.
-
-    PyMOL sessions use pickle. Never call this in an authenticated public server
-    process: a public PSE must run in the separate, network-disabled sandbox.
-    """
+    """Load trusted local files. PSE sessions use pickle and may execute code."""
     import pymol2
     path = Path(path).resolve()
     if path.suffix.lower() not in {".pse", ".cif", ".pdb", ".mmcif"}:

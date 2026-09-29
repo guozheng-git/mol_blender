@@ -5,8 +5,6 @@
   "molecularnodes": "4.5.10",
   "numpy": "1.26.4",
   "biotite": "1.6.0",
-  "fastmcp": "2.14.7",
-  "modal": "1.5.5",
   "ccd_sha256": "dffdb3a19600d51854058daecfbc9bd1b94aab413a04e7afed8d4b7670621d47",
   "downloads": {
     "macos-arm64": {

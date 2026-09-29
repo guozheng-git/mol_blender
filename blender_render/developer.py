@@ -166,8 +166,8 @@ def _run(config_path: Path) -> None:
     from blender_render.authoring import resolve_authored
     from blender_render.config import VERSION
     from blender_render.core import validate_payload_document, build_local_blender_command
-    from blender_render.rendering import RenderServerState, _process_render_request
-    from blender_render.render_worker_manager import WorkerError
+    from blender_render.rendering import RenderState, _process_render_request
+    from blender_render.errors import WorkerError
 
     cfg = json.loads(config_path.read_text())
     root, output = Path(cfg["root"]), Path(cfg["output"])
@@ -202,7 +202,7 @@ def _run(config_path: Path) -> None:
             command = build_local_blender_command(blender_exe=cfg["blender"], preset=None,
                 structure_path=structure_path, view_json_path=view_json, style_json_path=style_json,
                 output_png=output_png, custom_script=package / "developer_blender.py",
-                run_manifest_path=run_manifest, use_apptainer=False, apptainer_image="")
+                run_manifest_path=run_manifest)
             command[1:1] = ["--factory-startup", "--disable-autoexec", "--python-use-system-env", "--python-exit-code", "1"]
             env = dict(os.environ)
             env.update(PYTHONPATH=os.pathsep.join([str(package.parent), *cfg["runtime_paths"]]),
@@ -222,7 +222,7 @@ def _run(config_path: Path) -> None:
                     "command": command, "fresh_process": True}
 
     result = _process_render_request(request_id=root.name, request_doc={"payload": payload, **resolved},
-                                    state=RenderServerState(FreshBlender(), cfg["timeout"]))
+                                    state=RenderState(FreshBlender(), cfg["timeout"]))
     (output / "render.png").write_bytes(base64.b64decode(result.pop("png_base64")))
     if "blend_base64" in result:
         (output / "render.blend").write_bytes(base64.b64decode(result.pop("blend_base64")))
@@ -233,8 +233,9 @@ def _run(config_path: Path) -> None:
 
 
 def parser() -> argparse.ArgumentParser:
+    from blender_render.config import config_root
     p = argparse.ArgumentParser(prog="blender-render dev", description=__doc__)
-    p.add_argument("--catalog-dir", type=Path, default=Path.home() / ".config/blender-render/presets")
+    p.add_argument("--catalog-dir", type=Path, default=config_root() / "presets")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("catalog")
     commands.add_parser("schema")
@@ -253,6 +254,7 @@ def parser() -> argparse.ArgumentParser:
     reference = commands.add_parser("reference")
     reference.add_argument("image", type=Path)
     reference.add_argument("--observations", type=Path, required=True)
+    reference.add_argument("--style-output", type=Path, help="Write a validated full style JSON from the recorded base and overrides")
     run = commands.add_parser("preview")
     run.add_argument("bundle", type=Path, help="JSON StructureBundle from the existing exporter")
     run.add_argument("--checkout", type=Path, default=Path.cwd(),
@@ -292,7 +294,16 @@ def execute(args):
             camera_policy=args.camera_policy,
             provenance=json.loads(args.provenance.read_text()) if args.provenance else None)
     if args.action == "reference":
-        return authoring.reference_brief(args.image, json.loads(args.observations.read_text()))
+        brief = authoring.reference_brief(args.image, json.loads(args.observations.read_text()))
+        if args.style_output:
+            from blender_render.spec import resolve_options
+            decision = brief["preset_decision"]
+            style = resolve_options({"preset": decision["preset_id"], "overrides": decision["overrides"]}, {})["style_doc"]
+            args.style_output.parent.mkdir(parents=True, exist_ok=True)
+            with args.style_output.open("x") as output:
+                output.write(json.dumps(style, indent=2, allow_nan=False) + "\n")
+            brief["style_output"] = str(args.style_output.resolve())
+        return brief
     options = {"style_doc": json.loads(args.style_json.read_text())} if args.style_json else {"preset": args.preset}
     if args.overrides_json:
         options["overrides"] = json.loads(args.overrides_json.read_text())

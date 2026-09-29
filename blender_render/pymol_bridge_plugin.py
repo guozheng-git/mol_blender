@@ -1,7 +1,6 @@
-"""PyMOL command adapter. Export locally, submit through the shared service."""
+"""PyMOL command adapter. Export the current pose and render with local Blender."""
 from __future__ import annotations
 import json
-import os
 import sys
 from pathlib import Path
 # PyMOL's default `run` executes in its own globals: __file__ still names
@@ -9,8 +8,7 @@ from pathlib import Path
 _PACKAGE_ROOT = str(Path(globals().get("__script__", __file__)).resolve().parent.parent)
 if _PACKAGE_ROOT not in sys.path:
     sys.path.insert(0, _PACKAGE_ROOT)
-from blender_render.export import (build_render_payload, collect_view_payload,
-    _normalize_cli_string, _parse_bool, _parse_int, _parse_float)
+from blender_render.export import build_render_payload, _normalize_cli_string, _parse_bool
 
 
 def try_load_preview(cmd_obj, output_png):
@@ -22,41 +20,20 @@ def try_load_preview(cmd_obj, output_png):
         return False
 
 
-def bridge_render(selection="(all)", preset="preset_1_interface", style_json="", mode="local",
+def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
                   output_dir=".", output_name="render.png", rough=0, color_follow="",
-                  save_blend="", raw_view="", state=-1, server_host="", server_port=8765,
-                  server_timeout=1800, profile="", use_apptainer=0, apptainer_image="",
-                  blender_exe="", attach=1, attach_only=0, keep_temp=0,
+                  save_blend="", state=-1, blender_exe="", keep_temp=0,
                   width="", height="", samples="", transparent_background="",
-                  blend_output="", _self=None, overrides_json="", preserve_view="", **legacy):
+                  _self=None, overrides_json="", preserve_view="", timeout=600):
     if _self is None:
         from pymol import cmd
     else:
         cmd = _self
-    from blender_render.client import Client, configured_client
-    from blender_render.config import load_config
+    from blender_render.local_bridge import render_payload
     text = _normalize_cli_string
-    mode, profile = text(mode), text(profile)
-    allowed = {"interactive_session", "interactive_launcher", "auto_close_interactive_session", "slurm_partition", "slurm_account", "slurm_gres", "slurm_time", "poll", "poll_interval"}
-    unknown = set(legacy) - allowed
-    if unknown:
-        raise ValueError("Unknown blender_render options: " + ", ".join(sorted(unknown)))
-    if any(str(v).strip() for k, v in legacy.items() if k.startswith("slurm_") or k == "interactive_launcher"):
-        raise ValueError("Configure allocation resources in a named cluster profile using blender-render profile add.")
-    if text(server_host):
-        from blender_render.remote_client import _normalize_base_url
-        client = Client(_normalize_base_url(text(server_host), int(server_port)), os.environ.get("BLENDER_RENDER_TOKEN", ""))
-    else:
-        selected = profile or (load_config().get("default_hpc_profile", "ipd") if mode in {"interactive", "slurm", "hpc"} else mode)
-        image = text(apptainer_image) if _parse_bool(use_apptainer) or mode == "apptainer" else ""
-        if sys.platform == "darwin" and mode == "local":
-            image = ""
-        client = configured_client(selected, blender=text(blender_exe), image=image, attach_only=_parse_bool(attach_only))
-        if mode in {"interactive", "slurm", "hpc"}:
-            print("Interactive GPU session ready")
     payload = build_render_payload(cmd, text(selection), int(state), include_color_hints=True)
-    options = {"preset": text(preset), "rough": _parse_bool(rough), "keep_temp": _parse_bool(keep_temp)}
-    for key, value in (("color_follow", color_follow), ("raw_view", raw_view)):
+    options = {"preset": text(preset), "rough": _parse_bool(rough)}
+    for key, value in (("color_follow", color_follow),):
         if str(value).strip():
             options[key] = _parse_bool(value)
     if text(style_json):
@@ -66,8 +43,6 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
         options["overrides"] = json.loads(Path(text(overrides_json)).expanduser().read_text())
     if str(save_blend).strip():
         options["save_blend"] = _parse_bool(save_blend)
-    if text(blend_output):
-        options["save_blend"] = True
     if str(preserve_view).strip():
         options["preserve_view"] = _parse_bool(preserve_view)
     for key, value in (("width", width), ("height", height), ("samples", samples)):
@@ -75,17 +50,9 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
             options[key] = int(value)
     if str(transparent_background).strip():
         options["transparent_background"] = _parse_bool(transparent_background)
-    source = client.upload(payload)
-    job = client.submit(source["input_id"], options)
-    print("Blender render job: " + job["job_id"])
-    client.wait(job["job_id"], timeout=float(server_timeout), progress=lambda s: print(f"Render {s['status']}; queue position {s['queue_position']}"))
     output = (Path(text(output_dir) or ".").expanduser() / (text(output_name) or "render.png")).with_suffix(".png").resolve()
-    result = client.download(job["job_id"], output)
-    if text(blend_output) and "render.blend" in result["outputs"]:
-        import shutil
-        destination = Path(text(blend_output)).expanduser().resolve()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(result["outputs"]["render.blend"], destination)
+    render_payload(payload, output=output, options=options, blender=text(blender_exe),
+                   timeout=float(timeout), keep_temp=_parse_bool(keep_temp))
     try_load_preview(cmd, output)
     print(str(output))
     return str(output)

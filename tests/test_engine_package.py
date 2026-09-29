@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-from blender_render import engine, execution, gateway, telemetry
+from blender_render import engine, telemetry
 
 
 def test_packaged_manifest_and_import_locations():
@@ -12,7 +12,7 @@ def test_packaged_manifest_and_import_locations():
     manifest = root/'engine-manifest.json'
     if os.environ.get('C3_INSTALLED_SITE'):
         site = Path(os.environ['C3_INSTALLED_SITE'])
-        for module in (engine, execution, gateway, telemetry):
+        for module in (engine, telemetry):
             assert Path(module.__file__).is_relative_to(site)
         assert manifest.is_file()
     if manifest.exists():

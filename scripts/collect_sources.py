@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 def collect(root, destination):
     packages = json.loads((root / 'blender_render/runtime-sources.json').read_text())
-    packages += json.loads((root / 'blender_render/service-sources.json').read_text())
     packages = list({(p['name'].lower().replace('_','-'),p['version']):p for p in packages}.values())
     packages += [{'name':'blender','version':'5.0.1','license':'GPL-3.0-or-later',
                   'sources':[{'url':'https://download.blender.org/source/blender-5.0.1.tar.xz',

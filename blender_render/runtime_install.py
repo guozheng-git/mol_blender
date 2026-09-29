@@ -35,7 +35,7 @@ def install(blender="", root=None):
     if not blender:
         target = "macos-arm64" if sys.platform == "darwin" and platform.machine() == "arm64" else "linux-x64" if sys.platform == "linux" and platform.machine() == "x86_64" else ""
         if not target:
-            raise RuntimeError("Managed local runtime supports Apple Silicon Mac and Linux x86_64. Other clients can use remote compute.")
+            raise RuntimeError("Managed local runtime supports Apple Silicon Mac and Linux x86_64. Configure an existing compatible local runtime on other platforms.")
         artifact = lock["downloads"][target]
         with tempfile.TemporaryDirectory(prefix="blender-install-") as temporary:
             archive = Path(temporary) / artifact["filename"]

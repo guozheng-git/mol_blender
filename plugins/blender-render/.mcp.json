@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "blender-render": {
-      "type": "http",
-      "url": "https://almostscheidplatz--blender-render-beta-gateway.us-east.modal.direct/mcp"
-    }
-  }
-}

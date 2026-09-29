@@ -30,16 +30,8 @@ except Exception:  # pragma: no cover - package import fallback
 
 MACOS_STANDARD_BLENDER_EXE = "/Applications/Blender.app/Contents/MacOS/Blender"
 DEFAULT_BLENDER_EXE = MACOS_STANDARD_BLENDER_EXE
-DEFAULT_APPTAINER_BLENDER_EXE = "/usr/local/bin/blender"
-DEFAULT_INTERACTIVE_LAUNCHER = "qlogin -p gpu --gres=gpu:a4000:1 --mem=64g -c 4"
 
 
-def _default_session_root() -> Path:
-    override = os.environ.get("PYMOL_BRIDGE_SESSION_ROOT", "").strip()
-    if override:
-        return Path(override).expanduser().absolute()
-    # Must be visible from login + compute nodes for persistent interactive IPC.
-    return (Path.home() / ".pymol_bridge" / "sessions").absolute()
 
 
 def _default_tmp_bridge_root() -> Path:
@@ -55,7 +47,6 @@ def _default_tmp_bridge_root() -> Path:
     return Path(tempfile.gettempdir()) / "pymol_bridge" / user
 
 
-SESSION_ROOT = _default_session_root()
 TMP_BRIDGE_ROOT = _default_tmp_bridge_root()
 
 from jsonschema import Draft202012Validator
@@ -121,15 +112,6 @@ def _parse_bool(value: Any) -> bool:
     raise argparse.ArgumentTypeError(f"Expected boolean value, got: {value!r}")
 
 
-def _default_remote_python_executable() -> str:
-    override = os.environ.get("PYMOL_BRIDGE_REMOTE_PYTHON", "").strip()
-    if override:
-        return override
-    if shutil.which("python3"):
-        return "python3"
-    if shutil.which("python"):
-        return "python"
-    return sys.executable
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -428,7 +410,7 @@ def _run_subprocess(
             "Executable not found while launching command.\n"
             f"Missing executable: {missing}\n"
             f"Command: {' '.join(shlex.quote(item) for item in command)}\n"
-            "If you want container execution, set --use-apptainer 1 and provide --apptainer-image."
+            "Configure the local executable with blender-render setup --blender /path/to/blender."
         ) from exc
 
 
@@ -444,28 +426,6 @@ def _parse_last_json_object(stdout: str) -> dict[str, Any]:
     raise RunnerError("Could not parse JSON result from interactive/local runner output.")
 
 
-def _resolve_apptainer_executable() -> str:
-    candidates: list[str] = []
-    resolved = shutil.which("apptainer")
-    if resolved:
-        candidates.append(resolved)
-    candidates.extend(("/usr/bin/apptainer", "/usr/local/bin/apptainer"))
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        path = Path(candidate)
-        if path.is_file() and os.access(path, os.X_OK):
-            return str(path)
-
-    checked = ", ".join(candidates) if candidates else "<none>"
-    raise RunnerError(
-        "Apptainer executable was not found. "
-        f"Checked: {checked}. "
-        "Install apptainer or run without --use-apptainer."
-    )
 
 
 def _blender_executable_exists(path_value: str) -> bool:
@@ -505,47 +465,8 @@ def _detect_host_blender_executable() -> str:
     return ""
 
 
-def _normalize_apptainer_blender_executable(blender_exe: str) -> str:
-    raw = str(blender_exe or "").strip()
-    if not raw:
-        return DEFAULT_APPTAINER_BLENDER_EXE
-
-    expanded = str(Path(raw).expanduser())
-    known_container_paths = {
-        "blender",
-        DEFAULT_APPTAINER_BLENDER_EXE,
-        "/bin/blender",
-        "/opt/blender/blender",
-    }
-    if raw in known_container_paths or expanded in known_container_paths:
-        return raw
-
-    # Host-absolute Blender paths usually don't exist in the container.
-    if expanded.startswith("/Applications/") or expanded.endswith(".app/Contents/MacOS/Blender"):
-        return DEFAULT_APPTAINER_BLENDER_EXE
-    if expanded.startswith("/"):
-        return DEFAULT_APPTAINER_BLENDER_EXE
-    return raw
 
 
-def _apptainer_bind_args(paths: list[Path]) -> list[str]:
-    args: list[str] = []
-    seen: set[str] = set()
-    for raw_path in paths:
-        path = Path(raw_path).expanduser()
-        if path.is_file():
-            candidate = path.parent
-        else:
-            candidate = path
-        if not candidate.exists():
-            continue
-        resolved = _expand_path_no_resolve(candidate)
-        key = str(resolved)
-        if key in seen:
-            continue
-        seen.add(key)
-        args.extend(["--bind", f"{key}:{key}:rw"])
-    return args
 
 
 def build_local_blender_command(
@@ -558,14 +479,7 @@ def build_local_blender_command(
     output_png: Path,
     custom_script: Path,
     run_manifest_path: Path | None = None,
-    use_apptainer: bool,
-    apptainer_image: str,
 ) -> list[str]:
-    if use_apptainer and _is_macos():
-        raise RunnerError("Apptainer execution is not supported on macOS. Use host Blender instead.")
-    if use_apptainer:
-        blender_exe = _normalize_apptainer_blender_executable(blender_exe)
-
     if style_json_path is None:
         raise RunnerError("JSON preset/style is required. Provide --style-json or --preset.")
     command = [
@@ -585,30 +499,6 @@ def build_local_blender_command(
     ]
     if run_manifest_path is not None:
         command.extend(["--run-manifest", str(run_manifest_path)])
-
-    if use_apptainer:
-        if not apptainer_image:
-            raise RunnerError("--use-apptainer was enabled but --apptainer-image is empty.")
-        apptainer_exe = _resolve_apptainer_executable()
-        bind_paths = [
-            output_png.parent,
-            structure_path.parent,
-            view_json_path.parent,
-            custom_script.parent,
-            Path.cwd(),
-            Path.home(),
-        ]
-        if style_json_path is not None:
-            bind_paths.append(style_json_path.parent)
-
-        bind_args = _apptainer_bind_args(bind_paths)
-        command = [
-            apptainer_exe,
-            "exec",
-            "--nv",
-            *bind_args,
-            str(Path(apptainer_image).expanduser()),
-        ] + command
 
     return command
 

@@ -5,9 +5,9 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-PHASES = {'transfer', 'conversion', 'queue', 'startup', 'allocation', 'scene_build',
+PHASES = {'conversion', 'startup', 'scene_build',
           'rendering', 'artifact_preparation', 'delivery'}
-HOPS = {'controller', 'gateway', 'worker', 'client', 'converter', 'scheduler'}
+HOPS = {'controller', 'worker', 'client', 'converter'}
 STATUSES = {'executed', 'skipped', 'cached', 'unavailable', 'interrupted'}
 
 

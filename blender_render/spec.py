@@ -1,10 +1,10 @@
-"""Resolve existing style JSON once before admission; backends consume its snapshot.
+"""Resolve style JSON once before the local renderer consumes its snapshot.
 
 Objects merge recursively, arrays replace. Full JSON is authoritative. For named
 presets the saved pose is the default unless catalog policy selects the authored
 camera. Explicit camera JSON wins over preserve_view, which wins over catalog
 policy. preserve_view=False selects the preset camera plus edits. Explicit output values
-beat viewport defaults. Convenience options beat JSON; resource policy runs last.
+beat viewport defaults. Convenience options beat JSON.
 """
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def _check_options(options: dict) -> None:
             raise ValueError(key + " must be an object")
 
 
-def resolve_options(options: dict, payload: dict, *, public: bool = False, timeout: int = 600,
+def resolve_options(options: dict, payload: dict, *, timeout: int = 600,
                     preset_definition: PresetDefinition | None = None) -> dict:
     """Return the existing worker request shape plus immutable-spec metadata.
 
@@ -125,11 +125,8 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
         if (not isinstance(viewport, list) or len(viewport) != 2
                 or not all(type(v) in (int, float) and 0 < v <= 32768 for v in viewport)):
             raise ValueError("Invalid PyMOL viewport dimensions.")
-        width = options.get("width", output["width"] if "width" in explicit_output or not public else 2048)
+        width = options.get("width", output["width"])
         height = options.get("height", output["height"] if "height" in explicit_output else max(1, round(width * viewport[1] / viewport[0])))
-        if public and not {"width", "height"} & explicit_output:
-            scale = min(1, 2048 / max(width, height))
-            width, height = max(1, round(width * scale)), max(1, round(height * scale))
         output.update(width=width, height=height)
         style["camera"] = {"mode": "pymol", "world_scale": 0.01, "preserve_framing": True}
     for key in ("width", "height", "samples", "save_blend", "raw_view"):
@@ -141,26 +138,15 @@ def resolve_options(options: dict, payload: dict, *, public: bool = False, timeo
         style["renderer"]["transparent_background"] = options["transparent_background"]
     if "color_follow" in options:
         style = core._apply_color_follow_override(style, options["color_follow"])
-    # Validate the requested resources before rough-mode performance reductions.
-    if public:
-        if output.get("raw_view"):
-            raise ValueError("The public service supports ray-traced still images only.")
-        if options.get("keep_temp"):
-            raise ValueError("Public jobs always clean temporary files.")
-        if max(output["width"], output["height"]) > 4096 or output["samples"] > 512:
-            raise ValueError("Free renders are limited to 4096 pixels per dimension and 512 samples.")
-        if style["renderer"]["engine"] != "CYCLES":
-            raise ValueError("Public renders use Cycles.")
-        style["renderer"].update(device="GPU", compute_device_type="AUTO", require_gpu=True)
     if options.get("rough"):
         style = core._apply_rough_style_overrides(style)
-    # Transport controls destinations; a style can never choose server paths.
+    # Transport controls destinations; a style can never choose staging paths.
     style["output"].update(filename="render.png", format="PNG", blend_filename="render.blend")
     core.validate_style_document(style)
     return {
         "preset": identifier, "style_doc": style, "output_name": "render.png", "job_timeout_seconds": timeout,
         "keep_temp": options.get("keep_temp", False), "save_blend": style["output"]["save_blend"],
-        # Already consumed into JSON. Legacy worker/gateway adapters must not
+        # Already consumed into JSON. Render adapters must not
         # apply rough twice or re-enable options after resolution.
         "rough": False, "raw_view": style["output"]["raw_view"],
         "color_follow": style.get("color_follow", {}).get("enabled", False),
