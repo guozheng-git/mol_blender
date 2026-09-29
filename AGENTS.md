@@ -7,7 +7,7 @@ isolated `developer.preview` runner; do not add service queues or remote backend
 
 - Export CIF first and assign secondary structure in PyMOL before export.
 - Preserve enabled selections, transforms, colors and the saved camera by default.
-- Keep preset 1 as the default, native Molecular Nodes ligand sticks, and rough
+- Keep `mint_sky_assembly` as the default, native Molecular Nodes ligand sticks, and rough
   mode limited to performance settings. Reject unsupported JSON fields.
 - Render trusted local files only. PSE files can execute code during loading.
 - Keep original reference pixels separate from previews. Inspect both before

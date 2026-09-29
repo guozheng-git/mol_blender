@@ -8,6 +8,7 @@ from pathlib import Path
 _PACKAGE_ROOT = str(Path(globals().get("__script__", __file__)).resolve().parent.parent)
 if _PACKAGE_ROOT not in sys.path:
     sys.path.insert(0, _PACKAGE_ROOT)
+from blender_render.presets import DEFAULT_PRESET
 from blender_render.export import build_render_payload, _normalize_cli_string, _parse_bool
 
 
@@ -20,7 +21,7 @@ def try_load_preview(cmd_obj, output_png):
         return False
 
 
-def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
+def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                   output_dir=".", output_name="render.png", rough=0, color_follow="",
                   save_blend="", state=-1, blender_exe="", keep_temp=0,
                   width="", height="", samples="", transparent_background="",

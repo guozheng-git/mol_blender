@@ -1,5 +1,6 @@
 """Optional stdio MCP adapter for local Claude/Codex sessions."""
 from pathlib import Path
+from .presets import DEFAULT_PRESET
 from .config import config_root
 
 
@@ -21,7 +22,7 @@ def create_stdio():
         return inspect_preset(preset, config_root() / 'presets')
 
     @mcp.tool()
-    def render_structure(input_path: str, output_path: str, preset: str = 'preset_1_interface',
+    def render_structure(input_path: str, output_path: str, preset: str = DEFAULT_PRESET,
                          style_json: str | None = None, rough: bool = False,
                          save_blend: bool = False, animation: str | None = None,
                          duration: float | None = None, fps: int | None = None,

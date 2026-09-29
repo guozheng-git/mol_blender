@@ -17,7 +17,7 @@ from blender_render.spec import resolve_options
 def test_defaults_hash_capabilities_and_still_compatibility():
     still = resolve_options({}, {})
     assert 'animation' not in still['style_doc']['output']
-    assert still['preset'] == 'preset_1_interface'
+    assert still['preset'] == 'mint_sky_assembly'
     rock = resolve_options({'animation': 'rock'}, {})
     assert rock['style_doc']['output']['animation'] == dict(mode='rock', duration=3, fps=24, rock_angle=12, gif=False)
     spin = resolve_options({'animation': '360', 'width': 640, 'height': 480}, {})

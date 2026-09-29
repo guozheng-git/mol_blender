@@ -106,6 +106,7 @@ def test_pymol_preserves_context_and_loads_generated_png(monkeypatch,tmp_path):
     monkeypatch.setattr(local_bridge,'render_payload',render)
     result=pymol_bridge_plugin.bridge_render(_self=context,output_dir=str(tmp_path),preserve_view=0,color_follow=0)
     assert Path(result).is_file()
+    assert calls[0][1]['options']['preset'] == 'mint_sky_assembly'
     assert calls[0][1]['options']['preserve_view'] is False
     assert calls[0][1]['options']['color_follow'] is False
     assert calls[-1][0]=='load'
@@ -155,6 +156,7 @@ def test_mcp_native_image_and_local_render_route(tmp_path,monkeypatch):
             assert base64.b64decode(image.content[0].data)==path.read_bytes()
     asyncio.run(check())
     assert calls[0][0] == ('structure.cif',)
+    assert calls[0][1]['options']['preset'] == 'mint_sky_assembly'
     assert calls[0][1]['options']['animation'] == '360'
     assert calls[0][1]['options']['gif'] is True
 
@@ -231,3 +233,25 @@ def test_pymol_animation_controls_and_no_preview(monkeypatch, tmp_path):
     result = pymol_bridge_plugin.bridge_render(_self=context, output_dir=str(tmp_path),
                                                animation='360', gif=1, auto_preview=0)
     assert result['presentation'] == 'fallback_path'
+
+
+def test_cli_and_embedded_bridge_use_mint_by_default(monkeypatch, local_runtime):
+    calls = []
+    monkeypatch.setattr(local, 'render_file', lambda *a, **kw: calls.append(kw))
+    cli.execute(cli.parser().parse_args(['render', 'structure.pse']))
+    assert calls[0]['options']['preset'] == 'mint_sky_assembly'
+    def run(command, **kwargs):
+        assert command[command.index('--preset') + 1] == 'mint_sky_assembly'
+        return SimpleNamespace(returncode=0, stdout='{}')
+    monkeypatch.setattr(local_bridge.subprocess, 'run', run)
+    local_bridge.render_payload(bundle(), output='result.png', options={})
+
+
+def test_original_presets_remain_available():
+    from blender_render.presets import catalog
+    from blender_render.spec import resolve_options
+    originals = ['preset_1_interface', 'preset_2_frosted_blue', 'preset_3_black_tubes',
+                 'preset_4_milky_green', 'preset_5_black_interface']
+    assert set(originals) <= {row['id'] for row in catalog()}
+    for preset in originals:
+        assert resolve_options({'preset': preset}, {})['preset'] == preset

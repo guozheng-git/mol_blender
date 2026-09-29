@@ -36,7 +36,7 @@ _PRESETS = (
     ('neon_duplex_hero', 'style_preset_neon_duplex_hero.json', 'reference_08.png',
      'Green protein and gradient nucleic acids against a pink-cyan background.', ('reference_08',), 'clay'),
 )
-DEFAULT_PRESET = "preset_1_interface"
+DEFAULT_PRESET = "mint_sky_assembly"
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
 PRESET_OUTPUT_FILENAMES = {row[0]: row[2] for row in _PRESETS}
 _ALIASES = {alias: row[0] for row in _PRESETS for alias in (row[0], "builtin/" + row[0], *row[4])}

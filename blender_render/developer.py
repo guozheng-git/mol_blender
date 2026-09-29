@@ -241,6 +241,7 @@ def _run(config_path: Path) -> None:
 
 def parser() -> argparse.ArgumentParser:
     from blender_render.config import config_root
+    from blender_render.presets import DEFAULT_PRESET
     p = argparse.ArgumentParser(prog="blender-render dev", description=__doc__)
     p.add_argument("--catalog-dir", type=Path, default=config_root() / "presets")
     commands = p.add_subparsers(dest="action", required=True)
@@ -267,7 +268,7 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--checkout", type=Path, default=Path.cwd(),
                      help="Trusted checkout; defaults to the working directory, never installed site-packages")
     select = run.add_mutually_exclusive_group()
-    select.add_argument("--preset", default="preset_1_interface")
+    select.add_argument("--preset", default=DEFAULT_PRESET)
     select.add_argument("--style-json", type=Path)
     run.add_argument("--overrides-json", type=Path)
     run.add_argument("--output", type=Path, required=True, help="New directory; never overwrite a previous preview")

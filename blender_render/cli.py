@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from .presets import DEFAULT_PRESET
 from .config import VERSION, load_config, save_config
 
 
@@ -32,7 +33,7 @@ def parser():
     render.add_argument('input')
     render.add_argument('-o', '--output', default='render.png')
     choice = render.add_mutually_exclusive_group()
-    choice.add_argument('--preset', default='preset_1_interface')
+    choice.add_argument('--preset', default=DEFAULT_PRESET)
     choice.add_argument('--style-json')
     render.add_argument('--overrides-json')
     render.add_argument('--catalog-dir')

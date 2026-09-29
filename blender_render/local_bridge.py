@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from .presets import DEFAULT_PRESET
 from .config import load_config
 
 
@@ -21,7 +22,7 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
                 path.write_text(json.dumps(options[key], allow_nan=False))
                 command.extend([flag, str(path)])
         if 'style_doc' not in options:
-            command.extend(['--preset', options.get('preset', 'preset_1_interface')])
+            command.extend(['--preset', options.get('preset', DEFAULT_PRESET)])
         for key in ('rough', 'color_follow', 'save_blend', 'preserve_view', 'transparent_background', 'gif'):
             if key in options:
                 flag = 'transparent' if key == 'transparent_background' else key.replace('_', '-')

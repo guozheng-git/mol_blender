@@ -88,8 +88,8 @@ snapshots are removed unless `--keep-temp` is requested.
 
 ## Preset gallery
 
-Choose any of the 14 built-in presets with `--preset ID` in the CLI or
-`preset=ID` in PyMOL. `preset_1_interface` is the default. Click a preset name
+Choose one of the featured presets below with `--preset ID` in the CLI or
+`preset=ID` in PyMOL. `mint_sky_assembly` is the default. Click a preset name
 for its complete editable JSON or a preview for the full image.
 
 These are the retained public-structure gallery renders. A preset controls style;
@@ -100,11 +100,7 @@ See [preset details](docs/reference-presets.md) and the
 
 | Preset | Appearance | Preview |
 | --- | --- | --- |
-| [preset_1_interface](blender_render/style_preset_1_opaque_pastel.json) | Soft opaque pastel cartoons with native ligand sticks. | [<img src="examples/presets/preset_1_interface.png" alt="preset_1_interface preview" width="220">](examples/presets/preset_1_interface.png) |
-| [preset_2_frosted_blue](blender_render/style_preset_2_frosted_blue.json) | Saturated blue cartoon core with a frosted surface shell. | [<img src="examples/presets/preset_2_frosted_blue.png" alt="preset_2_frosted_blue preview" width="220">](examples/presets/preset_2_frosted_blue.png) |
-| [preset_3_black_tubes](blender_render/style_preset_3_black_tubes.json) | Pastel ribbons and native sticks on black. | [<img src="examples/presets/preset_3_black_tubes.png" alt="preset_3_black_tubes preview" width="220">](examples/presets/preset_3_black_tubes.png) |
-| [preset_4_milky_green](blender_render/style_preset_4_milky_green.json) | Milky green surface, protein ribbons and cyan nucleic acids. | [<img src="examples/presets/preset_4_milky_green.png" alt="preset_4_milky_green preview" width="220">](examples/presets/preset_4_milky_green.png) |
-| [preset_5_black_interface](blender_render/style_preset_5_black_interface.json) | Cartoon and ligand interface on a black background. | [<img src="examples/presets/preset_5_black_interface.png" alt="preset_5_black_interface preview" width="220">](examples/presets/preset_5_black_interface.png) |
+| [mint_sky_assembly](blender_render/style_preset_mint_sky_assembly.json) | **Default.** Mint and sky protein assembly with purple and pink nucleic acids. | [<img src="examples/presets/mint_sky_assembly.png" alt="mint_sky_assembly preview" width="220">](examples/presets/mint_sky_assembly.png) |
 | [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 | [powder_blue_rounded](blender_render/style_preset_powder_blue_rounded.json) | Powder blue rounded protein with pink nucleic acid on black. | [<img src="examples/presets/powder_blue_rounded.png" alt="powder_blue_rounded preview" width="220">](examples/presets/powder_blue_rounded.png) |
 | [cyan_mint_cutaway](blender_render/style_preset_cyan_mint_cutaway.json) | Cyan and mint surfaces with clean pocket cuts and intact interior ribbons. | [<img src="examples/presets/cyan_mint_cutaway.png" alt="cyan_mint_cutaway preview" width="220">](examples/presets/cyan_mint_cutaway.png) |
@@ -112,7 +108,6 @@ See [preset details](docs/reference-presets.md) and the
 | [pastel_duplex_cartoon](blender_render/style_preset_pastel_duplex_cartoon.json) | Thin blue and green secondary-structure ribbons with pink DNA. | [<img src="examples/presets/pastel_duplex_cartoon.png" alt="pastel_duplex_cartoon preview" width="220">](examples/presets/pastel_duplex_cartoon.png) |
 | [vivid_binding_site](blender_render/style_preset_vivid_binding_site.json) | Macro ligand view with vivid element colors and teal cartoon context. | [<img src="examples/presets/vivid_binding_site.png" alt="vivid_binding_site preview" width="220">](examples/presets/vivid_binding_site.png) |
 | [ivory_lime_frosted](blender_render/style_preset_ivory_lime_frosted.json) | Ivory frosted grid shell, lime core and cyan nucleic acids. | [<img src="examples/presets/ivory_lime_frosted.png" alt="ivory_lime_frosted preview" width="220">](examples/presets/ivory_lime_frosted.png) |
-| [mint_sky_assembly](blender_render/style_preset_mint_sky_assembly.json) | Mint and sky protein assembly with purple and pink nucleic acids. | [<img src="examples/presets/mint_sky_assembly.png" alt="mint_sky_assembly preview" width="220">](examples/presets/mint_sky_assembly.png) |
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
 
 ```sh

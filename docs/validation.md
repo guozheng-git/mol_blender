@@ -164,3 +164,21 @@ Ignored artifacts include `renders/local-rock.*`, `renders/local-360.*`,
 Actual PyMOL GUI movie playback and Claude/Codex client media playback have not
 been verified. MCP protocol execution and PNG-byte delivery are verified
 separately. No remote rendering or publication was used.
+
+
+## Mint/sky default preset
+
+Executed 2026-09-29 after selecting `mint_sky_assembly` as the default across the
+resolver, CLI, developer preview, PyMOL bridge and stdio MCP. The five original
+numbered presets remain in the catalog with unchanged JSON; their README gallery
+rows were removed. The existing preset-1-specific backend checks remain intact
+when that preset is explicitly selected.
+
+- Source suite and installed-wheel suite outside the checkout: **200 passed** each.
+  Adapter tests cover omitted preset arguments; original preset IDs still resolve.
+- Rendered the public `examples/1sps_pose.pse` with no `--preset` argument at
+  320 × 240 and 32 samples. Its manifest identifies `mint_sky_assembly`, native
+  Molecular Nodes cartoons and native ligand sticks. The inspected PNG shows
+  mint protein, purple ligand and pale cyan background with the saved input pose.
+- Artifacts and logs remain ignored: `renders/mint-default.png`, its `.render/`
+  directory and `.validation/mint-default*.log`. Preset JSON files were not edited.
