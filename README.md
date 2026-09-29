@@ -27,6 +27,19 @@ macOS or Linux x86_64 (downloads Blender and Python dependencies):
 blender-render setup --install-runtime --pymol-python /path/to/pymol/python
 ```
 
+To keep Blender, its dependencies and configuration inside this checkout, set the
+configuration root before running setup:
+
+```sh
+export BLENDER_RENDER_HOME="$PWD/.runtime"
+blender-render setup --install-runtime --pymol-python /path/to/pymol/python
+```
+
+That installs Blender at `.runtime/runtime/Blender.app` on Apple Silicon macOS.
+Keep `BLENDER_RENDER_HOME` set when rendering or starting MCP so the same local
+configuration is used. `.runtime/` is excluded from Git. The fresh Mac runtime
+installation and an actual render have been [verified](docs/validation.md#fresh-mac-installation).
+
 Or configure an existing runtime without installing anything:
 
 ```sh

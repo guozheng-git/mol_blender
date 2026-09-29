@@ -75,3 +75,42 @@ quality comparisons. PyMOL was exercised headlessly, not visually in a GUI windo
 Actual Claude/Codex client registration, skill discovery and in-chat image display
 were not exercised. Stdio protocol and image-byte delivery were tested independently.
 No remote renderer, deployment, paid compute, push or publication was used.
+
+## Fresh Mac installation
+
+Executed 2026-09-28 with a new, repo-local `BLENDER_RENDER_HOME=.runtime`.
+The managed installer downloaded and checksum-verified the Blender 5.0.1 Apple
+Silicon DMG, mounted it, copied a new Blender.app into `.runtime/runtime/`, detached
+the disk image, and installed the hash-pinned Python wheels into a new
+`.runtime/runtime/site/`. The installed Biotite CCD matched the existing lock
+without copying a database from another Blender installation. No installer code
+changes or manual runtime repairs were needed.
+
+A separate PyMOL environment was installed with Pixi under `.runtime/pymol/` and
+configured as the file-export interpreter. The existing project `.venv` was reused
+as the CLI environment. Download/package caches could be reused, but all managed
+render-runtime destinations were new. This verifies a fresh runtime installation
+on this Apple Silicon host, not every supported OS or a pristine operating system.
+
+```sh
+export BLENDER_RENDER_HOME="$PWD/.runtime"
+blender-render setup --install-runtime
+pixi init .runtime/pymol --channel conda-forge
+pixi add --manifest-path .runtime/pymol/pixi.toml python=3.11 pymol-open-source
+blender-render setup --pymol-python "$PWD/.runtime/pymol/.pixi/envs/default/bin/python"
+blender-render render examples/1sps_pose.pse --width 512 --height 512 --samples 32 \
+  --save-blend -o renders/fresh-install.png
+```
+
+The render completed on the Apple M4 Metal GPU, and its PNG was visually inspected.
+Manifest checks confirmed the Blender executable and the Molecular Nodes, NumPy
+and Biotite module paths all came from this checkout's `.runtime/`. Runtime versions
+matched the lock; DSS assignment, native cartoons and sphere-free ligand sticks
+passed. The PNG and Blender scene both exist. PNG SHA-256:
+`fe6b2d171a231f87107a02b4cedd00f10f8d22962c653cc3a03ea799ab761e52`.
+
+The local `.runtime/activate` helper selects this checkout's CLI environment and
+configuration when sourced. Logs are `.runtime/install.log`,
+`.runtime/pymol-install.log` and `.runtime/render-smoke.log`. Installation files,
+configuration, logs and renders remain ignored by Git. The source and runtime
+installer are unchanged; only this evidence and the README were updated.
