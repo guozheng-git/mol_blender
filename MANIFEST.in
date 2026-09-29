@@ -1,10 +1,9 @@
-include LICENSE THIRD_PARTY_NOTICES.md
+include LICENSE THIRD_PARTY_NOTICES.md AGENTS.md CLAUDE.md
 recursive-include LICENSES *.txt
-recursive-include containers *.sh Dockerfile *.md
 recursive-include docs *.md *.json
 recursive-include examples *.cif *.json *.png *.pse *.py
-recursive-include plugins *.json *.md *.svg *.png
-include .agents/plugins/marketplace.json
+recursive-include .agents/skills *.md
+recursive-include .claude/skills *.md
 recursive-include scripts *.py
 global-exclude *.pyc
 global-exclude __pycache__

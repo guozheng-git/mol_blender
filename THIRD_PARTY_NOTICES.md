@@ -1,12 +1,12 @@
 # Third-party software
 
-The root MIT license covers the independently authored client, export, job,
-gateway, and plugin code. The Blender Python API scripts listed below are
+The root MIT license covers the independently authored client, export, preset-authoring,
+and plugin code. The Blender Python API scripts listed below are
 GPL-3.0-or-later, as marked in their file headers. The wheel contains both
 components and declares `MIT AND GPL-3.0-or-later`.
 
 GPL scripts: `blender_custom_render.py`, `geometry.py`, `paint.py`,
-`runtime_initialize.py`, and `runtime_probe.py`, all under `blender_render/`.
+`reference_effects.py`, `developer_blender.py`, `runtime_initialize.py`, and `runtime_probe.py`, all under `blender_render/`.
 The full GPL text is in `LICENSES/GPL-3.0-or-later.txt`. This separation follows
 [Blender's published guidance for Python scripts](https://www.blender.org/support/faq/).
 It does not relicense upstream dependencies, bundled node assets, or their
@@ -25,29 +25,17 @@ modifications. All render-side source remains available in the release.
 | certifi | MPL-2.0 | https://github.com/certifi/python-certifi |
 | tqdm | MPL-2.0 AND MIT | https://github.com/tqdm/tqdm |
 | FastMCP | Apache-2.0 | https://github.com/jlowin/fastmcp |
-| Modal Python SDK | Apache-2.0 | https://github.com/modal-labs/modal-client |
 
-Runtime images contain GPL software. Their distribution must retain the relevant
-licenses and corresponding source, including any modifications and build scripts.
-The release source bundle includes our build scripts; runtime source archives and
-license inventories accompany container releases. Do not describe the combined
-runtime as MIT-only. Rendered images are not relicensed by this notice. A saved
-Blender scene can contain Molecular Nodes node groups; those assets retain
-their upstream license.
+Blender and Molecular Nodes retain their upstream licenses. Do not describe the
+combined runtime as MIT-only. Rendered images are not relicensed by this notice.
+A saved Blender scene can contain Molecular Nodes node groups, whose assets retain
+their upstream license. All render-side source remains available in this repository.
 
-`blender_render/runtime-sources.json` and `service-sources.json` record exact
-source versions, URLs, and checksums. `scripts/collect_sources.py` downloads and
-checks those archives, collects their unmodified license files, and writes a
-source manifest. The source-only cronsim wheel is included because that release
-does not provide an sdist. Windows-only dependencies are not distributed in the
-Mac/Linux runtime. PyPI license metadata is supplemented by the original notice
-files; it is not a substitute for their terms.
-
-The Linux runtime retains Debian package copyright files in `/usr/share/doc`,
-and an exact binary/source-version inventory in `/opt/notices/debian-packages.tsv`.
-The corresponding-source bundle and container build scripts accompany release
-downloads. The client does not install Blender or Molecular Nodes until runtime
-setup is explicitly requested.
+`blender_render/runtime-sources.json` records runtime source versions, URLs and
+checksums. `scripts/collect_sources.py` downloads and checks those archives and
+collects their unmodified license files. `docs/dependency-source-manifest.json`
+retains the upstream release's historical notice inventory, including dependencies
+no longer used by this local branch. Runtime setup is an explicit user action.
 
 Example structures are obtained from the RCSB Protein Data Bank and carry their
 accession and citation in the example manifest. User-uploaded structures and

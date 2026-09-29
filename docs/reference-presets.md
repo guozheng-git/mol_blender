@@ -1,6 +1,6 @@
 # Reference presets
 
-Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [README gallery](../README.md#preset-gallery) shows all 14 choices using actual local Blender renders of public structures.
+Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 14 choices using actual local Blender renders of public structures.
 
 | Reference | Preset / alias | Example | Match and scope |
 |---|---|---|---|
@@ -24,10 +24,10 @@ blender_render preset=mint_sky_assembly, preserve_view=0
 ```
 
 ```sh
-# Existing local profile, with its configured PyMOL and Blender runtimes.
-blender-render render pose.pse --profile local --preset cyan_mint_cutaway -o pocket.png
-blender-render render structure.cif --profile local --preset neon_duplex_hero --no-preserve-view -o hero.png
-blender-render render pose.pse --profile local --style-json edited-style.json -o custom.png
+# Configured local PyMOL and Blender runtimes.
+blender-render render pose.pse --preset cyan_mint_cutaway -o pocket.png
+blender-render render structure.cif --preset neon_duplex_hero --no-preserve-view -o hero.png
+blender-render render pose.pse --style-json edited-style.json -o custom.png
 ```
 
 Named presets preserve the input pose by default. `--no-preserve-view` selects the preset's authored camera; explicit camera overrides and full JSON retain their requested settings. Some styles use `direction_source=pymol`, so the initial orientation still matters. The gallery metadata stores the public example view and exact render dimensions; a preset alone cannot imply the same pose for an unrelated structure. Full JSON and preset-plus-overrides share the same resolver. Objects merge recursively; arrays such as `styles` replace in full.
@@ -53,16 +53,14 @@ This is a deliberately configured A/B example. For another complex, edit both su
 - `wireframe_width_angstrom` creates an isolated wire overlay from a style's geometry; `wireframe_spacing_angstrom` controls quad-cell spacing (default 1 angstrom). A uniform voxel remesh and smoothing operate only on the overlay. Rear-facing cells are removed using the final camera so transparent objects show a single readable grid. The ivory/lime preset uses separate overlays for the protein shell and cyan DNA. The original molecular geometry remains intact. These authored overlays, like cutaways, must be regenerated after changing the camera in a saved scene.
 - World: `gradient_direction` controls the visible background ramp; `ambient_color` and `ambient_strength` separate illumination from that background.
 
-All controls use the existing schema and scene builder. Unsupported keys, zero gradient directions and inverted opacity ranges fail validation. No developer workbench, new deployment path or separate rendering engine is included.
+All controls use the existing schema and scene builder. Unsupported keys, zero gradient directions and inverted opacity ranges fail validation. Preset authoring and local previews use this same rendering engine.
 
 ## Evidence
 
-The execution record is [blender-render-progress.md](plans/blender-render-progress.md). [Gallery metadata](../examples/presets/gallery.json) records public coordinate URLs/hashes, preset hashes, views, output sizes and image hashes. Full-size local previews and detailed runtime manifests are retained in the task's output folder; only public example thumbnails and sanitized evidence belong in Git.
+See [local validation](validation.md) for checks executed on this branch.
+[Gallery metadata](../examples/presets/gallery.json) retains the upstream public
+coordinate URLs/hashes, preset hashes, views, sizes and image hashes. Those gallery
+assets are historical examples, not newly verified renders from this branch.
 
-The Blender regression command is:
-
-```sh
-PRESS_BIOTITE_CCD_PATH="$TEMP_CCD" BLENDER_RENDER_SITE="$RUNTIME_SITE"   "$BLENDER" --background --python-use-system-env --python-exit-code 1   --python scripts/validate_reference_render.py -- "$OUTPUT_DIR"
-```
-
-Use the configured Molecular Nodes extension environment. Factory startup without its dependency paths is not a successful runtime check. An explicit CCD path is exclusive: it does not mirror into the installed addon or shared user cache. Local tests and gallery renders do not verify Slurm, Modal, deployments, or installed Codex/ChatGPT attachment flows.
+Use the configured Molecular Nodes environment and pinned CCD. A successful
+local render does not by itself verify image display in Claude or Codex.

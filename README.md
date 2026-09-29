@@ -1,92 +1,155 @@
-# Blender Render
+# Blender Render — local PyMOL bridge
 
-Ray-traced molecular stills from PyMOL, with the saved pose, colors, and transparent background. Use the same Blender renderer on an Apple Silicon Mac, your lab's SLURM cluster, or Modal, and connect it to Codex or ChatGPT through MCP.
+Render molecular structures with local Blender and Molecular Nodes, from PyMOL,
+a command line, Claude Code or Codex. This branch keeps the shared renderer,
+14 built-in presets, JSON preset authoring and an optional **stdio-only MCP** adapter.
+It has no hosted service, OAuth, billing, Slurm, Modal or deployment commands.
 
-This is the **private 0.2.0b1 beta**. The repository and release artifacts remain private, and the hosted endpoint admits only the owner's GitHub account. Public publication, publisher identity verification, and OpenAI portal submission are deferred at the owner's request. The [validation report](docs/release-validation.md) distinguishes executed checks from remaining release gates.
+## Install and configure
 
-The renderer pins **Blender 5.0.1**, **Molecular Nodes 4.5.10**, and **Python 3.11**. Preset 1 remains the default pastel style. `dried_paint_green` adds pigment variation, surface relief, and rounded ribbon edges. Output is a PNG plus a provenance manifest, with an optional `.blend` download. Animation and interactive 3D editing are outside this beta.
-
-To extend the engine in a trusted checkout, use the [local developer workflow](docs/developer-workflow.md): edit Python and JSON, preview fresh source, compare images, and save named presets. The depth-of-field example includes separate Python-change and JSON-control checks.
-
-## Preset gallery
-
-Choose the identifier beneath an image: `blender_render preset=cyan_mint_cutaway` in PyMOL, or `blender-render render pose.pse --preset cyan_mint_cutaway -o pocket.png` from the CLI. Each name links to its editable JSON. All previews below are actual local Blender renders of public structures.
-
-The ivory/lime image opens at full resolution; its [surface and DNA grid detail](examples/presets/ivory_lime_frosted_detail.png) shows the fine cells up close.
-
-| | |
-|---|---|
-| **Powder blue rounded**<br>![Powder blue rounded](examples/presets/powder_blue_rounded.png)<br>[`powder_blue_rounded`](blender_render/style_preset_powder_blue_rounded.json)<br>8AW3 · reference 1 · structure analogue | **Cyan / mint cutaway**<br>![Cyan / mint cutaway](examples/presets/cyan_mint_cutaway.png)<br>[`cyan_mint_cutaway`](blender_render/style_preset_cyan_mint_cutaway.json)<br>8EA6 · reference 2 · colored pocket residues |
-| **Pastel duplex, rounded**<br>![Pastel duplex, rounded](examples/presets/pastel_duplex_rounded.png)<br>[`pastel_duplex_rounded`](blender_render/style_preset_pastel_duplex_rounded.json)<br>7PZB · reference 3 | **Pastel duplex, cartoon**<br>![Pastel duplex, cartoon](examples/presets/pastel_duplex_cartoon.png)<br>[`pastel_duplex_cartoon`](blender_render/style_preset_pastel_duplex_cartoon.json)<br>7PZB · reference 4 |
-| **Vivid binding site**<br>![Vivid binding site](examples/presets/vivid_binding_site.png)<br>[`vivid_binding_site`](blender_render/style_preset_vivid_binding_site.json)<br>1AZM · reference 5 · ligand analogue | **Ivory / lime frosted**<br>![Ivory / lime frosted](examples/presets/ivory_lime_frosted.png)<br>[`ivory_lime_frosted`](blender_render/style_preset_ivory_lime_frosted.json)<br>7PZB · reference 6 · fine surface and DNA grids · structure analogue |
-| **Mint / sky assembly**<br>![Mint / sky assembly](examples/presets/mint_sky_assembly.png)<br>[`mint_sky_assembly`](blender_render/style_preset_mint_sky_assembly.json)<br>8AA5 · reference 7 | **Neon duplex hero**<br>![Neon duplex hero](examples/presets/neon_duplex_hero.png)<br>[`neon_duplex_hero`](blender_render/style_preset_neon_duplex_hero.json)<br>7PZB · reference 8 |
-| **Pastel (default)**<br>![Pastel (default)](examples/presets/preset_1_interface.png)<br>[`preset_1_interface`](blender_render/style_preset_1_opaque_pastel.json)<br>1SPS · original preset 1 | **Frosted blue**<br>![Frosted blue](examples/presets/preset_2_frosted_blue.png)<br>[`preset_2_frosted_blue`](blender_render/style_preset_2_frosted_blue.json)<br>1SPS · original preset 2 |
-| **Pastel on black**<br>![Pastel on black](examples/presets/preset_3_black_tubes.png)<br>[`preset_3_black_tubes`](blender_render/style_preset_3_black_tubes.json)<br>1SPS · original preset 3 | **Milky green**<br>![Milky green](examples/presets/preset_4_milky_green.png)<br>[`preset_4_milky_green`](blender_render/style_preset_4_milky_green.json)<br>1SPS · original preset 4 |
-| **Black interface**<br>![Black interface](examples/presets/preset_5_black_interface.png)<br>[`preset_5_black_interface`](blender_render/style_preset_5_black_interface.json)<br>1SPS · original preset 5 | **Dried green paint**<br>![Dried green paint](examples/presets/dried_paint_green.png)<br>[`dried_paint_green`](blender_render/style_preset_dried_paint_green.json)<br>1SPS · original green paint |
-
-Presets preserve your saved pose by default. Use `--no-preserve-view` (PyMOL: `preserve_view=0`) to use an authored preset camera. Exact framing depends on the input structure and view. References 1, 5 and 6 are style approximations with unconfirmed original structures. See [reference details and customization](docs/reference-presets.md) and [public gallery provenance](examples/presets/gallery.json).
-
-## Choose compute
-
-| Compute | Setup | Use |
-|---|---|---|
-| Mac | Install the wheel and run setup | `blender_render` inside PyMOL; Metal with CPU fallback |
-| Own HPC | Add a named cluster profile | `blender_render mode=interactive, profile=ipd`; warm Apptainer worker with SSH transport |
-| Shared Modal | Install the plugin and sign in with GitHub | Import, submit, inspect progress, preview, and download |
-| Your Modal account | Deploy a personal service with an explicit budget | Connect its HTTPS MCP URL |
-
-- [Mac installation and PyMOL](docs/mac.md)
-- [SLURM, Apptainer, and a lab HTTPS gateway](docs/hpc.md)
-- [Codex and ChatGPT plugin installation](docs/plugin.md)
-- [Modal deployment and budget operation](docs/modal.md)
-- [Troubleshooting](docs/troubleshooting.md)
-
-## Quick start
-
-After installing the release wheel's `server` extra in Python 3.11:
-
-```sh
-blender-render setup --install-runtime
-```
-
-Run the plugin path printed by setup in PyMOL, then:
-
-```python
-blender_render
-blender_render preset=dried_paint_green, transparent_background=1, save_blend=1
-```
-
-For files on disk, configure `--pymol-python` with an interpreter containing `pymol2`, then:
-
-```sh
-blender-render render pose.pse --preset dried_paint_green --transparent --save-blend -o figure.png
-```
-
-PSE input preserves enabled objects, object transforms, the saved camera/projection/FOV, and PyMOL colors. CIF and PDB input receive a fitted initial view. Export is CIF-first and assigns secondary structure before rendering. Ligands use native Molecular Nodes sticks, with no legacy ball-and-stick fallback. Rough mode changes performance settings only.
-
-## Jobs and provenance
-
-The versioned API provides upload, immediate asynchronous submission, status, cancellation, results, and expiring downloads. Submission is idempotent; reconnect to the returned job ID instead of launching another render after a network interruption. One durable FIFO queue owns each service's Blender worker. Local and HPC services stop after 15 idle minutes.
-
-Each manifest records input hashes and provenance, DSS status, structure format, selected geometry backends, resolved preset, runtime and GPU versions, camera settings, timings, and output checksums. Temporary run directories are cleaned by default.
-
-The shared service allows ten completed renders per UTC day, reserving a daily slot for each pending job. Upload counts and daily GPU minutes have no quota. The owner's verified GitHub account is exempt from the daily limit during testing. Output defaults to 2048 pixels, with a 4096-pixel maximum dimension and a ten-minute job timeout. Worst-case costs are reserved before dispatch, including for the testing account; the lifetime budget still applies. Inputs are deleted after rendering, and unused uploads expire after five minutes. Results are deleted after download or fifteen minutes after completion. There is no retained structure library or public gallery. See [privacy](docs/privacy.md) and [terms](docs/terms.md).
-
-## Development
+Use Python 3.11 (matching Blender's Python ABI):
 
 ```sh
 python3.11 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev,server,mcp,modal]'
-.venv/bin/python -m pytest
-.venv/bin/python -m build
+source .venv/bin/activate
+python -m pip install -e '.[dev,mcp]'
 ```
 
-`blender_render` is the only implementation package. `bridge_runner`, `render_server`, and the PyMOL script remain compatibility entry points. The preset JSON schema and packaged runtime lock are shared by all backends. See [architecture](docs/architecture.md) and [release validation](docs/release-validation.md).
+Omit `mcp` if you only need the CLI/PyMOL bridge. Rendering requires the versions in
+`blender_render/runtime.lock.json`: Blender 5.0.1, Molecular Nodes 4.5.10, NumPy
+1.26.4 and Biotite 1.6.0, plus the pinned CCD database. PyMOL file import uses a
+separate interpreter with `pymol2`; an existing PyMOL environment is suitable.
 
-The examples use public PDB structures; accession, source URL, and SHA256 are recorded in `examples/structures.json` and `examples/presets/gallery.json`.
+To install the pinned Blender runtime into user-owned storage on Apple Silicon
+macOS or Linux x86_64 (downloads Blender and Python dependencies):
 
-## License and support
+```sh
+blender-render setup --install-runtime --pymol-python /path/to/pymol/python
+```
 
-Independently authored bridge/client code is MIT. Blender, Molecular Nodes, and other dependencies retain their licenses and source availability; the combined runtime is not MIT-only. [Dependency notices](THIRD_PARTY_NOTICES.md) describe the distributed source bundle and upstream licenses.
+Or configure an existing runtime without installing anything:
 
-Report reproducible problems through [GitHub issues](https://github.com/magnusbauer/blender_render/issues), preferably with a public example and a reviewed manifest. OpenAI directory publication is deferred; private testing uses repository installation and the restricted MCP endpoint.
+```sh
+blender-render setup \
+  --blender /path/to/blender \
+  --pymol-python /path/to/pymol/python \
+  --runtime-path /path/to/python3.11/site-packages \
+  --runtime-path /path/to/extensions/blender_org \
+  --ccd /path/to/biotite/structure/info/components.bcif
+blender-render doctor
+```
+
+Each `--runtime-path` must be an existing directory supplying the pinned rendering
+dependencies. If using a Molecular Nodes extension with bundled wheels, add
+`--runtime-wheels /path/to/molecularnodes/wheels`; these are extracted into each
+isolated render environment. The dependency directories must include `jsonschema`.
+`setup` saves configuration; `doctor` is read-only. A successful render verifies
+source hashes, runtime versions and the CCD digest before reporting completion.
+Configuration lives in `~/.config/blender-render/config.json`; set
+`BLENDER_RENDER_HOME` to use a separate configuration directory.
+
+## Render locally
+
+```sh
+blender-render presets
+blender-render render examples/1sps.cif --rough -o renders/example.png
+blender-render render structure.pse --preset dried_paint_green --save-blend -o renders/paint.png
+blender-render render structure.pse --style-json my-style.json -o renders/custom.png
+blender-render export structure.pse -o bundle.json
+```
+
+Inputs are trusted local `.pse`, `.cif`, `.mmcif`, `.pdb` or exported bundle `.json`
+files. PSE loading can execute code; use sessions you trust. CIF/PDB imports get a
+PyMOL-generated view. Sessions and bundles preserve their saved pose by default;
+explicit camera fields in a style take precedence. `--no-preserve-view` opts into
+the preset's camera. Rough mode changes only performance settings.
+
+Each render writes the requested PNG plus a sibling `NAME.render/` directory with
+`manifest.json`, `resolved-style.json`, source/runtime provenance and logs. Optional
+Blender scenes are saved there as `render.blend`. Output names must be new. Failed
+runs retain their logs; choose a new name after fixing the problem. Temporary source
+snapshots are removed unless `--keep-temp` is requested.
+
+## PyMOL bridge
+
+Run `blender-render setup` from the installed environment first; this records the
+Python used to run renders. In PyMOL, load the plugin using its absolute checkout path:
+
+```pymol
+run /absolute/path/to/blender_render/blender_render/pymol_bridge_plugin.py
+blender_render
+blender_render selection=(all), preset=dried_paint_green, output_dir=renders, output_name=paint.png
+blender_render style_json=/absolute/path/to/my-style.json, output_name=custom.png
+```
+
+The adapter exports enabled objects, transforms, colors, secondary structure and
+camera, calls local Blender through the configured Python, then loads the PNG into
+PyMOL. Rendering is synchronous. `width`, `height`, `samples`, `rough`, `save_blend`,
+`color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
+Former service/profile/remote arguments are intentionally unsupported.
+
+## Claude Code and Codex
+
+Open this checkout in either agent and use the CLI above. The repository includes
+`recreate-render-preset` in `.agents/skills/` and a linked entry in `.claude/skills/`.
+Example request:
+
+> Use recreate-render-preset to match reference.png on structure.pse. Save the full
+> style JSON, compare local previews, and register it as user/my-reference.
+
+The skill inspects the actual image, records observable features, generates a
+validated starting JSON, refines it through local renders, then saves and reloads
+the preset. It explicitly reports remaining mismatches. See the
+[skill](.agents/skills/recreate-render-preset/SKILL.md).
+
+Optional MCP configuration, using the absolute path to this environment:
+
+```sh
+codex mcp add blender-local -- /absolute/path/to/blender_render/.venv/bin/blender-render mcp
+claude mcp add --transport stdio blender-local -- /absolute/path/to/blender_render/.venv/bin/blender-render mcp
+```
+
+The four tools are `presets`, `inspect_style`, `render_structure` and `read_render`.
+Rendering returns local artifact paths; `read_render` returns the PNG as MCP image
+content for inspection. Configure a client tool timeout appropriate for a render
+(up to the default 600 seconds). The MCP process uses the same user's local config
+and never opens an HTTP listener. Client registration is optional and is not done
+by installing this package. These commands follow the official
+[Codex MCP](https://developers.openai.com/codex/mcp/) and
+[Claude Code MCP](https://code.claude.com/docs/en/mcp) documentation; repository skill
+locations follow [Codex skills](https://developers.openai.com/codex/skills/) and
+[Claude Code skills](https://code.claude.com/docs/en/skills).
+
+## Preset authoring
+
+```sh
+blender-render dev catalog
+blender-render dev inspect pastel
+blender-render dev schema
+blender-render dev reference reference.png --observations observations.json \
+  --style-output candidate.json > decision.json
+blender-render dev validate candidate.json
+blender-render dev save user/my-reference candidate.json \
+  --description 'My reference style' --provenance decision.json
+blender-render render structure.pse --preset user/my-reference -o renders/saved.png
+```
+
+`dev reference` records agent-supplied observations; it is not an automatic image
+recognizer. `--style-output` emits a complete style document and refuses to overwrite
+an existing file. A saved catalog preset is a metadata envelope; use its ID with
+`--preset`, or extract its `style` for `--style-json`. Save defaults to
+`--camera-policy preserve_input`; choose `authored` deliberately for a reusable
+camera composition. `dev preview --help` exposes explicit runtime paths and source
+snapshots for renderer development. Built-ins cannot be overwritten.
+
+## Development and license
+
+```sh
+python -m pytest
+python -m build --wheel
+```
+
+See [validation](docs/validation.md) for executed checks and limits. Public example
+structures and citations are in `examples/structures.json`. The client code is MIT;
+Blender API scripts and Molecular Nodes assets retain their GPL terms. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
