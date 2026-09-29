@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,7 @@ def _prepare_style_doc(request_doc: dict[str, Any]) -> tuple[str, dict[str, Any]
 
 
 def _process_render_request(*, request_id: str, request_doc: dict[str, Any], state: RenderState) -> dict[str, Any]:
+    started = time.monotonic()
     state.log(f"request-validate id={request_id}")
     payload = request_doc.get("payload")
     if not isinstance(payload, dict):
@@ -99,6 +101,9 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
     preset, style_doc = request_doc.get("preset", ""), request_doc["style_doc"]
     state.log(f"request-style-ready id={request_id} preset={preset or '<style_doc>'}")
 
+    from .animation import encoder, unpack, encode
+    animation_cfg = style_doc['output'].get('animation')
+    animation_encoder = encoder() if animation_cfg else None
     keep_temp = _to_bool(request_doc.get("keep_temp", False))
     job_timeout_raw = request_doc.get("job_timeout_seconds")
     job_timeout = state.default_job_timeout
@@ -107,6 +112,8 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
             job_timeout = max(30.0, float(job_timeout_raw))
         except Exception:
             job_timeout = state.default_job_timeout
+
+    deadline = started + job_timeout
 
     run_id_raw = payload.get("run_id")
     run_id = str(run_id_raw).strip() if isinstance(run_id_raw, str) and run_id_raw.strip() else request_id
@@ -158,13 +165,16 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
                 chosen_structure_path=structure_file,
                 style_doc=style_doc,
             )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or (state.cancelled and state.cancelled()):
+                raise RuntimeError('Render deadline expired or cancelled')
             return state.worker.submit_render(
                 structure_path=structure_file,
                 view_json=view_path,
                 style_json=style_json_path,
                 output_png=output_png,
                 run_manifest=run_manifest_path,
-                timeout=job_timeout,
+                timeout=remaining,
                 **({'progress': state.progress} if state.progress else {}),
             )
 
@@ -201,6 +211,23 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
         if preset_gate_target:
             _bridge_runner._enforce_preset_1_backend_gates(manifest=manifest_doc, manifest_path=run_manifest_path)
 
+        animation_outputs = {}
+        if animation_cfg:
+            archive = output_png.with_suffix('.frames.zip')
+            with unpack(archive) as (frames, metadata):
+                expected = round(animation_cfg['duration'] * animation_cfg['fps'])
+                if (metadata['frames'] != expected or metadata['fps'] != animation_cfg['fps']
+                        or metadata['animation'] != animation_cfg
+                        or (metadata['width'], metadata['height']) !=
+                           (style_doc['output']['width'], style_doc['output']['height'])):
+                    raise ValueError('Rendered frames do not match the requested animation')
+                for suffix in (['mp4', 'gif'] if animation_cfg.get('gif') else ['mp4']):
+                    target = output_png.with_suffix('.' + suffix)
+                    encode(frames, metadata, target, executable=animation_encoder,
+                           deadline=deadline, cancelled=state.cancelled)
+                    animation_outputs[suffix + '_base64'] = base64.b64encode(target.read_bytes()).decode('ascii')
+            animation_outputs['frames_base64'] = base64.b64encode(archive.read_bytes()).decode('ascii')
+
         png_base64 = base64.b64encode(output_png.read_bytes()).decode("ascii")
 
         response = {
@@ -224,6 +251,7 @@ def _process_render_request(*, request_id: str, request_doc: dict[str, Any], sta
             response["output_blend_name"] = output_blend_path.name
             response["blend_base64"] = base64.b64encode(output_blend_path.read_bytes()).decode("ascii")
 
+        response.update(animation_outputs)
         return response
     finally:
         if temp_root is not None and temp_root.exists() and not keep_temp:

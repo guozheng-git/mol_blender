@@ -114,3 +114,53 @@ configuration when sourced. Logs are `.runtime/install.log`,
 `.runtime/pymol-install.log` and `.runtime/render-smoke.log`. Installation files,
 configuration, logs and renders remain ignored by Git. The source and runtime
 installer are unchanged; only this evidence and the README were updated.
+
+
+## Local animation port
+
+Executed 2026-09-29 on this Mac, using the repo-local Blender 5.0.1 runtime and
+Apple M4 Metal GPU. Selected animation code came from PR #2; the local adapters
+and artifact handling were implemented on `codex/local-pymol-presets`.
+
+- Source suite: **198 passed**. Coverage includes all 14 preset/animation
+  resolutions, bounds and invalid options, adapter forwarding, missing FFmpeg,
+  missing artifacts, overwrite refusal, archive validation and real FFmpeg encoding.
+  The three warnings are the deliberate duplicate-ZIP test and two existing
+  FastMCP/Authlib deprecations.
+- Installed wheel outside the checkout: **198 passed**, with Python `-I` and
+  installed module-path/manifest checks. Source snapshots and package manifests
+  now ignore macOS Finder's mutable `.DS_Store`; it changed during an early test
+  run and incorrectly invalidated an otherwise unchanged source identity.
+- CLI: rendered `examples/1sps_pose.pse` as a ±12° rock, 2 seconds at 12 FPS,
+  320 × 240, 8 samples, producing PNG, GIF, MP4 and the lossless frame archive.
+- Installed-wheel stdio MCP: rendered the same public session as a full 360°
+  orbit with the same resolution, duration and FPS. `read_render` returned PNG
+  bytes identical to the saved still.
+- Both GIFs decode to **24 frames**, total **2,000 ms**, with infinite looping.
+  FFprobe confirms 24-frame, 2-second MP4s. Each archive has 24 distinct frame
+  hashes, and frame 0000 is byte-identical to the output PNG. Manifests record
+  the expected sinusoidal rocking angles and 0–345° spin in 15° increments.
+- Visually inspected frames 0, 6, 12 and 18 in both animations. The rock preserves
+  the starting view and swings each way; the spin exposes front, side and back
+  views. These 8-sample smoke renders are visibly noisy, not publication quality.
+- A real headless PyMOL instance exported and rendered a four-frame rock with
+  GIF and saved Blender scene through the plugin. With `auto_preview=0`, the
+  PyMOL view was unchanged. `blender_movie_export` re-encoded its saved frames;
+  CLI `movie-export` also re-encoded the longer rock without invoking Blender.
+  Pillow was added to the ignored repo-local Pixi PyMOL environment.
+
+Reproduce the small CLI check after activating the local environment:
+
+```sh
+blender-render render examples/1sps_pose.pse --animation rock --duration 2 \
+  --fps 12 --rock-angle 12 --gif --width 320 --height 240 --samples 8 \
+  -o renders/local-rock.png
+blender-render movie-export renders/local-rock.frames.zip -o renders/local-rock-reencoded.gif
+```
+
+Ignored artifacts include `renders/local-rock.*`, `renders/local-360.*`,
+`renders/pymol-rock.*`, their `.render/` logs/manifests,
+`renders/animation-contact-sheet.png` and `.validation/animation-*.log`.
+Actual PyMOL GUI movie playback and Claude/Codex client media playback have not
+been verified. MCP protocol execution and PNG-byte delivery are verified
+separately. No remote rendering or publication was used.

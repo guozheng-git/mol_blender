@@ -33,11 +33,17 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     options = dict(options or {})
     catalog_dir = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
     # Reject invalid presets before allocating any Blender work.
-    resolve_authored(options, payload, catalog_dir)
+    resolved = resolve_authored(options, payload, catalog_dir)
+    from .animation import encoder, required_names
+    if resolved['style_doc']['output'].get('animation'):
+        encoder()  # Fail before allocating a Blender process.
+    names = required_names(resolved['style_doc'])
     settings = runtime_settings(blender=blender, runtime_paths=runtime_paths, ccd=ccd, runtime_wheels=runtime_wheels)
     output = Path(output).expanduser().resolve().with_suffix('.png')
     artifacts = output.with_suffix('.render')
-    if output.exists() or artifacts.exists():
+    destinations = {'render.png': output, 'render.mp4': output.with_suffix('.mp4'),
+                    'render.gif': output.with_suffix('.gif'), 'frames.zip': output.with_suffix('.frames.zip')}
+    if artifacts.exists() or any(destinations[name].exists() for name in names if name in destinations):
         raise ValueError(f'Output already exists; choose a new filename: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='blender-local-input-') as temporary:
@@ -46,9 +52,17 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         result = preview(checkout=Path(__file__).resolve().parent.parent,
                          bundle=bundle, options=options, catalog_dir=catalog_dir,
                          output=artifacts, timeout=timeout, keep_source=keep_temp, **settings)
-    shutil.copyfile(artifacts / 'render.png', output)
+    for name in names:
+        if not (artifacts / name).is_file():
+            raise RuntimeError('Render artifact missing: ' + name)
+    for name in names:
+        if name in destinations:
+            shutil.copyfile(artifacts / name, destinations[name])
     outputs = {'render.png': str(output), 'manifest.json': str(artifacts / 'manifest.json'),
                'style.json': str(artifacts / 'resolved-style.json')}
+    for name in names:
+        if name in destinations:
+            outputs[name] = str(destinations[name])
     if (artifacts / 'render.blend').is_file():
         outputs['render.blend'] = str(artifacts / 'render.blend')
     return {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),

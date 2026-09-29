@@ -83,6 +83,39 @@ Blender scenes are saved there as `render.blend`. Output names must be new. Fail
 runs retain their logs; choose a new name after fixing the problem. Temporary source
 snapshots are removed unless `--keep-temp` is requested.
 
+## Rocking and 360° GIFs
+
+Install FFmpeg with the `libx264` and GIF encoders on your PATH. On macOS:
+
+```sh
+brew install ffmpeg
+```
+
+Then render with any built-in or saved preset:
+
+```sh
+blender-render render examples/1sps_pose.pse --animation rock --rock-angle 12 \
+  --duration 3 --fps 24 --gif --width 640 --height 480 -o renders/rock.png
+blender-render render examples/1sps_pose.pse --animation 360 \
+  --duration 6 --fps 24 --gif --width 640 --height 480 -o renders/spin.png
+```
+
+Each animation writes PNG, MP4 and lossless `.frames.zip` files beside the requested
+PNG; `--gif` adds a looping GIF. `rock_angle=12` means ±12° (24° total swing).
+The camera orbits around the structure using its initial up axis; the initial pose
+is retained as the PNG and restored in an optional saved Blender scene. Movies
+composite transparent pixels onto white; saved PNG frames retain alpha.
+
+Re-encode saved frames without launching Blender:
+
+```sh
+blender-render movie-export renders/rock.frames.zip -o renders/rock-again.gif
+```
+
+See [animation controls and limits](docs/animation.md), including PyMOL playback
+and MCP usage. Animation takes one render per frame, so start with small dimensions
+and low samples and increase `--timeout` for longer runs.
+
 ## PyMOL bridge
 
 Run `blender-render setup` from the installed environment first; this records the
@@ -99,6 +132,23 @@ The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
 PyMOL. Rendering is synchronous. `width`, `height`, `samples`, `rough`, `save_blend`,
 `color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
+For animations, add `animation=rock` or `animation=360`, `gif=1`, `duration`, `fps`
+and (for rocking) `rock_angle`. Optional movie preview needs Pillow installed in
+PyMOL's Python; for the repo-local Pixi environment:
+
+```sh
+pixi add --manifest-path .runtime/pymol/pixi.toml pillow
+```
+
+```pymol
+blender_render animation=rock, gif=1, width=640, height=480, output_name=rock.png
+blender_movie_export filename=rock-again.gif
+```
+
+Movie preview replaces PyMOL's current movie timeline when supported; `auto_preview=0`
+keeps the timeline untouched. Headless/unsupported GUI contexts return saved movie
+paths. `blender_movie_export` uses the latest verified frames or an explicit
+`source=/path/to/rock.frames.zip`; FFmpeg must be on PyMOL's PATH.
 Former service/profile/remote arguments are intentionally unsupported.
 
 ## Claude Code and Codex
@@ -123,7 +173,9 @@ claude mcp add --transport stdio blender-local -- /absolute/path/to/blender_rend
 ```
 
 The four tools are `presets`, `inspect_style`, `render_structure` and `read_render`.
-Rendering returns local artifact paths; `read_render` returns the PNG as MCP image
+`render_structure` accepts `animation`, `duration`, `fps`, `rock_angle`, `gif`,
+`width`, `height`, `samples` and `timeout`. Rendering returns local artifact paths;
+`read_render` returns the PNG as MCP image
 content for inspection. Configure a client tool timeout appropriate for a render
 (up to the default 600 seconds). The MCP process uses the same user's local config
 and never opens an HTTP listener. Client registration is optional and is not done

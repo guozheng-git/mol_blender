@@ -24,7 +24,8 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
                   output_dir=".", output_name="render.png", rough=0, color_follow="",
                   save_blend="", state=-1, blender_exe="", keep_temp=0,
                   width="", height="", samples="", transparent_background="",
-                  _self=None, overrides_json="", preserve_view="", timeout=600):
+                  _self=None, overrides_json="", preserve_view="", timeout=600,
+                  animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1):
     if _self is None:
         from pymol import cmd
     else:
@@ -50,12 +51,33 @@ def bridge_render(selection="(all)", preset="preset_1_interface", style_json="",
             options[key] = int(value)
     if str(transparent_background).strip():
         options["transparent_background"] = _parse_bool(transparent_background)
+    for key, value, convert in [('animation', animation, text), ('duration', duration, float),
+                                ('fps', fps, int), ('rock_angle', rock_angle, float), ('gif', gif, _parse_bool)]:
+        if str(value).strip():
+            options[key] = convert(value)
     output = (Path(text(output_dir) or ".").expanduser() / (text(output_name) or "render.png")).with_suffix(".png").resolve()
-    render_payload(payload, output=output, options=options, blender=text(blender_exe),
+    result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
                    timeout=float(timeout), keep_temp=_parse_bool(keep_temp))
-    try_load_preview(cmd, output)
+    if result and 'frames.zip' in result.get('outputs', {}):
+        from blender_render.pymol_movie import remember, load_movie
+        archive = result['outputs']['frames.zip']
+        try:
+            remember(cmd, archive)
+            result['presentation'] = load_movie(cmd, archive) if _parse_bool(auto_preview) else 'fallback_path'
+        except Exception as exc:
+            result['presentation'] = 'fallback_path'
+            print('Movie files saved; PyMOL preview unavailable: ' + str(exc))
+        print(json.dumps(result, indent=2))
+        return result
+    if _parse_bool(auto_preview):
+        try_load_preview(cmd, output)
     print(str(output))
     return str(output)
+
+def bridge_movie_export(filename, source="", _self=None):
+    from blender_render.pymol_movie import movie_export
+    return movie_export(_normalize_cli_string(filename), _normalize_cli_string(source), _self=_self)
+
 
 blender_render = bridge_render
 
@@ -63,9 +85,10 @@ def register_plugin(cmd_obj=None):
     if cmd_obj is None:
         from pymol import cmd as cmd_obj
     cmd_obj.extend("blender_render", bridge_render)
+    cmd_obj.extend("blender_movie_export", bridge_movie_export)
 
 try:
     from pymol import cmd
-    cmd.extend("blender_render", bridge_render)
+    register_plugin(cmd)
 except ImportError:
     pass

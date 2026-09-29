@@ -23,16 +23,27 @@ def create_stdio():
     @mcp.tool()
     def render_structure(input_path: str, output_path: str, preset: str = 'preset_1_interface',
                          style_json: str | None = None, rough: bool = False,
-                         save_blend: bool = False) -> dict:
+                         save_blend: bool = False, animation: str | None = None,
+                         duration: float | None = None, fps: int | None = None,
+                         rock_angle: float | None = None, gif: bool | None = None,
+                         width: int | None = None, height: int | None = None,
+                         samples: int | None = None, timeout: float = 600) -> dict:
         """Render a trusted local PSE/CIF/PDB/bundle with configured local Blender.
 
-        output_path must be new. Returns PNG and manifest paths after completion.
+        animation: rock or 360; gif=True adds a looping GIF alongside MP4 and saved frames.
+        rock_angle is the one-sided swing in degrees. output_path must be new.
+        Returns PNG, manifest and requested movie paths after completion.
         Use read_render on the returned PNG to inspect its pixels.
         """
         import json
         options = {'style_doc': json.loads(Path(style_json).expanduser().read_text())} if style_json else {'preset': preset}
         options.update(rough=rough, save_blend=save_blend)
-        return render_file(input_path, output=output_path, options=options)
+        for key, value in [('animation', animation), ('duration', duration), ('fps', fps),
+                           ('rock_angle', rock_angle), ('gif', gif), ('width', width),
+                           ('height', height), ('samples', samples)]:
+            if value is not None:
+                options[key] = value
+        return render_file(input_path, output=output_path, options=options, timeout=timeout)
 
     @mcp.tool()
     def read_render(path: str) -> Image:

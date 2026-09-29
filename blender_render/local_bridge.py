@@ -22,13 +22,13 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
                 command.extend([flag, str(path)])
         if 'style_doc' not in options:
             command.extend(['--preset', options.get('preset', 'preset_1_interface')])
-        for key in ('rough', 'color_follow', 'save_blend', 'preserve_view', 'transparent_background'):
+        for key in ('rough', 'color_follow', 'save_blend', 'preserve_view', 'transparent_background', 'gif'):
             if key in options:
                 flag = 'transparent' if key == 'transparent_background' else key.replace('_', '-')
                 command.append('--' + ('' if options[key] else 'no-') + flag)
-        for key in ('width', 'height', 'samples'):
+        for key in ('width', 'height', 'samples', 'animation', 'duration', 'fps', 'rock_angle'):
             if key in options:
-                command.extend(['--'+key, str(options[key])])
+                command.extend(['--'+key.replace('_', '-'), str(options[key])])
         if blender:
             command.extend(['--blender', blender])
         if keep_temp:

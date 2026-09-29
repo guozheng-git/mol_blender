@@ -14,10 +14,11 @@ import json
 from dataclasses import dataclass
 
 from . import core
+from .animation import CONTROLS, resolve as resolve_animation
 from .presets import DEFAULT_PRESET, PRESET_STYLE_FILENAMES, preset_id, required_capabilities
 
 OPTION_KEYS = frozenset({"preset", "style_doc", "overrides", "rough", "raw_view", "color_follow", "save_blend",
-                        "width", "height", "samples", "transparent_background", "preserve_view", "keep_temp"})
+                        "width", "height", "samples", "transparent_background", "preserve_view", "keep_temp", *CONTROLS})
 _FLAGS = ("rough", "raw_view", "color_follow", "save_blend", "transparent_background", "preserve_view", "keep_temp")
 
 
@@ -138,6 +139,7 @@ def resolve_options(options: dict, payload: dict, *, timeout: int = 600,
         style["renderer"]["transparent_background"] = options["transparent_background"]
     if "color_follow" in options:
         style = core._apply_color_follow_override(style, options["color_follow"])
+    resolve_animation(options, style["output"])
     if options.get("rough"):
         style = core._apply_rough_style_overrides(style)
     # Transport controls destinations; a style can never choose staging paths.

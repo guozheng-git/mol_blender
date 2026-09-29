@@ -30,6 +30,7 @@ CAPABILITIES = sorted({
     'material.fog_glow', 'material.edge_highlight', 'material.uniform_polymer_color',
     'geometry.edge_rounding', 'geometry.element_palette', 'world.directional_gradient',
     'world.separate_illumination', 'camera.depth_of_field', 'camera.reference_framing',
+    'animation.camera_orbit', 'encoding.ffmpeg',
 })
 
 
@@ -66,7 +67,7 @@ EXCLUDED_SUFFIXES = {'.pyc', '.pyo', '.tmp', '.log', '.sif'}
 
 
 def excluded(path):
-    return bool(set(path.parts) & EXCLUDED_DIRS) or path.suffix in EXCLUDED_SUFFIXES
+    return path.name == '.DS_Store' or bool(set(path.parts) & EXCLUDED_DIRS) or path.suffix in EXCLUDED_SUFFIXES
 
 
 def package_inventory(root):
@@ -219,7 +220,7 @@ def resource_bytes(path):
 ACTION_MODULES = {
     'conversion': ('export',),
     'render': ('core', 'chain_palette', 'ligand_selection', 'cutout_planes',
-               'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry', 'worker_ccd'),
+               'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry', 'worker_ccd', 'animation', 'animation_blender'),
 }
 
 

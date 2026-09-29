@@ -28,7 +28,7 @@ def source_files(package: Path) -> dict[str, str]:
     """All shipped package code/assets, including relevant uncommitted files."""
     files = {}
     for path in sorted(package.rglob("*")):
-        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
+        if path.name == ".DS_Store" or "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
             continue
         if path.is_symlink():
             raise ValueError("Development source snapshots do not accept symlinks: " + str(path))
@@ -226,6 +226,13 @@ def _run(config_path: Path) -> None:
     (output / "render.png").write_bytes(base64.b64decode(result.pop("png_base64")))
     if "blend_base64" in result:
         (output / "render.blend").write_bytes(base64.b64decode(result.pop("blend_base64")))
+    for key, name in [('mp4_base64', 'render.mp4'), ('gif_base64', 'render.gif'), ('frames_base64', 'frames.zip')]:
+        if key in result:
+            (output / name).write_bytes(base64.b64decode(result.pop(key)))
+    from blender_render.animation import required_names
+    for name in required_names(resolved['style_doc']):
+        if not (output / name).is_file():
+            raise RuntimeError('Render artifact missing: ' + name)
     (output / "manifest.json").write_text(json.dumps(result["manifest"], indent=2))
     identity.update(blender=result["manifest"]["development_source"], worker=result["worker"],
                     png_sha256=digest_file(output / "render.png"), status="completed", output=str(output))

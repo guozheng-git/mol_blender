@@ -48,6 +48,14 @@ def parser():
         render.add_argument('--'+name, type=int)
     for name in ('rough', 'transparent', 'color-follow', 'save-blend'):
         render.add_argument('--'+name, action=argparse.BooleanOptionalAction, default=None)
+    render.add_argument('--animation', choices=('none', 'rock', '360'))
+    render.add_argument('--duration', type=float)
+    render.add_argument('--fps', type=int)
+    render.add_argument('--rock-angle', type=float)
+    render.add_argument('--gif', action=argparse.BooleanOptionalAction, default=None)
+    movie = commands.add_parser('movie-export', help='Encode saved frames as GIF or MP4 without rendering again')
+    movie.add_argument('archive')
+    movie.add_argument('-o', '--output', required=True)
     render.add_argument('--timeout', type=float, default=600)
     return p
 
@@ -90,12 +98,17 @@ def execute(args):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(payload, indent=2, allow_nan=False))
         return {'bundle': str(output)}
+    if args.command == 'movie-export':
+        from .animation import export
+        if Path(args.output).expanduser().exists():
+            raise ValueError('Output already exists: ' + args.output)
+        return {'movie': export(Path(args.archive).expanduser(), Path(args.output).expanduser())}
     if args.command == 'render':
         from .local import render_file
         options = {'style_doc': json.loads(Path(args.style_json).expanduser().read_text())} if args.style_json else {'preset': args.preset}
         if args.overrides_json:
             options['overrides'] = json.loads(Path(args.overrides_json).expanduser().read_text())
-        for key in ('width', 'height', 'samples', 'rough', 'color_follow', 'save_blend', 'preserve_view'):
+        for key in ('width', 'height', 'samples', 'rough', 'color_follow', 'save_blend', 'preserve_view', 'animation', 'duration', 'fps', 'rock_angle', 'gif'):
             if getattr(args, key) is not None:
                 options[key] = getattr(args, key)
         if args.transparent is not None:

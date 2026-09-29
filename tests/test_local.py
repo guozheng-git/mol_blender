@@ -148,10 +148,86 @@ def test_mcp_native_image_and_local_render_route(tmp_path,monkeypatch):
     async def check():
         async with Client(create_stdio()) as client:
             assert {t.name for t in await client.list_tools()} == {'presets','inspect_style','render_structure','read_render'}
-            await client.call_tool('render_structure',{'input_path':'structure.cif','output_path':str(path)})
+            await client.call_tool('render_structure',{'input_path':'structure.cif','output_path':str(path), 'animation':'360','gif':True,'fps':12,'duration':2,'width':320,'height':240})
             image=await client.call_tool('read_render',{'path':str(path)})
             assert image.content[0].type=='image'
             import base64
             assert base64.b64decode(image.content[0].data)==path.read_bytes()
     asyncio.run(check())
     assert calls[0][0] == ('structure.cif',)
+    assert calls[0][1]['options']['animation'] == '360'
+    assert calls[0][1]['options']['gif'] is True
+
+
+def test_animation_cli_and_bridge_controls(monkeypatch, local_runtime):
+    calls = []
+    monkeypatch.setattr(local, 'render_file', lambda *a, **kw: calls.append(kw))
+    cli.execute(cli.parser().parse_args(['render', 'x.pse', '--animation', 'rock',
+                '--duration', '2', '--fps', '12', '--rock-angle', '10', '--gif']))
+    options = calls[0]['options']
+    assert {k: options[k] for k in ('animation', 'duration', 'fps', 'rock_angle', 'gif')} == {
+        'animation': 'rock', 'duration': 2, 'fps': 12, 'rock_angle': 10, 'gif': True}
+    def run(command, **kwargs):
+        assert command[command.index('--animation') + 1] == 'rock'
+        assert command[command.index('--rock-angle') + 1] == '10.0'
+        assert '--gif' in command
+        return SimpleNamespace(returncode=0, stdout='{}')
+    monkeypatch.setattr(local_bridge.subprocess, 'run', run)
+    local_bridge.render_payload(bundle(), output='x.png', options=options)
+
+
+def test_animation_missing_encoder_fails_before_preview(local_runtime, monkeypatch):
+    from blender_render import animation
+    monkeypatch.setattr(animation.shutil, 'which', lambda _: None)
+    monkeypatch.setattr(developer, 'preview', lambda **kw: pytest.fail('allocated Blender'))
+    with pytest.raises(ValueError, match='FFmpeg'):
+        local.render_payload(bundle(), output=local_runtime/'x.png', options={'animation':'rock'})
+
+
+@pytest.mark.parametrize('missing', [None, 'render.gif', 'frames.zip'])
+def test_animation_outputs_must_all_exist(local_runtime, monkeypatch, missing):
+    from blender_render import animation
+    monkeypatch.setattr(animation, 'encoder', lambda: 'ffmpeg')
+    def preview(**kwargs):
+        kwargs['output'].mkdir()
+        for name in ('render.png', 'render.mp4', 'render.gif', 'frames.zip'):
+            if name != missing:
+                (kwargs['output']/name).write_bytes(b'output')
+        return {'sha256':'source', 'png_sha256':'png'}
+    monkeypatch.setattr(developer, 'preview', preview)
+    out = local_runtime/'animation.png'
+    options = {'animation':'rock', 'gif':True}
+    if missing:
+        with pytest.raises(RuntimeError, match='artifact missing'):
+            local.render_payload(bundle(), output=out, options=options)
+        assert not out.exists()
+    else:
+        result = local.render_payload(bundle(), output=out, options=options)
+        assert all(Path(result['outputs'][n]).read_bytes() == b'output'
+                   for n in ('render.png', 'render.mp4', 'render.gif', 'frames.zip'))
+
+
+def test_animation_existing_movie_never_overwritten(local_runtime, monkeypatch):
+    from blender_render import animation
+    monkeypatch.setattr(animation, 'encoder', lambda: 'ffmpeg')
+    monkeypatch.setattr(developer, 'preview', lambda **kw: pytest.fail('allocated Blender'))
+    out = local_runtime/'taken.gif'; out.write_bytes(b'existing')
+    with pytest.raises(ValueError, match='already exists'):
+        local.render_payload(bundle(), output=out.with_suffix('.png'), options={'animation':'rock','gif':True})
+    assert out.read_bytes() == b'existing'
+
+
+def test_pymol_animation_controls_and_no_preview(monkeypatch, tmp_path):
+    from blender_render import pymol_movie
+    context = SimpleNamespace()
+    monkeypatch.setattr(pymol_bridge_plugin, 'build_render_payload', lambda *a, **kw: bundle())
+    def render(payload, **kwargs):
+        assert kwargs['options']['animation'] == '360'
+        assert kwargs['options']['gif'] is True
+        return {'outputs': {'frames.zip': 'frames.zip', 'render.gif': 'render.gif'}}
+    monkeypatch.setattr(local_bridge, 'render_payload', render)
+    monkeypatch.setattr(pymol_movie, 'remember', lambda cmd, path: None)
+    monkeypatch.setattr(pymol_movie, 'load_movie', lambda *a: pytest.fail('preview disabled'))
+    result = pymol_bridge_plugin.bridge_render(_self=context, output_dir=str(tmp_path),
+                                               animation='360', gif=1, auto_preview=0)
+    assert result['presentation'] == 'fallback_path'
