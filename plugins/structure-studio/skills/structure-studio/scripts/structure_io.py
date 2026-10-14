@@ -7,24 +7,14 @@ import re
 import shutil
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 EXTENSIONS = {".cif": "mmcif", ".mmcif": "mmcif", ".pdb": "pdb", ".ent": "pdb", ".bcif": "bcif"}
-WATER = {"HOH", "WAT", "DOD", "H2O", "SOL", "TIP", "TIP3", "SPC"}
-ION_ELEMENTS = {"LI", "NA", "K", "RB", "CS", "MG", "CA", "SR", "BA", "MN", "FE", "CO", "NI", "CU", "ZN", "CD",
-                "HG", "PT", "AU", "AG", "PB", "AL", "GA", "CR", "MO", "W", "V", "LA", "GD", "YB", "EU", "SM",
-                "TB", "CL", "BR", "I", "F"}
-ADDITIVES = {"GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "P6G", "2PE", "12P", "15P", "PE4", "SO4", "PO4", "ACT",
-             "ACY", "FMT", "DMS", "MPD", "TRS", "EPE", "MES", "CIT", "IMD", "BME", "NO3", "SCN", "PEO", "MLI",
-             "TAR", "NH4", "CXS", "BTB", "HEZ", "IPA", "EOH", "MOH", "UNX", "UNL", "DTT", "PGO", "BU3", "FLC",
-             "MRD", "SIN", "MLA"}
-NUCLEIC = {"A", "C", "G", "U", "T", "I", "N", "DA", "DC", "DG", "DT", "DU", "DI"}
-STANDARD = NUCLEIC | {"ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET", "PHE",
-                      "PRO", "SER", "THR", "TRP", "TYR", "VAL", "SEC", "PYL", "UNK"}
-# Common modified residues stay part of the chain; larger non-standard residues are covalent ligands.
-MODIFIED = {"MSE", "SEP", "TPO", "CSO", "CSD", "CME", "HYP", "MLY", "M3L", "KCX", "PCA", "OCS", "CSX", "NEP", "HIC",
-            "ALY", "SAC", "MLZ", "CGU", "TYS", "FME", "ACE", "NH2", "NME"}
-COVALENT_MIN_HEAVY = 15
+from molecular_data import (
+    WATER, ION_ELEMENTS, ADDITIVES, NUCLEIC, STANDARD, MODIFIED, COVALENT_MIN_HEAVY, ligand_key
+)
+
 PDB_ID = re.compile(r"^(?:pdb_0000)?([0-9][A-Za-z0-9]{3})$")
 AFDB_ID = re.compile(r"^AF-([A-Z0-9]{6,10})-F(\d+)$", re.IGNORECASE)
 UNIPROT = re.compile(r"^[OPQ][0-9][A-Z0-9]{3}[0-9]$|^[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2}$")
@@ -37,6 +27,20 @@ KEEP_LOOPS = {"_atom_site", "_chem_comp", "_entity", "_entity_src_gen"}
 
 class DownloadBlocked(RuntimeError):
     """Every mirror failed, usually because this sandbox restricts network egress."""
+
+
+@dataclass(frozen=True)
+class Structure:
+    """One source snapshot and its summary, reusable throughout workspace creation."""
+
+    data: bytes
+    name: str
+    summary: dict
+
+    @classmethod
+    def load(cls, path: str | Path) -> Structure:
+        data, name = read_structure_bytes(path)
+        return cls(data, name, summarize(data, name))
 
 
 def format_of(name: str) -> str:
@@ -56,7 +60,7 @@ def sniff(data: bytes) -> str:
     raise ValueError("Could not tell whether this text is mmCIF or PDB")
 
 
-def read_structure_bytes(path: str) -> tuple[bytes, str]:
+def read_structure_bytes(path: str | Path) -> tuple[bytes, str]:
     """Raw (decompressed) file bytes and the filename without any .gz suffix.
 
     A ``.txt`` copy (the workspace's stored structure) keeps its inner name when it has one
@@ -269,7 +273,7 @@ def _atoms_from_pdb(text: str):
                 continue
             name = line[12:16].strip()
             element = (line[76:78].strip() or re.sub(r"[^A-Za-z]", "", name)[:1]).upper()
-            chain = line[21] if len(line) > 21 and line[21] != " " else "A"
+            chain = line[21:22].strip()
             atoms.append({"het": record == "HETATM", "element": element, "name": name, "comp": line[17:20].strip(),
                           "chain": chain, "seq": line[22:26].strip(), "ins": line[26].strip() if len(line) > 26 else "",
                           "label_asym": chain, "polymer_seq": None, "entity": ""})
@@ -323,7 +327,7 @@ def summarize(data: bytes, name: str) -> dict:
         chain = chains.setdefault(residue["chain"], {"id": residue["chain"], "residues": 0, "nucleic": 0, "description": "",
                                                      "gene": meta.get("genes", {}).get(residue["entity"], "")})
         heavy = sum(a["element"] not in {"H", "D"} for a in residue["atoms"])
-        covalent = polymer and residue["comp"] not in STANDARD | MODIFIED and heavy >= COVALENT_MIN_HEAVY
+        covalent = polymer and residue["comp"] not in STANDARD + MODIFIED and heavy >= COVALENT_MIN_HEAVY
         if covalent:
             chain["residues"] += 1
             polymer = False
@@ -336,7 +340,7 @@ def summarize(data: bytes, name: str) -> dict:
         elif len(residue["atoms"]) == 1 and residue["atoms"][0]["element"] in ION_ELEMENTS:
             ions.append(f"{residue['comp']} {residue['chain']}{residue['seq']}{residue['ins']}")
         else:
-            ligands.append({"key": f"{residue['comp']} {residue['chain']}{residue['seq']}{residue['ins']}",
+            ligands.append({"key": ligand_key(residue['comp'], residue['chain'], residue['seq'], residue['ins']),
                             "comp": residue["comp"], "name": comp_names.get(residue["comp"], ""),
                             "heavy_atoms": heavy, "additive": residue["comp"] in ADDITIVES, "covalent": covalent})
     ligands.sort(key=lambda item: (item["additive"], -item["heavy_atoms"]))

@@ -4,6 +4,8 @@ import gzip
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -168,6 +170,83 @@ def test_unique_output_names(tmp_path):
     assert studio.unique(tmp_path / "a.png").name == "a-3.png"
 
 
+def test_session_camera_changes_do_not_request_restyling(tmp_path, monkeypatch):
+    commands = []
+    monkeypatch.setattr(studio, "run_pymol_session", lambda args: commands.append(args))
+    args, extra = studio.parser().parse_known_args(["session", "original.pse", "--fit", "--out-dir", str(tmp_path)])
+    studio.cmd_session(args, extra)
+    assert "--fit" in commands[0] and "--style" not in commands[0]
+    args.style = "surface"
+    studio.cmd_session(args, extra)
+    assert commands[1][-2:] == ["--style", "surface"]
+
+
+def test_decompressed_inputs_with_same_name_keep_their_own_content(tmp_path):
+    output = tmp_path / "out"
+    output.mkdir()
+    paths = []
+    for folder, content in [("first", b"data_first\n"), ("second", b"data_second\n")]:
+        source = tmp_path / folder / "model.cif.gz"
+        source.parent.mkdir()
+        source.write_bytes(gzip.compress(content))
+        path = studio.renderable(str(source), output)
+        assert path.read_bytes() == content
+        paths.append(path)
+    assert paths[0] != paths[1]
+    assert paths[0].read_bytes() == b"data_first\n"
+
+
+def test_render_staging_is_cleaned_on_failure(tmp_path, monkeypatch):
+    source = tmp_path / "model.cif.gz"
+    source.write_bytes(gzip.compress(b"data_test\n"))
+    monkeypatch.setattr(studio.studio_env, "renderer_env", lambda: (Path("unused"), {}))
+    staged = []
+
+    def fail(args, path, directory, executable, env):
+        assert path.read_bytes() == b"data_test\n"
+        staged.append(path)
+        raise RuntimeError("render failure")
+
+    monkeypatch.setattr(studio, "_render_prepared", fail)
+    args = studio.parser().parse_args(["render", str(source), "--out-dir", str(tmp_path)])
+    with pytest.raises(RuntimeError, match="render failure"):
+        studio.cmd_render(args)
+    assert not staged[0].exists() and not staged[0].parent.exists()
+
+
+@pytest.mark.parametrize("chain", ["A", ""])
+def test_show_chain_preserves_other_chains_and_residue_exclusions(chain):
+    hidden = [{"chain": [chain, "B"]}, {"chain": [chain], "residues": "1-5"}]
+    args = studio.parser().parse_args(["scene", json.dumps({"hidden": hidden}), "--show-chain", chain])
+    assert studio.cmd_scene(args)["scene"]["hidden"] == [
+        {"chain": ["B"]}, {"chain": [chain], "residues": "1-5"}]
+    assert hidden[0]["chain"] == [chain, "B"]
+
+
+def test_blank_pdb_chain_identity_and_selection():
+    data = b"ATOM      1  CA  GLY     1       0.000   0.000   0.000  1.00 90.00           C\n"
+    summary = structure_io.summarize(data, "blank.pdb")
+    assert summary["chains"][0]["id"] == ""
+    normalized = scene.validate({"hidden": [{"chain": ""}]}, summary)
+    assert scene.to_pymol(normalized["hidden"][0], "obj") == '(obj) and chain ""'
+    assert scene.ligand_pymol("HEM :142", "obj") == '(obj and resn HEM and chain "" and resi 142)'
+    assert scene.ligand_pymol("HEM 142", "obj") == '(obj and resn HEM and chain 1 and resi 42)'
+
+
+def test_viewer_rejects_binarycif_explicitly(tmp_path):
+    source = tmp_path / "structure.bcif"
+    source.write_bytes(b"binary fixture")
+    with pytest.raises(ValueError, match="convert BinaryCIF"):
+        viewer.build(str(source), str(tmp_path / "page.html"))
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node is needed for the viewer regression suite")
+def test_viewer_javascript_behaviors():
+    result = subprocess.run(["node", "--test", str(ROOT / "tests/structure_studio_viewer.test.cjs")],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_scene_validation_and_shortcuts(tmp_path):
     summary = structure_io.summarize(*structure_io.read_structure_bytes(str(EXAMPLES / "1stp.cif")))
     start = scene.validate({"hidden": [{"chain": "A", "residues": "1-10, 20"}]}, summary)
@@ -217,6 +296,41 @@ def test_session_bundle_round_trip(tmp_path):
         artifact_files.record(render, {"image": "img", "session": ["only-one"]})
 
 
+@pytest.mark.parametrize("filename", ["../outside.pse", "/outside.pse", "sub/file.pse", "..\\outside.pse", "C:\\outside.pse", "..", ""])
+def test_bundle_restore_rejects_unsafe_names(tmp_path, filename):
+    source = tmp_path / "source.pse"
+    source.write_bytes(b"session")
+    packed = artifact_files.bundle({"pse": str(source)}, str(tmp_path / "bundle"))
+    part = Path(packed["parts"][0])
+    data = json.loads(part.read_text())
+    data["entries"][0]["filename"] = filename
+    part.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="Unsafe bundle"):
+        artifact_files.restore(packed["parts"], str(tmp_path / "out"))
+    assert not (tmp_path / "out").exists()
+
+
+def test_bundle_restore_refuses_symlinks_and_overwrites(tmp_path):
+    source = tmp_path / "source.pse"
+    source.write_bytes(b"session")
+    packed = artifact_files.bundle({"pse": str(source)}, str(tmp_path / "bundle"))
+    out = tmp_path / "out"
+    out.mkdir()
+    target = out / source.name
+    target.symlink_to(source)
+    with pytest.raises(ValueError, match="Unsafe bundle"):
+        artifact_files.restore(packed["parts"], str(out))
+    target.unlink()
+    target.write_bytes(b"keep me")
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        artifact_files.restore(packed["parts"], str(out))
+    assert target.read_bytes() == b"keep me"
+    target.unlink()
+    artifact_files.restore(packed["parts"], str(out))
+    artifact_files.restore(packed["parts"], str(out))
+    assert target.read_bytes() == source.read_bytes()
+
+
 def test_workspace_command_and_stored_text(tmp_path):
     out = studio.cmd_workspace(studio.parser().parse_args(["workspace", str(EXAMPLES / "1stp.cif"), "--out-dir", str(tmp_path)]))
     assert out["capabilities"]["db"]["rules"][0] == {"path": "scene", "read": "view", "write": "interact"}
@@ -230,6 +344,40 @@ def test_workspace_command_and_stored_text(tmp_path):
     data, name = structure_io.read_structure_bytes(str(stored))
     assert name == "0123456789abcdef0123456789abcdef.cif" and data == (EXAMPLES / "1stp.cif").read_bytes()
     assert studio.renderable(str(stored), tmp_path, "1stp.cif").name == "1stp.cif"
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_workspace_uses_one_source_snapshot(tmp_path, monkeypatch, compressed):
+    raw = (EXAMPLES / "1stp.cif").read_bytes()
+    source = tmp_path / ("input.cif.gz" if compressed else "input.cif")
+    source.write_bytes(gzip.compress(raw) if compressed else raw)
+    read = structure_io.read_structure_bytes
+    summarize = structure_io.summarize
+    calls = {"read": 0, "summarize": 0}
+
+    def read_once(path):
+        calls["read"] += 1
+        snapshot = read(path)
+        # The page and uploaded file must use the same snapshot even if the source disappears.
+        source.unlink()
+        return snapshot
+
+    def summarize_once(data, name):
+        calls["summarize"] += 1
+        return summarize(data, name)
+
+    monkeypatch.setattr(structure_io, "read_structure_bytes", read_once)
+    monkeypatch.setattr(structure_io, "summarize", summarize_once)
+    out = studio.cmd_workspace(studio.parser().parse_args([
+        "workspace", str(source), "--out-dir", str(tmp_path / "workspace"),
+    ]))
+    assert calls == {"read": 1, "summarize": 1}
+    data = page_data(Path(out["page"]).read_text())
+    assert gzip.decompress(base64.b64decode(data["structure"]["data"])) == raw
+    assert Path(out["structure_upload"]).read_bytes() == raw
+    meta = json.loads(Path(out["meta_file"]).read_text())
+    assert meta["structure"]["sha256"] == artifact_files.sha256(raw)
+    assert data["scene"]["chain_colors"] == {"A": "#4bb5a6"}
 
 
 def test_pymol_written_ligands_are_not_polymer(tmp_path):

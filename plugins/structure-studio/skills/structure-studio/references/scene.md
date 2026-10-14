@@ -27,7 +27,7 @@ An object whose fields combine with AND:
 | `site` | `"A1EJS B74"` | Residues within `cutoff` Å (default 5) of the ligand, excluding the ligand |
 | `kind` | `"protein"` | `all`, `polymer`, `protein`, `nucleic`, `ligand`, `water`, `ion` |
 
-Ligand keys come from `studio.py info` (`RESN CHAINRESI`, e.g. `HEM A142`). Covalent inhibitors built into a chain (non-standard residues with at least 15 heavy atoms) count as ligands, e.g. `A1EJS B74` in 9LHJ.
+Ligand keys come from `studio.py info` (`RESN CHAINRESI`, e.g. `HEM A142`; `HEM :142` for a blank chain). Use `"chain": ""` to select a blank author chain. Covalent inhibitors built into a chain (non-standard residues with at least 15 heavy atoms) count as ligands, e.g. `A1EJS B74` in 9LHJ.
 
 ## Examples
 

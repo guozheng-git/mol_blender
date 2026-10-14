@@ -17,23 +17,12 @@ import pymol2
 from camera import load_view, molstar_to_pymol, pymol_to_molstar
 import scene as scenes
 
-PALETTE = ["#4bb5a6", "#5e8fea", "#e48db2", "#9a80dd", "#eda953", "#68b95a", "#df7462", "#46a2d6", "#c4a23a", "#8c98ad"]
-LIGAND_CARBON = "#f0a43a"
-HIGHLIGHT_CARBON = "#d0459b"
-SS_COLORS = {"H": "#d8577a", "S": "#e9b949", "L": "#9fb3ad"}
-PLDDT = [(90, "#0053d6", "very high (>90)"), (70, "#65cbf3", "confident (70-90)"),
-         (50, "#ffdb13", "low (50-70)"), (-1, "#ff7d45", "very low (<50)")]
-ADDITIVES = ["GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "P6G", "2PE", "12P", "15P", "PE4", "SO4", "PO4", "ACT", "ACY",
-             "FMT", "DMS", "MPD", "TRS", "EPE", "MES", "CIT", "IMD", "BME", "NO3", "SCN", "PEO", "MLI", "TAR", "NH4",
-             "CXS", "BTB", "HEZ", "IPA", "EOH", "MOH", "UNX", "UNL", "DTT", "PGO", "BU3", "FLC", "MRD", "SIN", "MLA"]
+from molecular_data import (
+    PALETTE, LIGAND_CARBON, HIGHLIGHT_CARBON, SS_COLORS, PLDDT, ADDITIVES,
+    STANDARD, MODIFIED, COVALENT_MIN_HEAVY, ligand_key
+)
+
 STYLES = ("overview", "surface", "site", "secondary", "confidence")
-STANDARD = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO",
-            "SER", "THR", "TRP", "TYR", "VAL", "SEC", "PYL", "UNK", "A", "C", "G", "U", "T", "I", "N", "DA", "DC", "DG",
-            "DT", "DU", "DI"]
-# Common modified residues stay part of the chain; larger non-standard residues are covalent ligands.
-MODIFIED = ["MSE", "SEP", "TPO", "CSO", "CSD", "CME", "HYP", "MLY", "M3L", "KCX", "PCA", "OCS", "CSX", "NEP", "HIC",
-            "ALY", "SAC", "MLZ", "CGU", "TYS", "FME", "ACE", "NH2", "NME"]
-COVALENT_MIN_HEAVY = 15
 
 
 def rgb(hex_color):
@@ -44,7 +33,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("input", help="Structure file (.cif/.pdb, optionally .gz) or an existing .pse")
     p.add_argument("-o", "--output", required=True, help="Session path to write (.pse)")
-    p.add_argument("--style", choices=STYLES, default="overview")
+    p.add_argument("--style", choices=STYLES, help="Figure style; existing .pse scenes are preserved when omitted")
     p.add_argument("--ligand", default="", help="Ligand key such as 'HEM A142' or a residue name such as 'HEM'")
     p.add_argument("--chains", default="", help="Keep only these chains, e.g. A,B")
     p.add_argument("--keep-waters", action="store_true")
@@ -69,7 +58,7 @@ def ligand_records(cmd, obj):
     cmd.iterate(f"({obj}) and organic and not hydro", count, space={"store": records})
     cmd.iterate(f"({obj}) and polymer and not hydro and not resn {'+'.join(STANDARD + MODIFIED)}", count, space={"store": covalent})
     records.update({key: n for key, n in covalent.items() if n >= COVALENT_MIN_HEAVY})
-    out = [{"key": f"{resn} {chain}{resi}", "resn": resn, "chain": chain, "resi": resi, "atoms": n,
+    out = [{"key": ligand_key(resn, chain, resi), "resn": resn, "chain": chain, "resi": resi, "atoms": n,
             "additive": resn in ADDITIVES, "covalent": (resn, chain, resi) in covalent} for (resn, chain, resi), n in records.items()]
     return sorted(out, key=lambda r: (r["additive"], -r["atoms"]))
 
@@ -94,27 +83,51 @@ def open_slab(cmd, obj, margin=5.0):
 
 
 def residue_selection(obj, record):
-    chain = f"chain {record['chain']}" if record["chain"] else "chain ''"
+    chain = scenes.chain_selection(record["chain"])
     return f"({obj} and {chain} and resi \\{record['resi']} and resn {record['resn']})"
+
+
+def show_ligands(cmd, obj, ligands):
+    if not ligands:
+        return
+    selection = " or ".join(residue_selection(obj, ligand) for ligand in ligands)
+    cmd.set_color("studio_ligand", rgb(LIGAND_CARBON))
+    cmd.show("sticks", selection)
+    cmd.color("studio_ligand", f"({selection}) and elem C")
+    color_hetero(cmd, selection)
+
+
+def show_ions(cmd, selection):
+    cmd.show("spheres", selection)
+    cmd.set("sphere_scale", 0.6, selection)
 
 
 def build(args):
     source = Path(args.input).expanduser().resolve()
     output = Path(args.output).expanduser().resolve()
+    if output.exists():
+        raise FileExistsError(f"Refusing to overwrite {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    result = {"session": str(output), "style": args.style}
+    preserve = source.suffix.lower() == ".pse" and not args.style and not args.scene
+    result = {"session": str(output), "style": "preserved" if preserve else args.style or "overview"}
     with pymol2.PyMOL() as instance:
         cmd = instance.cmd
         name = re.sub(r"[^A-Za-z0-9_]", "_", source.name.split(".")[0]) or "structure"
         if name[0].isdigit():
             name = "s" + name
         cmd.load(str(source), name if source.suffix.lower() != ".pse" else None)
-        if source.suffix.lower() == ".pse":
-            name = (cmd.get_object_list("enabled") or cmd.get_object_list() or [name])[0]
-        obj = name
+        obj = "(enabled)" if source.suffix.lower() == ".pse" else name
+        if not cmd.count_atoms(obj):
+            raise ValueError("The input has no enabled atoms to render")
+        if preserve:
+            if args.chains or args.highlight or args.ligand:
+                raise ValueError("Choose --style or --scene to restyle an existing session")
+            finish_view(cmd, obj, args, source, result)
+            return save(cmd, obj, args, output, result)
+        args.style = args.style or "overview"
         scene = scenes.validate(scenes.load(args.scene)) if args.scene else None
         if args.chains:
-            cmd.remove(f"{obj} and not chain {'+'.join(c.strip() for c in args.chains.split(','))}")
+            cmd.remove(f"{obj} and not ({scenes.chain_selection([c.strip() for c in args.chains.split(',')])})")
         if not args.keep_waters and not (scene and scene["waters"]):
             cmd.remove(f"{obj} and solvent")
         cmd.remove(f"{obj} and not alt ''+A")
@@ -123,9 +136,6 @@ def build(args):
         cmd.dss(obj)
 
         cmd.hide("everything", obj)
-        for i, color in enumerate(PALETTE):
-            cmd.set_color(f"studio_c{i}", rgb(color))
-        cmd.set_color("studio_ligand", rgb(LIGAND_CARBON))
         cmd.set_color("studio_highlight", rgb(HIGHLIGHT_CARBON))
         background = {"white": "#ffffff", "black": "#000000"}.get(args.background, args.background)
         cmd.set_color("studio_bg", rgb(background))
@@ -139,102 +149,92 @@ def build(args):
 
         if scene:
             result.update(apply_scene(cmd, obj, scene, background))
-            finish_view(cmd, obj, args, source, result, focus=result.pop("_focus", None))
-            return save(cmd, obj, args, output, result)
-
-        chains = cmd.get_chains(obj)
-        chain_colors = {}
-        for i, chain in enumerate(chains):
-            chain_colors[chain or "_"] = PALETTE[i % len(PALETTE)]
-            cmd.color(f"studio_c{i % len(PALETTE)}", f"{obj} and chain {chain or chr(39) * 2}")
-        result["chains"] = chain_colors
-
-        ligands = ligand_records(cmd, obj)
-        visible = [l for l in ligands if args.show_additives or not l["additive"]]
-        result["ligands"] = [l["key"] for l in ligands]
-        primary = None
-        if args.ligand:
-            wanted = args.ligand.strip().upper()
-            primary = next((l for l in ligands if l["key"].upper() == wanted), None) or \
-                next((l for l in ligands if l["resn"].upper() == wanted), None)
-            if primary is None:
-                raise SystemExit(f"Ligand {args.ligand!r} not found. Available: {', '.join(result['ligands']) or 'none'}")
-            if primary not in visible:
-                visible.append(primary)
-        elif ligands:
-            primary = next((l for l in ligands if not l["additive"]), ligands[0])
-
-        cmd.show("cartoon", f"{obj} and polymer")
-        if visible:
-            ligand_sel = " or ".join(residue_selection(obj, l) for l in visible)
-            cmd.show("sticks", ligand_sel)
-            cmd.color("studio_ligand", f"({ligand_sel}) and elem C")
-            color_hetero(cmd, ligand_sel)
-        ions = f"{obj} and inorganic and not resn {'+'.join(ADDITIVES)}"
-        cmd.show("spheres", ions)
-        cmd.set("sphere_scale", 0.6, ions)
-
-        if args.style == "surface":
-            cmd.show("surface", f"{obj} and polymer")
-            cmd.set("transparency", 0.1)
-        elif args.style == "secondary":
-            for code, color in SS_COLORS.items():
-                cmd.set_color(f"studio_ss_{code}", rgb(color))
-                cmd.color(f"studio_ss_{code}", f"{obj} and polymer and ss {code if code != 'L' else 'L+'}")
-        elif args.style == "confidence":
-            for i, (threshold, color, _) in enumerate(PLDDT):
-                cmd.set_color(f"studio_plddt{i}", rgb(color))
-            bounds = [(None, 90), (90, 70), (70, 50), (50, None)]
-            for i, (high, low) in enumerate(bounds):
-                expr = " and ".join(([f"b < {high}"] if high else []) + ([f"b > {low}"] if low is not None else []))
-                expr = expr or "all"
-                cmd.color(f"studio_plddt{i}", f"{obj} and polymer and ({expr})")
-            result["legend"] = {label: color for _, color, label in PLDDT}
-        elif args.style == "site":
-            if primary is None:
-                raise SystemExit("The binding-site style needs a ligand, but this structure has none.")
-            ligand_sel = residue_selection(obj, primary)
-            site = f"byres ({obj} and polymer within {args.cutoff} of {ligand_sel}) and not {ligand_sel}"
-            cmd.select("site_residues", site)
-            cmd.show("sticks", "site_residues and (sidechain or name CA)")
-            color_hetero(cmd, "site_residues")
-            cmd.set("cartoon_transparency", 0.55, obj)
-            if not args.no_contacts:
-                cmd.distance("polar_contacts", ligand_sel, "site_residues", mode=2)
-                cmd.hide("labels", "polar_contacts")
-                cmd.color("yellow", "polar_contacts")
-                pairs = cmd.find_pairs(ligand_sel, "site_residues", mode=1, cutoff=3.6)
-                result["polar_contacts"] = len(pairs)
-            if not args.no_labels:
-                # Label the residues that matter most: polar partners and the closest shell, at most 12.
-                contacts = cmd.find_pairs(ligand_sel, "site_residues", mode=1, cutoff=3.6)
-                partners = " or ".join(f"(byres index {index} and model {model})" for _, (model, index) in contacts)
-                key = f"byres (site_residues within 3.8 of {ligand_sel})" + (f" or {partners}" if partners else "")
-                cmd.select("site_labelled", f"site_residues and ({key}) and name CA")
-                chosen = []
-                cmd.iterate("site_labelled", "chosen.append((chain, resi))", space={"chosen": chosen})
-                for chain, resi in chosen[:12]:
-                    cmd.label(f"site_labelled and chain {chain or chr(39) * 2} and resi \\{resi}", "f'{resn[0]}{resn[1:].lower()}{resi}'")
-                cmd.set("label_color", "grey20" if background == "#ffffff" else "grey90")
-                cmd.delete("site_labelled")
-            residues = {"items": []}
-            cmd.iterate("site_residues and name CA", "items.append(f'{resn} {chain}{resi}')", space=residues)
-            result["site_residues"] = residues["items"]
-            cmd.deselect()
-        result["ligand"] = primary["key"] if primary else None
-
-        for i, selection in enumerate(args.highlight):
-            label = f"highlight_{i + 1}"
-            cmd.select(label, f"{obj} and ({selection})")
-            cmd.show("sticks", f"{label} and (sidechain or name CA)")
-            cmd.color("studio_highlight", f"{label} and elem C")
-            color_hetero(cmd, label)
-            result.setdefault("highlights", {})[label] = cmd.count_atoms(label)
-        cmd.deselect()
-
-        focus = f"{residue_selection(obj, primary)} or site_residues" if args.style == "site" and primary else None
-        finish_view(cmd, obj, args, source, result, focus=focus)
+        else:
+            result.update(apply_style(cmd, obj, args, background))
+        finish_view(cmd, obj, args, source, result, focus=result.pop("_focus", None))
         return save(cmd, obj, args, output, result)
+
+
+def apply_style(cmd, obj, args, background):
+    """Apply a named figure style, including its binding-site and highlight options."""
+    result = {}
+    chains = cmd.get_chains(obj)
+    chain_colors = {chain: PALETTE[i % len(PALETTE)] for i, chain in enumerate(chains)}
+    color_theme(cmd, "chain", obj, chain_colors)
+    result["chains"] = chain_colors
+
+    ligands = ligand_records(cmd, obj)
+    visible = [l for l in ligands if args.show_additives or not l["additive"]]
+    result["ligands"] = [l["key"] for l in ligands]
+    primary = None
+    if args.ligand:
+        wanted = args.ligand.strip().upper()
+        primary = next((l for l in ligands if l["key"].upper() == wanted), None) or \
+            next((l for l in ligands if l["resn"].upper() == wanted), None)
+        if primary is None:
+            raise SystemExit(f"Ligand {args.ligand!r} not found. Available: {', '.join(result['ligands']) or 'none'}")
+        if primary not in visible:
+            visible.append(primary)
+    elif ligands:
+        primary = next((l for l in ligands if not l["additive"]), ligands[0])
+
+    cmd.show("cartoon", f"{obj} and polymer")
+    show_ligands(cmd, obj, visible)
+    show_ions(cmd, f"{obj} and inorganic and not resn {'+'.join(ADDITIVES)}")
+
+    if args.style == "surface":
+        cmd.show("surface", f"{obj} and polymer")
+        cmd.set("transparency", 0.1)
+    elif args.style == "secondary":
+        color_theme(cmd, "ss", f"{obj} and polymer", chain_colors)
+    elif args.style == "confidence":
+        color_theme(cmd, "plddt", f"{obj} and polymer", chain_colors)
+        result["legend"] = {label: color for _, color, label in PLDDT}
+    elif args.style == "site":
+        if primary is None:
+            raise SystemExit("The binding-site style needs a ligand, but this structure has none.")
+        ligand_sel = residue_selection(obj, primary)
+        site = f"byres ({obj} and polymer within {args.cutoff} of {ligand_sel}) and not {ligand_sel}"
+        cmd.select("site_residues", site)
+        cmd.show("sticks", "site_residues and (sidechain or name CA)")
+        color_hetero(cmd, "site_residues")
+        cmd.set("cartoon_transparency", 0.55, obj)
+        if not args.no_contacts:
+            cmd.distance("polar_contacts", ligand_sel, "site_residues", mode=2)
+            cmd.hide("labels", "polar_contacts")
+            cmd.color("yellow", "polar_contacts")
+            pairs = cmd.find_pairs(ligand_sel, "site_residues", mode=1, cutoff=3.6)
+            result["polar_contacts"] = len(pairs)
+        if not args.no_labels:
+            # Label the residues that matter most: polar partners and the closest shell, at most 12.
+            contacts = cmd.find_pairs(ligand_sel, "site_residues", mode=1, cutoff=3.6)
+            partners = " or ".join(f"(byres index {index} and model {model})" for _, (model, index) in contacts)
+            key = f"byres (site_residues within 3.8 of {ligand_sel})" + (f" or {partners}" if partners else "")
+            cmd.select("site_labelled", f"site_residues and ({key}) and name CA")
+            chosen = []
+            cmd.iterate("site_labelled", "chosen.append((chain, resi))", space={"chosen": chosen})
+            for chain, resi in chosen[:12]:
+                cmd.label(f"site_labelled and {scenes.chain_selection(chain)} and resi \\{resi}", "f'{resn[0]}{resn[1:].lower()}{resi}'")
+            cmd.set("label_color", "grey20" if background == "#ffffff" else "grey90")
+            cmd.delete("site_labelled")
+        residues = {"items": []}
+        cmd.iterate("site_residues and name CA", "items.append(f'{resn} {chain}{resi}')", space=residues)
+        result["site_residues"] = residues["items"]
+        cmd.deselect()
+    result["ligand"] = primary["key"] if primary else None
+
+    for i, selection in enumerate(args.highlight):
+        label = f"highlight_{i + 1}"
+        cmd.select(label, f"{obj} and ({selection})")
+        cmd.show("sticks", f"{label} and (sidechain or name CA)")
+        cmd.color("studio_highlight", f"{label} and elem C")
+        color_hetero(cmd, label)
+        result.setdefault("highlights", {})[label] = cmd.count_atoms(label)
+    cmd.deselect()
+
+    focus = f"{residue_selection(obj, primary)} or site_residues" if args.style == "site" and primary else None
+    result["_focus"] = focus
+    return result
 
 
 def finish_view(cmd, obj, args, source, result, focus=None):
@@ -275,24 +275,25 @@ def save(cmd, obj, args, output, result):
 
 
 def color_theme(cmd, theme, selection, chain_colors):
-    """Color a selection with a scene theme or a #rrggbb color."""
+    """Apply a theme; callers can then overlay element colors with color_hetero."""
     if theme.startswith("#"):
         name = "studio_" + theme[1:].lower()
         cmd.set_color(name, rgb(theme))
         cmd.color(name, selection)
-    elif theme == "chain":
+    elif theme in {"chain", "element"}:
         for chain, color in chain_colors.items():
             name = "studio_" + color[1:].lower()
             cmd.set_color(name, rgb(color))
-            cmd.color(name, f"({selection}) and chain {chain}")
+            cmd.color(name, f"({selection}) and {scenes.chain_selection(chain)}")
     elif theme == "ss":
         for code, color in SS_COLORS.items():
             cmd.set_color(f"studio_ss_{code}", rgb(color))
             cmd.color(f"studio_ss_{code}", f"({selection}) and ss {code if code != 'L' else 'L+'}")
     elif theme == "rainbow":
         for chain in chain_colors:
-            if cmd.count_atoms(f"({selection}) and chain {chain}"):
-                cmd.spectrum("resi", "rainbow", f"({selection}) and chain {chain} and polymer")
+            chain_atoms = f"({selection}) and {scenes.chain_selection(chain)} and polymer"
+            if cmd.count_atoms(chain_atoms):
+                cmd.spectrum("resi", "rainbow", chain_atoms)
     elif theme == "bfactor":
         cmd.spectrum("b", "blue_white_red", selection)
     elif theme == "plddt":
@@ -301,9 +302,6 @@ def color_theme(cmd, theme, selection, chain_colors):
         for i, (high, low) in enumerate([(None, 90), (90, 70), (70, 50), (50, None)]):
             expr = " and ".join(([f"b < {high}"] if high else []) + ([f"b > {low}"] if low is not None else [])) or "all"
             cmd.color(f"studio_plddt{i}", f"({selection}) and ({expr})")
-    elif theme == "element":
-        color_theme(cmd, "chain", selection, chain_colors)
-    color_hetero(cmd, selection)
 
 
 def apply_scene(cmd, obj, scene, background):
@@ -331,20 +329,16 @@ def apply_scene(cmd, obj, scene, background):
         cmd.show(rep[scene["representation"]], polymer)
         if scene["representation"] == "putty":
             cmd.cartoon("putty", polymer)
-    color_theme(cmd, scene["color"] if scene["color"] != "element" else "chain", polymer, chain_colors)
+    color_theme(cmd, scene["color"], polymer, chain_colors)
+    color_hetero(cmd, polymer)
     transparency = round(1 - scene["opacity"], 3)
     for setting in ("cartoon_transparency", "transparency", "sphere_transparency"):
         cmd.set(setting, transparency, obj)
     ligands = [l for l in ligand_records(cmd, obj) if not l["additive"]] if scene["ligands"] else []
-    if ligands:
-        ligand_sel = " or ".join(residue_selection(obj, l) for l in ligands)
-        cmd.show("sticks", ligand_sel)
-        cmd.color("studio_ligand", f"({ligand_sel}) and elem C")
-        color_hetero(cmd, ligand_sel)
+    show_ligands(cmd, obj, ligands)
     out["ligands"] = [l["key"] for l in ligands]
     if scene["ions"]:
-        cmd.show("spheres", f"{obj} and inorganic")
-        cmd.set("sphere_scale", 0.6, f"{obj} and inorganic")
+        show_ions(cmd, f"{obj} and inorganic")
     if scene["waters"]:
         cmd.show("nb_spheres", f"{obj} and solvent")
     layer_rep = {"sticks": "sticks", "spacefill": "spheres", "surface": "surface", "cartoon": "cartoon", "putty": "cartoon"}
@@ -358,6 +352,7 @@ def apply_scene(cmd, obj, scene, background):
             continue
         cmd.show(layer_rep[layer["representation"]], name)
         color_theme(cmd, layer["color"], name, chain_colors)
+        color_hetero(cmd, name)
         if "opacity" in layer:
             for setting in ("stick_transparency", "transparency", "sphere_transparency", "cartoon_transparency"):
                 cmd.set(setting, round(1 - layer["opacity"], 3), name)
@@ -365,7 +360,7 @@ def apply_scene(cmd, obj, scene, background):
             labelled = []
             cmd.iterate(f"{name} and name CA", "labelled.append((chain, resi))", space={"labelled": labelled})
             for chain, resi in labelled[:40]:
-                cmd.label(f"{name} and name CA and chain {chain or chr(39) * 2} and resi \\{resi}", "f'{resn[0]}{resn[1:].lower()}{resi}'")
+                cmd.label(f"{name} and name CA and {scenes.chain_selection(chain)} and resi \\{resi}", "f'{resn[0]}{resn[1:].lower()}{resi}'")
         elif isinstance(layer.get("label"), str):
             cmd.label(f"first ({name})", repr(layer["label"]))
     cmd.set("label_color", "grey20" if background == "#ffffff" else "grey90")

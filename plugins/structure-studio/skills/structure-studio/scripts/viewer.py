@@ -14,14 +14,14 @@ import zipfile
 from pathlib import Path
 
 import scene as scenes
-from structure_io import read_structure_bytes, summarize
+from molecular_data import DATA as MOLECULAR_DATA, PALETTE
+from structure_io import Structure
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 MOLSTAR_VERSION = "5.12.0"
 PAGE_LIMIT = 16 * 1024 * 1024
 DOWNLOAD_BUDGET = 8 * 1024 * 1024
 RENDER_BUDGET = int(1.5 * 1024 * 1024)
-PALETTE = ["#4bb5a6", "#5e8fea", "#e48db2", "#9a80dd", "#eda953", "#68b95a", "#df7462", "#46a2d6", "#c4a23a", "#8c98ad"]
 STYLES = ("cartoon", "surface", "atoms", "site")
 COLORS = ("chain", "ss", "rainbow", "bfactor", "plddt")
 SKELETON = ('<!doctype html><html><head><meta charset=utf8><meta name=viewport '
@@ -125,13 +125,16 @@ def initial_scene(summary: dict, *, style: str = "cartoon", color: str = "chain"
     return scenes.validate(data, summary)
 
 
-def build(structure: str, output: str, *, title: str = "", entry_id: str = "", source: str = "",
+def build(structure: str | Path | Structure, output: str, *, title: str = "", entry_id: str = "", source: str = "",
           renders: list[str] | None = None, files: list[str] | None = None, style: str = "cartoon",
           color: str = "chain", ligand: str = "", water: bool = False, camera: dict | None = None,
           predicted: bool | None = None, tab: str = "", standalone: bool = False, scene: dict | None = None,
           workspace: bool = False) -> dict:
-    raw, name = read_structure_bytes(structure)
-    summary = summarize(raw, name)
+    if not isinstance(structure, Structure):
+        structure = Structure.load(structure)
+    raw, name, summary = structure.data, structure.name, structure.summary
+    if summary["format"] == "bcif":
+        raise ValueError("This viewer needs mmCIF or PDB text; convert BinaryCIF to mmCIF first")
     start = scenes.validate(scene, summary) if scene else initial_scene(summary, style=style, color=color, ligand=ligand, water=water)
     notes: list[str] = []
     data = {
@@ -139,6 +142,7 @@ def build(structure: str, output: str, *, title: str = "", entry_id: str = "", s
         "title": title or summary.get("title") or "", "source": source, "predicted": predicted,
         "structure": {"filename": name, "gzip": True, "data": _b64(gzip.compress(raw, mtime=0))},
         "scene": start, "camera": camera, "initial_tab": tab,
+        "molecular_data": MOLECULAR_DATA,
         "renders": _render_entries(renders or [], notes), "downloads": None,
     }
     if files:
@@ -159,6 +163,9 @@ def build(structure: str, output: str, *, title: str = "", entry_id: str = "", s
     payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
     html = (template.replace("__PAGE_TITLE__", page_title.replace("<", "&lt;"))
             .replace("/*__MOLSTAR_CSS__*/", css)
+            .replace("/*__SCENE_JS__*/", (ASSETS / "scene.js").read_text())
+            .replace("/*__ARTIFACT_FILES_JS__*/", (ASSETS / "artifact_files.js").read_text())
+            .replace("/*__WORKSPACE_JS__*/", (ASSETS / "workspace.js").read_text())
             .replace("__MOLSTAR_VERSION__", MOLSTAR_VERSION)
             .replace("__STUDIO_DATA__", payload))
     if standalone:

@@ -27,7 +27,7 @@ The page limit is 16 MB. The builder refuses larger pages and lists what it skip
 ## Behavior
 
 - Scenes are MolViewSpec documents built in the page and loaded as in-memory MVSX archives. Style changes keep the camera, while the binding-site view refocuses.
-- Ligands, ions, waters and binding sites are computed in the page from the embedded file, so files opened with **Open file…** or drag-and-drop get the same controls. BinaryCIF opens without ligand tools.
+- Ligands, ions, waters and binding sites are computed in the page from the embedded file, so files opened with **Open file…** or drag-and-drop get the same controls. Convert BinaryCIF to mmCIF before opening it.
 - Chain colors match the legend chips. Ligand carbons are amber and other atoms use element colors.
 - **Snapshot** and the Renders tab's **Save image** buttons, and the Files tab's `.zip`, use the artifact `downloads` capability. Publish with `capabilities: {"downloads": true}` when renders or files are embedded. Without it the buttons explain that saving works on claude.ai.
 - **Copy view** shows JSON like the following, which `studio.py render --view` and `session --view` accept:

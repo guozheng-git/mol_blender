@@ -11,6 +11,8 @@ import json
 import re
 from pathlib import Path
 
+from molecular_data import STANDARD, MODIFIED
+
 SCHEMA = 1
 REPRESENTATIONS = ("cartoon", "surface", "spacefill", "putty", "backbone", "hidden")
 LAYER_REPRESENTATIONS = ("sticks", "spacefill", "surface", "cartoon", "putty")
@@ -50,7 +52,7 @@ def _selection(value, where: str) -> dict:
     out = {}
     if "chain" in value:
         chains = value["chain"] if isinstance(value["chain"], list) else [value["chain"]]
-        if not chains or not all(isinstance(c, str) and c for c in chains):
+        if not chains or not all(isinstance(c, str) for c in chains):
             raise SceneError(f"{where}.chain: give a chain id or a list of chain ids")
         out["chain"] = chains
     if "residues" in value:
@@ -168,15 +170,28 @@ def merge(current: dict, patch: dict) -> dict:
     return merged
 
 
+def show_chain(hidden: list[dict], chain: str) -> list[dict]:
+    """Remove only this chain from whole-chain exclusions; keep residue exclusions."""
+    result = []
+    for selection in hidden:
+        if set(selection) != {"chain"}:
+            result.append(copy.deepcopy(selection))
+            continue
+        chains = selection["chain"] if isinstance(selection["chain"], list) else [selection["chain"]]
+        remaining = [c for c in chains if c != chain]
+        if remaining:
+            result.append({"chain": remaining})
+    return result
+
+
+def chain_selection(chains) -> str:
+    """Select author chain IDs, including the empty ID used by unlabelled PDBs."""
+    if isinstance(chains, str):
+        chains = [chains]
+    return "chain " + "+".join(c if re.fullmatch(r"[A-Za-z0-9_]+", c) else json.dumps(c) for c in chains)
+
+
 # ---------------------------------------------------------------- PyMOL translation
-
-STANDARD = ["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO",
-            "SER", "THR", "TRP", "TYR", "VAL", "SEC", "PYL", "UNK", "A", "C", "G", "U", "T", "I", "N", "DA", "DC", "DG",
-            "DT", "DU", "DI"]
-MODIFIED = ["MSE", "SEP", "TPO", "CSO", "CSD", "CME", "HYP", "MLY", "M3L", "KCX", "PCA", "OCS", "CSX", "NEP", "HIC",
-            "ALY", "SAC", "MLZ", "CGU", "TYS", "FME", "ACE", "NH2", "NME"]
-COVALENT_MIN_HEAVY = 15
-
 
 def _resi(text: str) -> str:
     parts = []
@@ -191,11 +206,13 @@ def _resi(text: str) -> str:
 def ligand_pymol(key: str, obj: str) -> str:
     words = key.split()
     if len(words) == 2:
+        if re.fullmatch(r":-?\d+[A-Za-z]?", words[1]):
+            return f"({obj} and resn {words[0]} and {chain_selection('')} and resi {_resi(words[1][1:])})"
         match = re.match(r"^(\S)(-?\d+)([A-Za-z]?)$", words[1]) or re.match(r"^(\S+?)(-?\d+)([A-Za-z]?)$", words[1])
         if match:
             chain, resi, ins = match.groups()
             resi_sel = ("\\" + resi if resi.startswith("-") else resi) + ins
-            return f"({obj} and resn {words[0]} and chain {chain} and resi {resi_sel})"
+            return f"({obj} and resn {words[0]} and {chain_selection(chain)} and resi {resi_sel})"
     return f"({obj} and resn {words[0]})"
 
 
@@ -203,7 +220,7 @@ def to_pymol(selection: dict, obj: str) -> str:
     """PyMOL selection for one scene selection (fields are combined with AND)."""
     parts = [f"({obj})"]
     if "chain" in selection:
-        parts.append("chain " + "+".join(selection["chain"]))
+        parts.append(chain_selection(selection["chain"]))
     if "residues" in selection:
         parts.append("resi " + _resi(selection["residues"]))
     if "ligand" in selection:

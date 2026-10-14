@@ -15,8 +15,6 @@ isolated `developer.preview` runner; do not add service queues or remote backend
   for reference-image-to-preset requests.
 - Write manifests and resolved styles; clean temporary source snapshots unless
   debugging retention was requested. Never commit research data or local paths.
-- After renderer or preset changes, run `python scripts/build_plugin.py --no-zip` so the
-  Structure Studio plugin's vendored wheel and preset catalog match.
 - Run `python -m pytest` for relevant changes. Check a built wheel outside the
   checkout for packaging changes. Record actual runtime and visual checks in
   `docs/validation.md`; mocks do not establish Blender or host integration.

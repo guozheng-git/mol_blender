@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -60,8 +61,11 @@ def renderable(path: str, directory: Path, name_hint: str = "") -> Path:
     if name.lower().endswith(".bcif"):
         raise ValueError("Blender rendering needs mmCIF or PDB text, not BinaryCIF")
     target = directory / name
-    if not target.exists():
-        target.write_bytes(data)
+    if target.is_file() and target.read_bytes() == data:
+        return target
+    target = unique(target)
+    with target.open("xb") as handle:
+        handle.write(data)
     return target
 
 
@@ -111,8 +115,11 @@ def cmd_session(args, extra):
     directory = output_dir(args.out_dir)
     source = Path(args.structure).expanduser()
     stem = source.name.split(".")[0]
-    output = Path(args.output).expanduser() if args.output else directory / f"{stem}-{args.style}.pse"
-    command = [str(source), "-o", str(output), "--style", args.style, *extra]
+    label = args.style or ("preserved" if source.suffix.lower() == ".pse" else "overview")
+    output = Path(args.output).expanduser() if args.output else unique(directory / f"{stem}-{label}.pse")
+    command = [str(source), "-o", str(output), *extra]
+    if args.style:
+        command += ["--style", args.style]
     if args.png:
         command += ["--png", str(output.with_suffix(".png"))]
     return run_pymol_session(command)
@@ -162,7 +169,13 @@ def cmd_render(args):
         meta = next(iter(Path(args.workspace).expanduser().rglob("workspace/meta.json")), None)
         if meta:
             name_hint = scenes.load(str(meta)).get("structure", {}).get("filename", "")
-    source = renderable(args.structure, directory, name_hint)
+    # Converted input files live only for this render and cannot collide with another input.
+    with TemporaryDirectory(prefix="structure-studio-input-") as temporary:
+        source = renderable(args.structure, Path(temporary), name_hint)
+        return _render_prepared(args, source, directory, executable, env)
+
+
+def _render_prepared(args, source: Path, directory: Path, executable: Path, env: dict):
     session = None
     if args.scene or args.view or args.fit:
         extra = []
@@ -203,7 +216,7 @@ def cmd_render(args):
         raise RuntimeError("Render failed:\n" + (result.stderr or result.stdout)[-4000:])
     payload = json.loads(result.stdout)
     payload.update(preset=label, seconds=round(time.time() - started, 1), cpu_adjustments=adjusted,
-                   input=str(source))
+                   input=str(Path(args.structure).expanduser().resolve()))
     if session:
         payload["outputs"]["session.pse"] = session["session"]
     if args.workspace:
@@ -261,8 +274,8 @@ def cmd_workspace(args):
         imported = import_session(source, directory)
         structure_file, camera = imported["structure"], imported["camera"]
         source_session = artifact_files.bundle({"pse": str(source)}, str(directory / f"{session_name}-uploaded"))
-    data, name = structure_io.read_structure_bytes(structure_file)
-    summary = structure_io.summarize(data, name)
+    structure = structure_io.Structure.load(structure_file)
+    data, name, summary = structure.data, structure.name, structure.summary
     if summary["format"] == "bcif":
         raise ValueError("Workspaces need mmCIF or PDB text; convert BinaryCIF first")
     if session_name and not any(c.get("gene") for c in summary["chains"]):
@@ -273,7 +286,7 @@ def cmd_workspace(args):
         # Keep the session's own chain colors so the panel and renders look like the user's PyMOL view.
         start["chain_colors"].update({c: v.lower() for c, v in imported["chain_colors"].items() if c in start["chain_colors"]})
         start["note"] = "imported from " + source.name
-    page = viewer.build(structure_file, str(directory / "page.html"), title=title, entry_id=args.id, source=args.source,
+    page = viewer.build(structure, str(directory / "page.html"), title=title, entry_id=args.id, source=args.source,
                         scene=start, camera=camera, workspace=True)
     structure_text = directory / (name + ".txt")
     structure_text.write_bytes(data)
@@ -332,7 +345,7 @@ def _shortcuts(args, current: dict) -> dict:
     only_chain = lambda h: isinstance(h, dict) and set(h) == {"chain"}
     chains_of = lambda h: [h["chain"]] if isinstance(h["chain"], str) else list(h["chain"])
     for chain in args.show_chain:
-        hidden = [h for h in hidden if not (only_chain(h) and chain in chains_of(h))]
+        hidden = scenes.show_chain(hidden, chain)
     for chain in args.hide_chain:
         if not any(only_chain(h) and chain in chains_of(h) for h in hidden):
             hidden.append({"chain": chain})
@@ -453,7 +466,8 @@ def parser():
     s = sub.add_parser("session", help="Write a PyMOL .pse (extra flags pass to pymol_session.py)")
     s.add_argument("structure")
     s.add_argument("-o", "--output", default="")
-    s.add_argument("--style", default="overview", choices=("overview", "surface", "site", "secondary", "confidence"))
+    s.add_argument("--style", choices=("overview", "surface", "site", "secondary", "confidence"),
+                   help="Figure style; existing .pse scenes are preserved when omitted")
     s.add_argument("--png", action="store_true", help="Also ray-trace NAME.png next to the session")
     s.add_argument("--out-dir", default="")
 

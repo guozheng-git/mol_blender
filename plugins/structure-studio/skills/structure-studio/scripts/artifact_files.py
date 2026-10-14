@@ -13,7 +13,7 @@ import hashlib
 import json
 import struct
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 PART_CHARS = 15 * 1024 * 1024
 ENCODING = "gzip+base64"
@@ -74,8 +74,19 @@ def bundle(files: dict, out_stem: str) -> dict:
     return {"format": BUNDLE_FORMAT, "files": described, "parts": paths}
 
 
-def restore(bundle_files: list[str], out_dir: str) -> list[dict]:
-    """Rebuild every file in a session bundle (all of its JSON parts) and verify checksums."""
+def _destination(directory: Path, filename: str) -> Path:
+    """Bundle names are portable basenames, never paths or symlink destinations."""
+    if (not isinstance(filename, str) or not filename or filename in {".", ".."}
+            or any(c in filename for c in ("/", "\\", ":", "\0"))
+            or PureWindowsPath(filename).is_absolute()):
+        raise ValueError(f"Unsafe bundle filename: {filename!r}")
+    target = directory / filename
+    if target.is_symlink() or target.resolve().parent != directory:
+        raise ValueError(f"Unsafe bundle destination: {filename!r}")
+    return target
+
+
+def _bundle_entries(bundle_files: list[str]) -> dict:
     pieces: dict[str, dict] = {}
     for path in bundle_files:
         data = json.loads(Path(path).expanduser().read_text())
@@ -83,20 +94,43 @@ def restore(bundle_files: list[str], out_dir: str) -> list[dict]:
             raise ValueError(f"{path} is not a {BUNDLE_FORMAT} bundle")
         for entry in data["entries"]:
             item = pieces.setdefault(entry["filename"], {"info": entry, "parts": {}})
+            fields = ("role", "filename", "parts", "bytes", "sha256", "encoding")
+            if any(entry.get(k) != item["info"].get(k) for k in fields):
+                raise ValueError(f"{entry['filename']}: inconsistent bundle metadata")
+            if entry.get("encoding") != ENCODING:
+                raise ValueError(f"Unsupported bundle encoding: {entry.get('encoding')!r}")
+            if (type(entry["parts"]) is not int or type(entry["part"]) is not int
+                    or not 1 <= entry["part"] <= entry["parts"]):
+                raise ValueError(f"{entry['filename']}: invalid bundle part")
+            if entry["part"] in item["parts"]:
+                raise ValueError(f"{entry['filename']}: duplicate bundle part {entry['part']}")
             item["parts"][entry["part"]] = entry["data"]
-    directory = Path(out_dir).expanduser()
-    directory.mkdir(parents=True, exist_ok=True)
-    restored = []
+    return pieces
+
+
+def restore(bundle_files: list[str], out_dir: str) -> list[dict]:
+    """Validate all files before restoring; never overwrite an unrelated file."""
+    directory = Path(out_dir).expanduser().resolve()
+    pieces = _bundle_entries(bundle_files)
+    decoded = []
     for filename, item in pieces.items():
+        target = _destination(directory, filename)
         info = item["info"]
         missing = [n for n in range(1, info["parts"] + 1) if n not in item["parts"]]
         if missing:
             raise ValueError(f"{filename}: missing bundle parts {missing}; download every asset id in the record")
         raw = gzip.decompress(base64.b64decode("".join(item["parts"][n] for n in range(1, info["parts"] + 1))))
-        if sha256(raw) != info["sha256"]:
+        if sha256(raw) != info["sha256"] or len(raw) != info["bytes"]:
             raise ValueError(f"{filename}: checksum mismatch")
-        target = directory / filename
-        target.write_bytes(raw)
+        if target.exists() and (not target.is_file() or target.read_bytes() != raw):
+            raise FileExistsError(f"Refusing to overwrite {target}")
+        decoded.append((target, raw, info))
+    directory.mkdir(parents=True, exist_ok=True)
+    restored = []
+    for target, raw, info in decoded:
+        if not target.exists():
+            with target.open("xb") as handle:
+                handle.write(raw)
         restored.append({"role": info["role"], "path": str(target.resolve()), "bytes": len(raw), "sha256": info["sha256"], "verified": True})
     return restored
 

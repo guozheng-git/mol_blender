@@ -219,21 +219,6 @@ by installing this package. These commands follow the official
 locations follow [Codex skills](https://developers.openai.com/codex/skills/) and
 [Claude Code skills](https://code.claude.com/docs/en/skills).
 
-## Claude plugin: Structure Studio
-
-[`plugins/structure-studio`](plugins/structure-studio/README.md) packages this renderer for
-claude.ai (web and desktop chat) and Claude Code. It adds an interactive Mol* viewer panel
-(published as an artifact), PyMOL `.pse` sessions and preset renders that run through Blender's
-`bpy` module, so no Blender installation is needed in Claude's sandbox.
-
-```
-/plugin install structure-studio --marketplace magnusbauer/blender_render
-```
-
-For claude.ai, run `python scripts/build_plugin.py` and upload `dist/structure-studio-plugin.zip`
-under Customize → Plugins. Rebuild the plugin after renderer changes; its tests check that the
-vendored wheel matches `blender_render/`.
-
 ## Preset authoring
 
 ```sh
