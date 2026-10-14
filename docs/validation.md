@@ -182,3 +182,78 @@ when that preset is explicitly selected.
   mint protein, purple ligand and pale cyan background with the saved input pose.
 - Artifacts and logs remain ignored: `renders/mint-default.png`, its `.render/`
   directory and `.validation/mint-default*.log`. Preset JSON files were not edited.
+
+## Structure Studio Claude plugin
+
+Executed 2026-10-14 on an Apple M3 Mac (macOS 26.6) and on claude.ai, using the plugin's own
+`studio.py` the way its skill instructs Claude. Public structures only: 9LHJ, 4HHB, 1SPS, 1STP and
+AlphaFold model AF-P69905-F1.
+
+Runtime through the `bpy` module:
+
+- `setup` created two uv-managed environments from a clean `STRUCTURE_STUDIO_HOME`, taking 40 s
+  with a warm package cache. One holds `pymol-open-source-whl` 3.2.0.2; the other holds `bpy`
+  5.0.1 with the pinned runtime requirements and the vendored wheel. A rerun was idempotent.
+- Renders go through a small Blender command-line shim, and the renderer's lock checks passed
+  (Blender 5.0.1, Molecular Nodes 4.5.10, NumPy 1.26.4, Biotite 1.6.0, CCD digest), using Metal.
+- Two renderer fixes were needed for that path. `developer_blender.py` records the `bpy` extension
+  module when `bpy.app.binary_path` is empty. `setup` keeps a virtualenv PyMOL interpreter's path
+  instead of resolving its symlink to the base Python.
+- `setup --background` returned immediately. A `.pse` import started at the same moment waited
+  only for PyMOL, and a render waited for Blender and then completed. This was 47 s in total
+  with a warm cache.
+
+Workspace artifacts:
+
+- A probe artifact on claude.ai established the following:
+  - Mol* 5.12.0 loads in the real artifact sandbox.
+  - Database writes from this session redraw the open panel without a reload.
+  - The page's camera and selection writes reach Claude.
+  - The file store keeps uploads byte-identical. It refuses raw `.pse`, `.blend` and `.zip`;
+    the same files stored as compressed base64 text restored with matching SHA-256.
+  - The `downloads` capability saved a `.zip`.
+- Mol* runs one pair of Emscripten `new Function` wrappers at load. The page serves those two
+  shapes with closures, and it drew under a strict local CSP (no `unsafe-eval`,
+  `connect-src 'none'`).
+- Workspace `UBE2N–UBE2V2 · 9LHJ` was created with Recipe A. A chat request ("hide chain A and
+  show the binding site of the chain-B inhibitor") went through the scene command and updated the
+  panel live. `mint_sky_assembly` rendered the panel's scene and camera (24.8 s on Metal). Chain A
+  went into a disabled `studio_hidden` object, so the render excluded it while the `.pse` kept
+  it. The render card moved from "Rendering…" to done with the PNG, `.pse` and `.blend` stored in
+  the artifact.
+- The streamlined render path (`render --workspace`, one JSON session bundle, `record`) rendered
+  `powder_blue_rounded` in 18.9 s. `restore` rebuilt both session files with verified checksums,
+  and the restored `.pse` opened in PyMOL with the hidden chain disabled.
+- New claude.ai chats with no plugin, link or shared context found the workspace by title:
+  - One chat returned the `mint_sky_assembly` PNG and built a poster from it.
+  - Another rebuilt the `.pse` and `.blend` from the record. Their checksums matched the original
+    files exactly.
+- With the plugin uploaded to claude.ai, run by the user:
+  - A `.pse` became a workspace with its colors and camera.
+  - "Hide chain C" applied live.
+  - `dried_paint_green` rendered in claude.ai's Linux sandbox in about 2 minutes on CPU, capped at
+    1280 × 1072 and 64 samples.
+  - The `.pse` and `.blend` were stored.
+
+  This evidence is the user's report and screenshot. The sandbox logs were not inspected here.
+- Found and fixed during these runs:
+  - 9LHJ's inhibitor A1EJS is modelled as an in-chain residue, and is now treated as a covalent
+    ligand (non-standard, at least 15 heavy atoms).
+  - PyMOL-written mmCIF numbers ligands like chain residues, so HETATM residues now also need
+    backbone atoms to count as polymer.
+  - Plugin-built sessions widen PyMOL's clip slab, because the renderer copies it into Blender's
+    camera clip range.
+  - The panel now sets an exact camera after Mol*'s first-draw refit, field of view first, and
+    matched the session camera numerically.
+- The camera conversion between Mol* and PyMOL is column-major, confirmed by ray-tracing a
+  three-sphere probe after `turn y, 90`. Both programs use a vertical field of view. At the same
+  camera the reference chain filled 57% of the Mol* frame height and 56% of PyMOL's.
+
+`claude plugin validate` passes for the plugin and the marketplace; `python -m pytest` passes 220
+tests.
+
+Not yet verified:
+- Sharing with another account (Viewer versus Contributor or Editor writes), and Team or
+  Enterprise plans.
+- Session bundles above 15 MiB in practice (tested only as split unit-test bundles).
+- Windows.

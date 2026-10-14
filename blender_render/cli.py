@@ -69,7 +69,9 @@ def execute(args):
         for name in ('blender', 'pymol_python', 'runtime_wheels', 'ccd'):
             value = getattr(args, name)
             if value:
-                config[name] = str(Path(value).expanduser().resolve())
+                path = Path(value).expanduser()
+                # Resolving a virtualenv interpreter's symlink would drop its site-packages.
+                config[name] = str(path.absolute() if name == 'pymol_python' else path.resolve())
         if args.runtime_path:
             config['runtime_paths'] = [str(Path(p).expanduser().resolve()) for p in args.runtime_path]
         if args.install_runtime:

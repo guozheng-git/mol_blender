@@ -1,0 +1,296 @@
+[
+  {
+    "id": "preset_1_interface",
+    "aliases": [
+      "pastel"
+    ],
+    "description": "Soft opaque pastel cartoons with native ligand sticks.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "spheres",
+      "sticks"
+    ],
+    "width": 1536,
+    "height": 984,
+    "samples": 196,
+    "chain_specific": true,
+    "chain_selections": [
+      "A",
+      "B"
+    ],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "preset_2_frosted_blue",
+    "aliases": [
+      "frosted_blue"
+    ],
+    "description": "Saturated blue cartoon core with a frosted surface shell.",
+    "material": "frosted",
+    "representations": [
+      "cartoon",
+      "spheres",
+      "sticks",
+      "surface"
+    ],
+    "width": 1536,
+    "height": 984,
+    "samples": 180,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "preset_3_black_tubes",
+    "aliases": [
+      "black_tubes"
+    ],
+    "description": "Pastel ribbons and native sticks on black.",
+    "material": "clay",
+    "representations": [
+      "ribbon",
+      "spheres",
+      "sticks"
+    ],
+    "width": 1536,
+    "height": 984,
+    "samples": 196,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "preset_4_milky_green",
+    "aliases": [
+      "milky_green"
+    ],
+    "description": "Milky green surface, protein ribbons and cyan nucleic acids.",
+    "material": "milky",
+    "representations": [
+      "cartoon",
+      "ribbon",
+      "spheres",
+      "sticks",
+      "surface"
+    ],
+    "width": 1536,
+    "height": 984,
+    "samples": 188,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "preset_5_black_interface",
+    "aliases": [
+      "black_interface"
+    ],
+    "description": "Cartoon and ligand interface on a black background.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "spheres",
+      "sticks"
+    ],
+    "width": 1536,
+    "height": 984,
+    "samples": 196,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "dried_paint_green",
+    "aliases": [
+      "green_paint",
+      "dried-paint-green"
+    ],
+    "description": "Textured matte green paint with rounded ribbon edges.",
+    "material": "dried_paint",
+    "representations": [
+      "cartoon",
+      "spheres",
+      "sticks"
+    ],
+    "width": 2048,
+    "height": 1715,
+    "samples": 512,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "powder_blue_rounded",
+    "aliases": [
+      "reference_01"
+    ],
+    "description": "Powder blue rounded protein with pink nucleic acid on black.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 1341,
+    "samples": 128,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "8AW3",
+    "default": false
+  },
+  {
+    "id": "cyan_mint_cutaway",
+    "aliases": [
+      "reference_02"
+    ],
+    "description": "Cyan and mint surfaces with clean pocket cuts and intact interior ribbons.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks",
+      "surface"
+    ],
+    "width": 1600,
+    "height": 1072,
+    "samples": 128,
+    "chain_specific": true,
+    "chain_selections": [
+      "A",
+      "B",
+      "B,BP1,DP1"
+    ],
+    "example_structure": "8EA6",
+    "default": false
+  },
+  {
+    "id": "pastel_duplex_rounded",
+    "aliases": [
+      "reference_03"
+    ],
+    "description": "Rounded green and blue proteins with pink DNA on black.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 1186,
+    "samples": 128,
+    "chain_specific": true,
+    "chain_selections": [
+      "B,BP1,DP1"
+    ],
+    "example_structure": "7PZB",
+    "default": false
+  },
+  {
+    "id": "pastel_duplex_cartoon",
+    "aliases": [
+      "reference_04"
+    ],
+    "description": "Thin blue and green secondary-structure ribbons with pink DNA.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 1302,
+    "samples": 128,
+    "chain_specific": true,
+    "chain_selections": [
+      "B,BP1,DP1"
+    ],
+    "example_structure": "7PZB",
+    "default": false
+  },
+  {
+    "id": "vivid_binding_site",
+    "aliases": [
+      "reference_05"
+    ],
+    "description": "Macro ligand view with vivid element colors and teal cartoon context.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 900,
+    "samples": 128,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "1AZM",
+    "default": false
+  },
+  {
+    "id": "ivory_lime_frosted",
+    "aliases": [
+      "reference_06"
+    ],
+    "description": "Ivory frosted grid shell, lime core and cyan nucleic acids.",
+    "material": "frosted",
+    "representations": [
+      "cartoon",
+      "sticks",
+      "surface"
+    ],
+    "width": 1600,
+    "height": 900,
+    "samples": 256,
+    "chain_specific": true,
+    "chain_selections": [
+      "B"
+    ],
+    "example_structure": "7PZB",
+    "default": false
+  },
+  {
+    "id": "mint_sky_assembly",
+    "aliases": [
+      "reference_07"
+    ],
+    "description": "Mint and sky protein assembly with purple and pink nucleic acids.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 900,
+    "samples": 128,
+    "chain_specific": true,
+    "chain_selections": [
+      "BP1,DP1",
+      "L,M,N"
+    ],
+    "example_structure": "8AA5",
+    "default": true
+  },
+  {
+    "id": "neon_duplex_hero",
+    "aliases": [
+      "reference_08"
+    ],
+    "description": "Green protein and gradient nucleic acids against a pink-cyan background.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 1600,
+    "height": 900,
+    "samples": 128,
+    "chain_specific": false,
+    "chain_selections": [],
+    "example_structure": "7PZB",
+    "default": false
+  }
+]

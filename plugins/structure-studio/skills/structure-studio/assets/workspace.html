@@ -1,0 +1,1119 @@
+<title>__PAGE_TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen instrument panel — identity bar, viewport, then a compact control deck. */
+:root {
+  --bg: #f3f6f5;
+  --surface: #ffffff;
+  --sunken: #e9eeec;
+  --fg: #14211e;
+  --muted: #5a6a65;
+  --line: #d5dedb;
+  --accent: #0b7a69;
+  --accent-soft: #d9efea;
+  --accent-fg: #ffffff;
+  --canvas: #ffffff;
+  --danger: #a33a2a;
+  --warn: #b7791f;
+  --shadow: 0 1px 2px rgb(20 33 30 / 0.06), 0 4px 16px rgb(20 33 30 / 0.06);
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1311; --surface: #141c19; --sunken: #1a2420; --fg: #e3ebe8; --muted: #8e9f99;
+    --line: #26322e; --accent: #45c6ab; --accent-soft: #173a32; --accent-fg: #04201a;
+    --canvas: #0a0f0d; --danger: #ef8a78; --warn: #e2b04a;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1311; --surface: #141c19; --sunken: #1a2420; --fg: #e3ebe8; --muted: #8e9f99;
+  --line: #26322e; --accent: #45c6ab; --accent-soft: #173a32; --accent-fg: #04201a;
+  --canvas: #0a0f0d; --danger: #ef8a78; --warn: #e2b04a;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; line-height: 1.45;
+  padding-inline: 16px; padding-block: 0; box-sizing: border-box;
+}
+*, *::before, *::after { box-sizing: border-box; }
+button, select, input, textarea { font: inherit; color: inherit; }
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding-block: 12px; max-width: 1200px; margin-inline: auto; }
+
+/* Identity bar */
+.bar { display: grid; gap: 8px; min-width: 0; }
+.ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.entry-id { font-family: var(--font-data); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; }
+.title { margin: 0; font-size: 16px; font-weight: 600; text-wrap: balance; min-width: 0; overflow-wrap: anywhere; }
+.meta { margin: 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.meta span { white-space: nowrap; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.tab { appearance: none; border: 0; background: none; padding: 7px 12px 8px; color: var(--muted); font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab:focus-visible, .chip:focus-visible, .btn:focus-visible, select:focus-visible, .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tab .count { font-family: var(--font-data); font-size: 11px; color: var(--muted); margin-left: 4px; }
+
+/* 3D panel */
+.panel { min-height: 0; }
+#panel-3d { display: grid; grid-template-rows: minmax(300px, 1fr) auto auto; gap: 10px; height: 100%; }
+.stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--canvas); box-shadow: var(--shadow); }
+#molstar { position: absolute; inset: 0; }
+.stage.dragging::after { content: "Drop to open"; position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: 8px; display: grid; place-items: center; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--canvas) 80%, transparent); z-index: 20; }
+.status { position: absolute; left: 12px; bottom: 10px; z-index: 10; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); padding: 4px 9px; border-radius: 6px; max-width: calc(100% - 24px); }
+.status.error { color: var(--danger); }
+.status:empty { display: none; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); min-height: 18px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.legend .mono { font-family: var(--font-data); color: var(--fg); }
+
+.deck { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+.row .label { width: 46px; flex: none; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.chip { appearance: none; border: 1px solid var(--line); background: var(--surface); padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 13px; color: var(--fg); }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 4px 8px; max-width: 100%; min-width: 0; font-family: var(--font-data); font-size: 12.5px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+.actions { gap: 6px; }
+.btn { appearance: none; border: 1px solid var(--line); background: var(--sunken); padding: 5px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--fg); }
+.btn:hover { border-color: var(--accent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Renders and files */
+.scroll { height: 100%; overflow: auto; padding-block: 2px 16px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.render { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
+.thumb { display: block; width: 100%; padding: 0; border: 0; background: var(--sunken); cursor: zoom-in; }
+.thumb img { display: block; width: 100%; height: auto; max-width: 100%; }
+.render figcaption { padding: 10px 12px; display: grid; gap: 6px; }
+.render .name { font-family: var(--font-data); font-size: 12.5px; font-weight: 500; }
+.render .desc { color: var(--muted); font-size: 12.5px; }
+.render .spec { color: var(--muted); font-size: 11.5px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.render .btn { justify-self: start; }
+.empty { color: var(--muted); padding: 24px 0; max-width: 60ch; }
+.files { display: grid; gap: 14px; max-width: 640px; }
+.file-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.file-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--line); font-family: var(--font-data); font-size: 12.5px; min-width: 0; }
+.file-list li:first-child { border-top: 0; }
+.file-list .fname { overflow-wrap: anywhere; min-width: 0; }
+.file-list .fsize { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 65ch; margin: 0; }
+
+/* Overlays */
+.overlay { position: fixed; inset: 0; z-index: 50; background: rgb(8 14 12 / 0.55); display: grid; place-items: center; padding: 16px; }
+.sheet { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 16px; display: grid; gap: 10px; box-shadow: var(--shadow); }
+.sheet h2 { margin: 0; font-size: 15px; }
+.sheet textarea { width: 100%; min-height: 150px; resize: vertical; font-family: var(--font-data); font-size: 12px; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.sheet .row { justify-content: flex-end; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 140px); height: auto; border-radius: 8px; display: block; margin-inline: auto; }
+.lightbox .sheet { width: min(1100px, 100%); }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; background: var(--fg); color: var(--bg); padding: 7px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
+@media (max-width: 480px) {
+  .row .label { width: 100%; }
+  #panel-3d { grid-template-rows: minmax(320px, 58vh) auto auto; height: auto; }
+  .app { height: auto; min-height: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<style>
+/* Workspace additions: sync state, chain toggles, picked residue, live render cards. */
+.bar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+.sync { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.sync[data-mode="live"] .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sync[data-mode="local"] .dot { background: var(--warn); }
+.below { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; min-height: 20px; font-size: 12px; color: var(--muted); }
+.below .mono { font-family: var(--font-data); color: var(--fg); }
+.chains { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chain { appearance: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 3px 10px 3px 5px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chain:hover { border-color: var(--accent); }
+.chain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chain .swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.chain .id { font-family: var(--font-data); font-weight: 500; }
+.chain .sub { color: var(--muted); }
+.chain[aria-pressed="false"] { opacity: 0.55; }
+.chain[aria-pressed="false"] .swatch { background: transparent !important; border: 1.5px dashed var(--muted); }
+.chain[aria-pressed="false"] .id { text-decoration: line-through; }
+.render.pending .thumb, .render.failed .thumb { aspect-ratio: 4 / 3; display: grid; place-items: center; cursor: default; color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
+.render.failed .thumb { color: var(--danger); }
+.pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+.card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Mol*'s snapshot and trajectory pickers: scenes come from the workspace, not from Mol* snapshots. */
+#molstar .msp-viewport-top-left-controls { display: none !important; }
+.card-actions .btn { font-size: 12.5px; padding: 4px 9px; }
+</style>
+<style>/*__MOLSTAR_CSS__*/</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="bar-top">
+      <div class="ident"><span class="entry-id" id="entry-id"></span><h1 class="title" id="title"></h1></div>
+      <span class="sync" id="sync" data-mode="static"><span class="dot"></span><span id="sync-text">Offline copy</span></span>
+    </div>
+    <p class="meta" id="meta"></p>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" id="tab-3d" aria-controls="panel-3d" aria-selected="true">3D view</button>
+      <button class="tab" role="tab" id="tab-renders" aria-controls="panel-renders" aria-selected="false">Renders<span class="count" id="render-count"></span></button>
+      <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false">Files</button>
+    </nav>
+  </header>
+
+  <main class="panel">
+    <section id="panel-3d" role="tabpanel" aria-labelledby="tab-3d">
+      <div class="stage" id="stage">
+        <div id="molstar"></div>
+        <div class="status" id="status" role="status">Loading Mol*…</div>
+      </div>
+      <div class="below" id="below" aria-live="polite"></div>
+      <div class="deck">
+        <div class="row"><span class="label" id="lbl-chains">Chains</span><div class="chains" id="chains" role="group" aria-labelledby="lbl-chains"></div></div>
+        <div class="row"><span class="label" id="lbl-style">Style</span>
+          <div class="seg" role="group" aria-labelledby="lbl-style" id="seg-style">
+            <button class="chip" data-style="cartoon">Cartoon</button>
+            <button class="chip" data-style="surface">Surface</button>
+            <button class="chip" data-style="spacefill">Atoms</button>
+            <button class="chip" data-style="site">Binding site</button>
+          </div>
+        </div>
+        <div class="row"><span class="label" id="lbl-color">Color</span>
+          <div class="seg" role="group" aria-labelledby="lbl-color" id="seg-color">
+            <button class="chip" data-color="chain">Chain</button>
+            <button class="chip" data-color="ss">Secondary</button>
+            <button class="chip" data-color="rainbow">N→C</button>
+            <button class="chip" data-color="bfactor" id="chip-b">B-factor</button>
+          </div>
+        </div>
+        <div class="row"><label class="label" for="ligand">Ligand</label>
+          <select id="ligand"></select>
+          <label class="check"><input type="checkbox" id="water"> Waters</label>
+        </div>
+        <div class="row actions">
+          <button class="btn" id="btn-reset">Reset view</button>
+          <button class="btn" id="btn-spin" aria-pressed="false">Spin</button>
+          <button class="btn" id="btn-shot">Snapshot</button>
+          <button class="btn" id="btn-view">Copy view</button>
+          <button class="btn" id="btn-open">Open file…</button>
+          <button class="btn" id="btn-tools" aria-pressed="false">Mol* tools</button>
+          <input type="file" id="file-input" class="sr" accept=".cif,.mmcif,.pdb,.ent,.bcif,.gz">
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-renders" class="panel scroll" role="tabpanel" aria-labelledby="tab-renders" hidden>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <section id="panel-files" class="panel scroll" role="tabpanel" aria-labelledby="tab-files" hidden>
+      <div class="files" id="files"></div>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="view-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="view-h">
+    <h2 id="view-h">Current view</h2>
+    <p class="note" id="view-note">Paste this into the chat and ask Claude to render the structure from this angle.</p>
+    <textarea id="view-text" readonly></textarea>
+    <div class="row"><button class="btn" id="view-close">Close</button><button class="btn primary" id="view-copy">Copy</button></div>
+  </div>
+</div>
+<div class="overlay lightbox" id="lightbox" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Render preview">
+    <img id="lightbox-img" alt="">
+    <div class="row"><button class="btn" id="lightbox-close">Close</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script type="application/json" id="studio-data">__STUDIO_DATA__</script>
+<script>
+/* Mol*'s bundled Emscripten (embind) glue builds two shapes of named wrapper with new Function().
+   Artifact pages may forbid evaluating strings, so serve exactly those shapes with closures. */
+(() => {
+  const Native = Function;
+  const named = /^return function [\w$]+\(\) \{\s*"use strict";\s*return body\.apply\(this, arguments\);\s*\};?\s*$/;
+  const dyn = /^return function dynCall_[\w$]+\([\w, ]*\) \{\s*return dynCall\(rawFunction(?:, [\w, ]*)?\);\s*\};?\s*$/;
+  function SafeFunction(...args) {
+    const body = String(args[args.length - 1]);
+    if (args.length === 2 && args[0] === 'body' && named.test(body)) return (fn) => function () { return fn.apply(this, arguments); };
+    if (args.length === 3 && args[0] === 'dynCall' && args[1] === 'rawFunction' && dyn.test(body)) return (call, raw) => function (...a) { return call(raw, ...a); };
+    return Native.apply(this, args);
+  }
+  SafeFunction.prototype = Native.prototype;
+  try { window.Function = SafeFunction; } catch (e) { /* keep the native constructor */ }
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/molstar@__MOLSTAR_VERSION__/build/viewer/molstar.js"></script>
+<script>
+(() => {
+'use strict';
+const DATA = JSON.parse(document.getElementById('studio-data').textContent);
+const $ = (s) => document.querySelector(s);
+
+/* ---------- Constants ---------- */
+const WATER = new Set(['HOH', 'WAT', 'DOD', 'H2O', 'SOL', 'TIP', 'TIP3', 'SPC']);
+const ION_ELEMENTS = new Set(['LI','NA','K','RB','CS','MG','CA','SR','BA','MN','FE','CO','NI','CU','ZN','CD','HG','PT','AU','AG','PB','AL','GA','CR','MO','W','V','LA','GD','YB','EU','SM','TB','CL','BR','I','F','IOD']);
+const ADDITIVES = new Set(['GOL','EDO','PEG','PGE','PG4','1PE','P6G','2PE','12P','15P','PE4','SO4','PO4','ACT','ACY','FMT','DMS','MPD','TRS','EPE','MES','CIT','IMD','BME','NO3','SCN','PEO','MLI','TAR','NH4','CXS','BTB','HEZ','IPA','EOH','MOH','UNX','UNL','DTT','PGO','BU3','FLC','MRD','SIN','MLA']);
+const STANDARD = new Set(['ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL','SEC','PYL','UNK','A','C','G','U','T','I','N','DA','DC','DG','DT','DU','DI']);
+/* Common modified residues stay part of the chain; larger non-standard residues are covalent ligands. */
+const MODIFIED = new Set(['MSE','SEP','TPO','CSO','CSD','CME','HYP','MLY','M3L','KCX','PCA','OCS','CSX','NEP','HIC','ALY','SAC','MLZ','CGU','TYS','FME','ACE','NH2','NME']);
+const COVALENT_MIN_HEAVY = 15;
+const NUCLEIC = new Set(['A','C','G','U','T','I','N','DA','DC','DG','DT','DU','DI']);
+const PALETTE = ['#4bb5a6','#5e8fea','#e48db2','#9a80dd','#eda953','#68b95a','#df7462','#46a2d6','#c4a23a','#8c98ad'];
+const PLDDT = [[90, '#0053d6', 'Very high (>90)'], [70, '#65cbf3', 'Confident (70–90)'], [50, '#ffdb13', 'Low (50–70)'], [-1, '#ff7d45', 'Very low (<50)']];
+const LIGAND_CARBON = '#f0a43a';
+const DEFAULT_SCENE = { schema: 1, representation: 'cartoon', color: 'chain', chain_colors: {}, opacity: 1, hidden: [], ligands: true, ions: true, waters: false, layers: [], focus: null };
+const toInt = (hex) => parseInt(hex.slice(1), 16);
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+/* ---------- State ---------- */
+let model = null, viewer = null, loading = Promise.resolve(), spinning = false;
+let scene = normalize(DATA.scene);
+let appliedFocus = null;
+const sync = { mode: 'static', db: null, canWrite: null, writes: Promise.resolve(), lastCameraRequest: null, renders: null, meta: null };
+const siteCache = new Map();
+
+/* ---------- Utilities ---------- */
+function normalize(s) { return Object.assign(clone(DEFAULT_SCENE), s ? clone(s) : {}); }
+function core(s) { const c = clone(s); for (const k of ['note', 'revision', 'updated_by', 'written_at']) delete c[k]; return JSON.stringify(c); }
+function toast(text) { const t = $('#toast'); t.textContent = text; t.hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2600); }
+function status(text, isError) { const s = $('#status'); s.textContent = text || ''; s.classList.toggle('error', !!isError); }
+function b64ToBytes(b64) { const bin = atob(b64.replace(/\s+/g, '')); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+async function gunzip(bytes) { const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')); return new Uint8Array(await new Response(s).arrayBuffer()); }
+async function sha256(bytes) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join(''); }
+function fmtBytes(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B'; }
+function ago(iso) { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? Math.round(s) + ' s ago' : s < 5400 ? Math.round(s / 60) + ' min ago' : new Date(iso).toLocaleString(); }
+function titleCase(s) { return s.length === 3 ? s[0] + s.slice(1).toLowerCase() : s; }
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const use = (name) => (window.claude && typeof window.claude.use === 'function') ? window.claude.use(name).catch(() => null) : Promise.resolve(null);
+let downloadsApi;
+function downloads() { if (!downloadsApi) downloadsApi = use('downloads'); return downloadsApi; }
+async function saveFile(filename, data) {
+  const api = await downloads();
+  if (!api) { toast('Saving files works when this page is opened on claude.ai.'); return; }
+  try { await api.save({ filename, data }); }
+  catch (e) { if (e && e.code === 'declined') return; toast(e && e.code === 'too_large' ? 'That file is too large to save from this page.' : 'Saving is not available in this view.'); }
+}
+
+/* ---------- Minimal stored ZIP (MVSX scenes and session downloads) ---------- */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  for (const [name, data] of files) {
+    const nb = enc.encode(name), crc = crc32(data), h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, nb.length, true);
+    parts.push(new Uint8Array(h.buffer), nb, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, nb.length, true); c.setUint32(42, offset, true);
+    central.push(new Uint8Array(c.buffer), nb); offset += 30 + nb.length + data.length;
+  }
+  const size = central.reduce((s, p) => s + p.length, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, size, true); e.setUint32(16, offset, true);
+  const all = [...parts, ...central, new Uint8Array(e.buffer)]; const out = new Uint8Array(all.reduce((s, p) => s + p.length, 0));
+  let o = 0; for (const p of all) { out.set(p, o); o += p.length; } return out;
+}
+
+/* ---------- mmCIF / PDB parsing (first model, first altloc) ---------- */
+const CIF_KEEP = new Set(['_atom_site', '_chem_comp', '_entity', '_entity_src_gen']);
+const ATOM_COLS = ['group_PDB','type_symbol','label_atom_id','label_alt_id','label_comp_id','label_asym_id','label_entity_id','label_seq_id','pdbx_PDB_ins_code','Cartn_x','Cartn_y','Cartn_z','B_iso_or_equiv','auth_seq_id','auth_asym_id','auth_comp_id','auth_atom_id','pdbx_PDB_model_num'];
+function parseCif(text) {
+  const items = {}, loops = {};
+  const lines = text.split(/\r?\n/);
+  const re = /'(.*?)'(?=\s|$)|"(.*?)"(?=\s|$)|(\S+)/g;
+  let mode = 0, tags = [], cols = null, keep = false, idx = 0, pending = null, blocks = 0, cat = '';
+  const finish = () => { if (mode && keep && tags.length) loops[cat] = { tags, cols }; mode = 0; tags = []; cols = null; };
+  const value = (v) => {
+    if (pending) { items[pending] = v; pending = null; return; }
+    if (mode === 1) {
+      mode = 2; cat = tags[0].split('.')[0]; keep = CIF_KEEP.has(cat) || cat.startsWith('_ma_qa_metric');
+      cols = tags.map((t) => (keep && (cat !== '_atom_site' || ATOM_COLS.includes(t.split('.')[1]))) ? [] : null); idx = 0;
+    }
+    if (mode === 2) { const c = cols[idx]; if (c) c.push(v); idx = (idx + 1) % tags.length; }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.charCodeAt(0) === 59) {
+      const buf = [line.slice(1)];
+      while (++i < lines.length && lines[i].charCodeAt(0) !== 59) buf.push(lines[i]);
+      value(buf.join('\n').trim()); continue;
+    }
+    re.lastIndex = 0; let m;
+    while ((m = re.exec(line))) {
+      if (m[3] !== undefined) {
+        const t = m[3], c0 = t.charCodeAt(0);
+        if (c0 === 35) break;
+        if (c0 === 95) { if (mode === 1) { tags.push(t); continue; } if (mode === 2) finish(); pending = t; continue; }
+        if (t === 'loop_') { finish(); mode = 1; continue; }
+        if (t.startsWith('data_')) { if (++blocks > 1) { finish(); return { items, loops }; } continue; }
+        value(t);
+      } else value(m[1] !== undefined ? m[1] : m[2]);
+    }
+  }
+  finish();
+  return { items, loops };
+}
+function loopRows(loop, field) { if (!loop) return null; const i = loop.tags.findIndex((t) => t.endsWith('.' + field)); return i < 0 ? null : loop.cols[i]; }
+function newAtoms() {
+  const a = { het: [], el: [], name: [], comp: [], labelAsym: [], labelSeq: [], authAsym: [], authSeq: [], ins: [], x: [], y: [], z: [], b: [], entity: [], length: 0 };
+  a.push = (het, el, name, comp, labelAsym, labelSeq, authAsym, authSeq, ins, x, y, z, b, entity) => {
+    a.het.push(het); a.el.push(el); a.name.push(name); a.comp.push(comp); a.labelAsym.push(labelAsym); a.labelSeq.push(labelSeq);
+    a.authAsym.push(authAsym); a.authSeq.push(authSeq); a.ins.push(ins); a.x.push(x); a.y.push(y); a.z.push(z); a.b.push(b); a.entity.push(entity); a.length++;
+  };
+  return a;
+}
+function modelFromCif(text, filename) {
+  const { items, loops } = parseCif(text);
+  const L = loops._atom_site; if (!L) throw new Error('This file has no atom coordinates (_atom_site).');
+  const col = (f) => loopRows(L, f), pick = (a, b) => col(a) || col(b);
+  const n = col('Cartn_x').length, models = col('pdbx_PDB_model_num'), alt = col('label_alt_id'), A = newAtoms();
+  const g = col('group_PDB'), el = col('type_symbol'), an = pick('auth_atom_id', 'label_atom_id'), comp = pick('auth_comp_id', 'label_comp_id');
+  const la = col('label_asym_id'), ls = col('label_seq_id'), aa = pick('auth_asym_id', 'label_asym_id'), as = pick('auth_seq_id', 'label_seq_id'), ins = col('pdbx_PDB_ins_code'), ent = col('label_entity_id');
+  const x = col('Cartn_x'), y = col('Cartn_y'), z = col('Cartn_z'), b = col('B_iso_or_equiv');
+  const firstModel = models ? models[0] : null;
+  for (let i = 0; i < n; i++) {
+    if (models && models[i] !== firstModel) continue;
+    const al = alt ? alt[i] : '.'; if (al !== '.' && al !== '?' && al !== 'A' && al !== '1') continue;
+    const seq = ls ? ls[i] : '.';
+    A.push(g ? g[i] === 'HETATM' : false, (el ? el[i] : an[i][0] || '').toUpperCase(), an[i], comp[i], la ? la[i] : aa[i], (seq === '.' || seq === '?') ? null : +seq,
+      aa[i], parseInt(as[i], 10) || 0, ins && ins[i] !== '?' && ins[i] !== '.' ? ins[i] : '', +x[i], +y[i], +z[i], b ? +b[i] : 0, ent ? ent[i] : '');
+  }
+  const names = {}; const cc = loops._chem_comp;
+  if (cc) { const ids = loopRows(cc, 'id'), nm = loopRows(cc, 'name'); if (ids && nm) ids.forEach((id, i) => { names[id] = nm[i]; }); }
+  else if (items['_chem_comp.id']) names[items['_chem_comp.id']] = items['_chem_comp.name'];
+  const entities = {}; const E = loops._entity;
+  if (E) { const ids = loopRows(E, 'id'), d = loopRows(E, 'pdbx_description'); if (ids && d) ids.forEach((id, i) => { entities[id] = d[i]; }); }
+  else if (items['_entity.id']) entities[items['_entity.id']] = items['_entity.pdbx_description'];
+  const genes = {}; const G = loops._entity_src_gen;
+  if (G) { const ids = loopRows(G, 'entity_id'), gn = loopRows(G, 'pdbx_gene_src_gene'); if (ids && gn) ids.forEach((id, i) => { genes[id] = gn[i]; }); }
+  else if (items['_entity_src_gen.entity_id']) genes[items['_entity_src_gen.entity_id']] = items['_entity_src_gen.pdbx_gene_src_gene'];
+  for (const k of Object.keys(genes)) { const v = genes[k]; genes[k] = v && v !== '?' && v !== '.' ? v.split(/[,;\s]+/)[0].toUpperCase() : ''; }
+  const hasMaQa = Object.keys(loops).some((k) => k.startsWith('_ma_qa_metric')) || Object.keys(items).some((k) => k.startsWith('_ma_qa_metric'));
+  const res = items['_refine.ls_d_res_high'] || items['_em_3d_reconstruction.resolution'] || items['_reflns.d_resolution_high'];
+  return finishModel(A, { format: 'mmcif', filename, names, entities, genes, hasMaQa,
+    info: { id: items['_entry.id'], title: items['_struct.title'], method: items['_exptl.method'], resolution: res && !isNaN(+res) ? +res : null } });
+}
+function modelFromPdb(text, filename) {
+  const A = newAtoms(); const names = {}; let title = '', id = '', method = '', resolution = null;
+  for (const line of text.split(/\r?\n/)) {
+    const rec = line.slice(0, 6);
+    if (rec === 'ENDMDL') break;
+    if (rec === 'ATOM  ' || rec === 'HETATM') {
+      const altl = line[16]; if (altl !== ' ' && altl !== 'A' && altl !== '1' && altl !== undefined) continue;
+      const atomName = line.slice(12, 16).trim();
+      let el = line.slice(76, 78).trim().toUpperCase(); if (!el) el = atomName.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase();
+      const chain = line[21] === ' ' ? 'A' : line[21];
+      A.push(rec === 'HETATM', el, atomName, line.slice(17, 20).trim(), chain, null, chain, parseInt(line.slice(22, 26), 10) || 0,
+        line[26] === ' ' ? '' : (line[26] || ''), +line.slice(30, 38), +line.slice(38, 46), +line.slice(46, 54), +line.slice(60, 66) || 0, '');
+    } else if (rec === 'HEADER') id = line.slice(62, 66).trim();
+    else if (rec === 'TITLE ') title += (title ? ' ' : '') + line.slice(10).trim();
+    else if (rec === 'HETNAM') { const k = line.slice(11, 14).trim(); names[k] = ((names[k] ? names[k] + ' ' : '') + line.slice(15).trim()).trim(); }
+    else if (rec === 'EXPDTA') method = line.slice(10).trim();
+    else if (rec === 'REMARK' && line.slice(6, 10) === '   2' && /RESOLUTION\./.test(line)) { const r = parseFloat(line.slice(22)); if (!isNaN(r)) resolution = r; }
+  }
+  return finishModel(A, { format: 'pdb', filename, names, entities: {}, genes: {}, hasMaQa: false, info: { id, title, method, resolution } });
+}
+function finishModel(A, meta) {
+  if (!A.length && meta.format !== 'bcif') throw new Error('No atoms were found in this file.');
+  const residues = []; const atomRes = new Int32Array(A.length);
+  let cur = null;
+  for (let i = 0; i < A.length; i++) {
+    if (!cur || A.authAsym[i] !== cur.authAsym || A.authSeq[i] !== cur.authSeq || A.ins[i] !== cur.ins || A.comp[i] !== cur.comp || A.labelAsym[i] !== cur.labelAsym) {
+      cur = { index: residues.length, comp: A.comp[i], authAsym: A.authAsym[i], authSeq: A.authSeq[i], ins: A.ins[i], labelAsym: A.labelAsym[i], labelSeq: A.labelSeq[i], entity: A.entity[i], start: i, end: i + 1, het: A.het[i], atoms: new Set() };
+      residues.push(cur);
+    }
+    cur.end = i + 1; cur.atoms.add(A.name[i]); atomRes[i] = residues.length - 1;
+  }
+  const chainOrder = []; const chains = new Map();
+  for (const r of residues) {
+    const backbone = (r.atoms.has('CA') && r.atoms.has('N') && r.atoms.has('C')) || (r.atoms.has('P') && r.atoms.has("C4'"));
+    /* PyMOL-written mmCIF numbers ligands like chain residues, so HETATM residues also need a backbone. */
+    r.polymer = (meta.format === 'mmcif' ? r.labelSeq !== null : true) && (!r.het || backbone);
+    let heavy = 0; for (let i = r.start; i < r.end; i++) if (A.el[i] !== 'H' && A.el[i] !== 'D') heavy++;
+    r.heavy = heavy;
+    r.covalent = r.polymer && !STANDARD.has(r.comp) && !MODIFIED.has(r.comp) && heavy >= COVALENT_MIN_HEAVY;
+    if (WATER.has(r.comp)) r.kind = 'water';
+    else if (r.covalent) r.kind = 'ligand';
+    else if (r.polymer) r.kind = 'polymer';
+    else if (r.end - r.start === 1 && ION_ELEMENTS.has(A.el[r.start])) r.kind = 'ion';
+    else r.kind = 'ligand';
+    if (!chains.has(r.authAsym)) { chains.set(r.authAsym, { id: r.authAsym, residues: 0, nucleic: 0, entity: '' }); chainOrder.push(r.authAsym); }
+    if (r.kind === 'polymer' || r.covalent) { const c = chains.get(r.authAsym); c.residues++; if (NUCLEIC.has(r.comp)) c.nucleic++; if (!c.entity) c.entity = r.entity; }
+    delete r.atoms;
+  }
+  const chainList = chainOrder.map((id) => chains.get(id)).filter((c) => c.residues).map((c, i) => ({
+    id: c.id, index: i, residues: c.residues, kind: c.nucleic > c.residues / 2 ? 'nucleic' : 'protein',
+    description: meta.entities[c.entity] || '', gene: (meta.genes || {})[c.entity] || '' }));
+  const ligands = residues.filter((r) => r.kind === 'ligand').map((r) => Object.assign(r, {
+    key: `${r.comp} ${r.authAsym}${r.authSeq}${r.ins}`, additive: ADDITIVES.has(r.comp), fullName: (meta.names[r.comp] || '') + (r.covalent ? ' (covalent)' : '') }))
+    .sort((p, q) => (p.additive - q.additive) || (q.heavy - p.heavy));
+  const m = Object.assign({ atoms: A, residues, atomRes, chains: chainList, ligands }, meta);
+  m.waters = residues.filter((r) => r.kind === 'water').length;
+  m.ions = residues.filter((r) => r.kind === 'ion').length;
+  const hint = `${meta.filename} ${meta.info.title || ''}`;
+  m.predicted = meta.hasMaQa || /(^|[\/_\s-])(AF-|fold_|alphafold|af2|af3|esmfold|boltz|chai)/i.test(hint) || /predicted|alphafold/i.test(meta.info.title || '');
+  return m;
+}
+
+/* ---------- Selections (the scene vocabulary) ---------- */
+function site(lig, cutoff) {
+  const key = lig.key + '@' + cutoff;
+  if (siteCache.has(key)) return siteCache.get(key);
+  const A = model.atoms, c2 = cutoff * cutoff, idx = [];
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = lig.start; i < lig.end; i++) {
+    if (A.el[i] === 'H') continue; idx.push(i);
+    x0 = Math.min(x0, A.x[i]); y0 = Math.min(y0, A.y[i]); z0 = Math.min(z0, A.z[i]);
+    x1 = Math.max(x1, A.x[i]); y1 = Math.max(y1, A.y[i]); z1 = Math.max(z1, A.z[i]);
+  }
+  const hits = new Set(), waters = new Set();
+  for (let j = 0; j < A.length; j++) {
+    const x = A.x[j], y = A.y[j], z = A.z[j];
+    if (x < x0 - cutoff || x > x1 + cutoff || y < y0 - cutoff || y > y1 + cutoff || z < z0 - cutoff || z > z1 + cutoff) continue;
+    const r = model.atomRes[j]; if (r === lig.index || A.el[j] === 'H') continue;
+    for (const i of idx) {
+      const dx = A.x[i] - x, dy = A.y[i] - y, dz = A.z[i] - z;
+      if (dx * dx + dy * dy + dz * dz <= c2) { (model.residues[r].kind === 'water' ? waters : hits).add(r); break; }
+    }
+  }
+  const out = { residues: [...hits].sort((a, b) => a - b), waters: [...waters] };
+  siteCache.set(key, out);
+  return out;
+}
+function matchLigands(text) {
+  const w = String(text || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!w || !model) return [];
+  const exact = model.ligands.filter((l) => l.key.toUpperCase() === w);
+  return exact.length ? exact : model.ligands.filter((l) => l.comp.toUpperCase() === w);
+}
+function parseRanges(text) {
+  return String(text).split(',').map((item) => {
+    const m = /^(-?\d+)([A-Za-z]?)(?:-(-?\d+)([A-Za-z]?))?$/.exec(item.trim());
+    return m ? { lo: +m[1], loIns: m[2] || '', hi: m[3] !== undefined ? +m[3] : null } : null;
+  }).filter(Boolean);
+}
+function kindMatch(r, kind) {
+  switch (kind) {
+    case 'polymer': return r.kind === 'polymer';
+    case 'protein': return r.kind === 'polymer' && !NUCLEIC.has(r.comp);
+    case 'nucleic': return r.kind === 'polymer' && NUCLEIC.has(r.comp);
+    case 'ligand': case 'water': case 'ion': return r.kind === kind;
+    default: return true;
+  }
+}
+/** Residue indices for one scene selection; its fields combine with AND. */
+function resolve(sel) {
+  if (!sel || !model) return [];
+  const R = model.residues;
+  let idx = R.map((r) => r.index);
+  if (sel.kind && sel.kind !== 'all') idx = idx.filter((i) => kindMatch(R[i], sel.kind));
+  if (sel.chain) { const set = new Set([].concat(sel.chain)); idx = idx.filter((i) => set.has(R[i].authAsym)); }
+  if (sel.residues !== undefined) {
+    const ranges = parseRanges(sel.residues);
+    idx = idx.filter((i) => ranges.some((g) => g.hi === null ? (R[i].authSeq === g.lo && (!g.loIns || R[i].ins === g.loIns)) : (R[i].authSeq >= g.lo && R[i].authSeq <= g.hi)));
+  }
+  if (sel.ligand) { const set = new Set(matchLigands(sel.ligand).map((l) => l.index)); idx = idx.filter((i) => set.has(i)); }
+  if (sel.site) {
+    const lig = matchLigands(sel.site)[0];
+    const set = new Set(lig ? site(lig, sel.cutoff || 5).residues : []);
+    idx = idx.filter((i) => set.has(i));
+  }
+  return idx;
+}
+function selector(r) {
+  const s = {};
+  if (model.format === 'mmcif') { s.label_asym_id = r.labelAsym; if (r.labelSeq !== null) s.label_seq_id = r.labelSeq; else s.auth_seq_id = r.authSeq; }
+  else { s.auth_asym_id = r.authAsym; s.auth_seq_id = r.authSeq; }
+  if (r.ins) s.pdbx_PDB_ins_code = r.ins;
+  return s;
+}
+/** Compact MolViewSpec selectors: consecutive polymer residues become one range. */
+function selectors(indices) {
+  const R = model.residues, out = []; let run = null;
+  const flush = () => { if (run) { out.push(run.beg === run.end ? run.single : run.range()); run = null; } };
+  for (const i of [...indices].sort((a, b) => a - b)) {
+    const r = R[i];
+    const ranged = r.polymer && !r.ins && (model.format === 'mmcif' ? r.labelSeq !== null : true);
+    if (ranged && run && run.asym === (model.format === 'mmcif' ? r.labelAsym : r.authAsym) && i === run.last + 1) {
+      run.end = model.format === 'mmcif' ? r.labelSeq : r.authSeq; run.last = i; continue;
+    }
+    flush();
+    if (!ranged) { out.push(selector(r)); continue; }
+    const mm = model.format === 'mmcif', asym = mm ? r.labelAsym : r.authAsym, pos = mm ? r.labelSeq : r.authSeq;
+    run = { asym, beg: pos, end: pos, last: i, single: selector(r),
+      range() { return mm ? { label_asym_id: this.asym, beg_label_seq_id: this.beg, end_label_seq_id: this.end } : { auth_asym_id: this.asym, beg_auth_seq_id: this.beg, end_auth_seq_id: this.end }; } };
+  }
+  flush();
+  return out;
+}
+
+/* ---------- Scene → MolViewSpec ---------- */
+const N = (kind, params, children, custom) => { const n = { kind, params: params || {} }; if (children && children.length) n.children = children; if (custom) n.custom = custom; return n; };
+const theme = (name, params) => N('color', { color: '#cccccc' }, null, params ? { molstar_color_theme_name: name, molstar_color_theme_params: params } : { molstar_color_theme_name: name });
+const HYDROGEN_FREE = new Set(['ball_and_stick', 'spacefill', 'surface']);
+function rep(type, params, coloring, extra) {
+  const base = HYDROGEN_FREE.has(type) ? { type, ignore_hydrogens: true } : { type };
+  return N('representation', Object.assign(base, params || {}), [coloring, ...(extra || [])]);
+}
+function chainColor(id) {
+  if (scene.chain_colors && scene.chain_colors[id]) return scene.chain_colors[id];
+  const c = model.chains.find((x) => x.id === id);
+  return PALETTE[(c ? c.index : 0) % PALETTE.length];
+}
+function elementTheme(carbon) { return theme('element-symbol', { carbonColor: { name: 'uniform', params: { value: toInt(carbon) } } }); }
+function coloring(color, chain) {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return N('color', { color });
+  switch (color) {
+    case 'ss': return theme('secondary-structure');
+    case 'rainbow': return theme('sequence-id');
+    case 'element': return elementTheme(chainColor(chain));
+    case 'plddt': case 'bfactor':
+      if (!model.predicted && color === 'bfactor') return theme('uncertainty');
+      if (model.hasMaQa) return theme('plddt-confidence');
+      return N('color_from_uri', { uri: 'plddt.json', format: 'json', schema: 'residue', field_name: 'color' });
+    default: return N('color', { color: chainColor(chain) });
+  }
+}
+function byChain(indices) {
+  const groups = new Map();
+  for (const i of indices) { const c = model.residues[i].authAsym; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(i); }
+  return groups;
+}
+const REPR = { cartoon: 'cartoon', surface: 'surface', spacefill: 'spacefill', putty: 'putty', backbone: 'backbone', sticks: 'ball_and_stick' };
+function buildScene(camera) {
+  const R = model.residues, comps = [];
+  const hidden = new Set();
+  for (const h of scene.hidden) for (const i of resolve(h)) hidden.add(i);
+  for (const [flag, kind] of [['ligands', 'ligand'], ['ions', 'ion'], ['waters', 'water']]) if (!scene[flag]) for (const r of R) if (r.kind === kind) hidden.add(r.index);
+  const visible = (kind) => R.filter((r) => r.kind === kind && !hidden.has(r.index)).map((r) => r.index);
+  if (scene.representation !== 'hidden') {
+    const params = scene.representation === 'surface' ? { surface_type: 'molecular' } : {};
+    for (const [chain, idx] of byChain(visible('polymer'))) {
+      const extra = scene.opacity < 1 ? [N('opacity', { opacity: scene.opacity })] : [];
+      comps.push(N('component', { selector: selectors(idx) }, [rep(REPR[scene.representation], params, coloring(scene.color, chain), extra)]));
+    }
+  }
+  const ligandType = scene.representation === 'spacefill' ? 'spacefill' : 'ball_and_stick';
+  const ligs = visible('ligand');
+  if (ligs.length) comps.push(N('component', { selector: selectors(ligs) }, [rep(ligandType, {}, elementTheme(LIGAND_CARBON))]));
+  const ions = visible('ion');
+  if (ions.length) comps.push(N('component', { selector: selectors(ions) }, [rep('spacefill', { size_factor: scene.representation === 'spacefill' ? 1 : 0.6 }, theme('element-symbol'))]));
+  const waters = visible('water');
+  if (waters.length) comps.push(N('component', { selector: selectors(waters) }, [rep('ball_and_stick', { size_factor: 0.6 }, theme('element-symbol'))]));
+  let labels = 0;
+  for (const layer of scene.layers) {
+    const idx = resolve(layer.select).filter((i) => !hidden.has(i));
+    const type = REPR[layer.representation || 'sticks'];
+    const multi = new Set(idx.map((i) => R[i].authAsym)).size > 1;
+    let first = true;
+    for (const [chain, part] of byChain(idx)) {
+      const color = (layer.color || 'element') === 'element'
+        ? elementTheme(R[part[0]].kind === 'ligand' ? LIGAND_CARBON : chainColor(chain)) : coloring(layer.color, chain);
+      const extra = layer.opacity !== undefined && layer.opacity < 1 ? [N('opacity', { opacity: layer.opacity })] : [];
+      const children = [rep(type, type === 'surface' ? { surface_type: 'molecular' } : {}, color, extra)];
+      if (typeof layer.label === 'string' && first) children.push(N('label', { text: layer.label }));
+      comps.push(N('component', { selector: selectors(part) }, children));
+      first = false;
+    }
+    if (layer.label === true) {
+      for (const i of idx) {
+        if (labels >= 40) break;
+        const r = R[i];
+        const text = r.kind === 'ligand' ? r.key : `${titleCase(r.comp)}${r.authSeq}${r.ins}${multi ? ' ' + r.authAsym : ''}`;
+        comps.push(N('component', { selector: selector(r) }, [N('label', { text })])); labels++;
+      }
+    }
+    if (layer.select.site || layer.select.ligand) {
+      for (const i of idx) { const r = R[i]; if (r.kind === 'polymer') comps.push(N('component', { selector: selector(r) }, [N('tooltip', { text: `${titleCase(r.comp)}${r.authSeq}${r.ins} ${r.authAsym}` })])); }
+    }
+  }
+  const focusKey = scene.focus ? JSON.stringify(scene.focus) : null;
+  let refocus = false;
+  if (focusKey && focusKey !== appliedFocus) {
+    const idx = resolve(scene.focus);
+    const withSite = scene.focus.ligand ? idx.concat(...matchLigands(scene.focus.ligand).slice(0, 1).map((l) => site(l, 5).residues)) : idx;
+    if (withSite.length) { comps.push(N('component', { selector: selectors(withSite) }, [N('focus', {})])); refocus = true; }
+  }
+  appliedFocus = focusKey;
+  const tree = { root: N('root', {}, [
+    N('canvas', { background_color: cssVar('--canvas') || '#ffffff' }),
+    N('download', { url: model.archiveName }, [N('parse', { format: model.format }, [N('structure', { type: 'model' }, comps)])]),
+  ]), metadata: { version: '1', timestamp: new Date().toISOString(), title: model.info.id || model.filename } };
+  return { tree, refocus };
+}
+function plddtAnnotation() {
+  const rows = [];
+  for (const r of model.residues) {
+    if (r.kind !== 'polymer') continue;
+    let b = model.atoms.b[r.start];
+    for (let i = r.start; i < r.end; i++) if (model.atoms.name[i] === 'CA' || model.atoms.name[i] === "C4'") { b = model.atoms.b[i]; break; }
+    const row = selector(r); row.color = PLDDT.find((p) => b > p[0])[1]; rows.push(row);
+  }
+  return rows;
+}
+
+/* ---------- Viewer ---------- */
+function pluginConfig() {
+  const C = molstar.lib && molstar.lib.plugin && molstar.lib.plugin.PluginConfig;
+  return C ? [[C.Viewport.ShowIllumination, false], [C.Viewport.ShowXR, 'never'], [C.Viewport.ShowTrajectoryControls, false], [C.Viewport.ShowAnimation, false]] : [];
+}
+async function createViewer() {
+  if (!window.molstar || !molstar.Viewer) throw new Error('The 3D viewer could not load Mol* from cdn.jsdelivr.net.');
+  viewer = await molstar.Viewer.create('molstar', {
+    layoutIsExpanded: false, layoutShowControls: false, layoutShowRemoteState: false, layoutShowSequence: true,
+    layoutShowLog: false, layoutShowLeftPanel: true, collapseLeftPanel: true,
+    viewportShowExpand: false, viewportShowSelectionMode: false, viewportShowAnimation: false,
+    viewportShowTrajectoryControls: false, viewportShowScreenshotControls: false, viewportShowToggleFullscreen: false,
+    viewportShowSettings: false, viewportShowReset: false, viewportShowControls: false, config: pluginConfig(),
+    disabledExtensions: ['rcsb-assembly-symmetry', 'rcsb-validation-report', 'pdbe-structure-quality-report', 'anvil-membrane-orientation', 'zenodo-import', 'sb-ncbr-partial-charges'],
+    pdbProvider: 'pdbe', emdbProvider: 'pdbe', volumeStreamingDisabled: true,
+  });
+  new ResizeObserver(() => viewer && viewer.handleResize()).observe($('#stage'));
+  watchCamera(); watchClicks();
+}
+function applyBackground() { const c = viewer && viewer.plugin.canvas3d; if (c) c.setProps({ renderer: { backgroundColor: toInt(cssVar('--canvas') || '#ffffff') } }); }
+function setCamera(cam, ms) {
+  /* Mol* rescales the distance when the field of view changes, so set fov first and the pose second. */
+  const c = viewer.plugin.canvas3d.camera;
+  c.setState({ fov: (cam.fov_deg || 45) * Math.PI / 180, mode: cam.mode || 'perspective' }, 0);
+  c.setState({ position: cam.position, target: cam.target, up: cam.up || [0, 1, 0] }, ms || 0);
+}
+function draw(opts) {
+  const run = async () => {
+    if (!viewer || !model) return;
+    const camera = opts && opts.camera;
+    const { tree, refocus } = buildScene(camera);
+    const files = [['index.mvsj', new TextEncoder().encode(JSON.stringify(tree))], [model.archiveName, model.bytes]];
+    if ((scene.color === 'bfactor' || scene.color === 'plddt') && model.predicted && !model.hasMaQa) files.push(['plddt.json', new TextEncoder().encode(JSON.stringify(plddtAnnotation()))]);
+    status(scene.representation === 'surface' ? 'Computing surface…' : 'Drawing…');
+    try {
+      /* With an exact camera, Mol* must not animate its own framing afterwards (it would win the race). */
+      await viewer.loadMvsData(zipStore(files), 'mvsx', { replaceExisting: true, keepCamera: camera ? true : !(opts && opts.fresh) && !refocus });
+      if (camera) await settleCamera(camera);
+      const snaps = viewer.plugin.managers.snapshot; if (snaps && snaps.clear) snaps.clear();
+      status('');
+    } catch (e) { console.error(e); status('Mol* could not draw this scene: ' + (e && e.message || e), true); }
+    syncControls();
+  };
+  loading = loading.then(run, run);
+  return loading;
+}
+/* Mol* re-fits the camera once when a new structure first draws; apply an exact camera after that. */
+async function settleCamera(cam) {
+  setCamera(cam, 0);
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  setCamera(cam, 0);
+  await new Promise((r) => setTimeout(r, 300));
+  setCamera(cam, 0);
+}
+function cameraNow() {
+  const s = viewer.plugin.canvas3d.camera.getSnapshot(); const arr = (v) => Array.from(v, (n) => +n.toFixed(3));
+  return { position: arr(s.position), target: arr(s.target), up: arr(s.up), fov_deg: +(s.fov * 180 / Math.PI).toFixed(2), mode: s.mode };
+}
+
+/* ---------- Live workspace sync ---------- */
+function setSync(mode, text) {
+  sync.mode = mode;
+  const el = $('#sync'); el.dataset.mode = mode;
+  $('#sync-text').textContent = text || { live: 'Live: changes sync with chat', local: 'View only: your changes stay on this screen', static: 'Offline copy' }[mode];
+}
+async function connect() {
+  const db = await use('db');
+  if (!db || !DATA.workspace) { setSync('static'); return; }
+  sync.db = db;
+  const user = await use('user');
+  sync.canWrite = user ? await user.can('data.write') : null;
+  setSync(sync.canWrite === false ? 'local' : 'live');
+  $('#btn-open').hidden = true;
+  let first = true;
+  db.doc('scene/current').onSnapshot((snap) => {
+    if (!snap.exists) { first = false; return; }
+    const data = snap.data();
+    if (core(data) === core(scene)) { first = false; return; }
+    scene = normalize(data);
+    draw();
+    if (!first && data.updated_by !== 'page') toast('Updated from chat' + (data.note ? ': ' + data.note : ''));
+    first = false;
+  }, (e) => setSync('static', 'Live sync stopped (' + e.code + ')'));
+  let firstCamera = true;
+  db.doc('scene/camera').onSnapshot((snap) => {
+    sync.cameraKnown = snap.exists;
+    if (!snap.exists) { firstCamera = false; return; }
+    const cam = snap.data();
+    /* Open where the workspace was left (any author); afterwards follow only Claude's camera requests. */
+    if (firstCamera) { firstCamera = false; sync.lastCameraRequest = cam.request_id || null; if (viewer && sync.drawn) setCamera(cam, 0); else sync.pendingCamera = cam; return; }
+    if (cam.by === 'page' || !cam.request_id || cam.request_id === sync.lastCameraRequest) return;
+    sync.lastCameraRequest = cam.request_id;
+    if (viewer && sync.drawn) setCamera(cam, 600); else sync.pendingCamera = cam;
+  });
+  db.collection('renders').orderBy('created_at', 'desc').limit(200).onSnapshot((snap) => {
+    sync.renders = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    buildGallery(); buildFiles();
+  }, (e) => toast('Render list unavailable (' + e.code + ')'));
+  db.doc('workspace/meta').get().then((snap) => { if (snap.exists) { sync.meta = snap.data(); buildFiles(); } }).catch(() => {});
+}
+function writeDoc(path, data) {
+  if (!sync.db || sync.canWrite === false) return;
+  sync.writes = sync.writes.then(() => sync.db.doc(path).set(data)).catch((e) => {
+    if (e && e.code === 'invalid_argument') { sync.canWrite = false; setSync('local'); }
+    else toast('Could not save to the workspace (' + (e && e.code || e) + ')');
+  });
+}
+/** A control changed the scene: draw it now and share it when allowed. */
+function changeScene(patch, note) {
+  scene = Object.assign(normalize(scene), patch, { revision: (scene.revision || 0) + 1, updated_by: 'page', note, written_at: new Date().toISOString() });
+  draw();
+  writeDoc('scene/current', scene);
+}
+/* Save the camera only after someone moves the view, never because the page framed itself. */
+let cameraTouched = false;
+function touchCamera() { cameraTouched = true; }
+function watchCamera() {
+  let timer = null, last = '';
+  for (const type of ['pointerdown', 'wheel', 'touchstart', 'keydown']) $('#stage').addEventListener(type, touchCamera, { passive: true });
+  viewer.plugin.canvas3d.camera.stateChanged.subscribe(() => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (sync.mode !== 'live' || !cameraTouched) return;
+      cameraTouched = false;
+      const cam = cameraNow(); const key = JSON.stringify([cam.position, cam.target, cam.up].map((v) => v.map((n) => Math.round(n * 10))));
+      if (key === last) return; last = key;
+      writeDoc('scene/camera', Object.assign(cam, { by: 'page', saved_at: new Date().toISOString() }));
+    }, 1200);
+  });
+}
+function watchClicks() {
+  const S = molstar.lib && molstar.lib.structure; if (!S || !S.StructureElement) return;
+  const SE = S.StructureElement, SP = S.StructureProperties;
+  viewer.plugin.behaviors.interaction.click.subscribe(({ current }) => {
+    const loci = current && current.loci;
+    if (!loci || !SE.Loci.is(loci) || SE.Loci.isEmpty(loci)) return;
+    const loc = SE.Loci.getFirstLocation(loci);
+    const item = { chain: SP.chain.auth_asym_id(loc), resi: SP.residue.auth_seq_id(loc), ins: SP.residue.pdbx_PDB_ins_code(loc) || '',
+      comp: SP.atom.label_comp_id(loc), atom: SP.atom.label_atom_id(loc) };
+    showPicked(item);
+    writeDoc('scene/selection', { items: [item], by: 'page', saved_at: new Date().toISOString() });
+  });
+}
+let picked = null;
+function showPicked(item) { picked = item; renderBelow(); }
+
+/* ---------- Controls ---------- */
+function activeStyle() { return scene.layers.some((l) => l.select && l.select.site) ? 'site' : scene.representation; }
+function syncControls() {
+  const style = activeStyle();
+  document.querySelectorAll('#seg-style .chip').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.style === style));
+    if (b.dataset.style === 'site') b.disabled = !model || !model.ligands.length;
+  });
+  document.querySelectorAll('#seg-color .chip').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === scene.color || (b.dataset.color === 'bfactor' && scene.color === 'plddt'))));
+  $('#chip-b').textContent = model && model.predicted ? 'pLDDT' : 'B-factor';
+  $('#water').checked = !!scene.waters; $('#water').disabled = !model || !model.waters;
+  const siteLayer = scene.layers.find((l) => l.select && l.select.site);
+  const lig = siteLayer ? matchLigands(siteLayer.select.site)[0] : null;
+  if (lig) $('#ligand').value = lig.key;
+  buildChains(); renderBelow();
+}
+function hiddenChains() { return new Set(scene.hidden.filter((h) => h.chain && Object.keys(h).length === 1).flatMap((h) => [].concat(h.chain))); }
+function buildChains() {
+  const box = $('#chains'); box.replaceChildren(); if (!model) return;
+  const hidden = hiddenChains();
+  for (const c of model.chains.slice(0, 40)) {
+    const b = document.createElement('button'); b.className = 'chain'; b.setAttribute('aria-pressed', String(!hidden.has(c.id)));
+    b.title = `${hidden.has(c.id) ? 'Show' : 'Hide'} chain ${c.id}${c.description ? ' (' + c.description + ')' : ''}`;
+    const sw = document.createElement('span'); sw.className = 'swatch'; sw.style.background = chainColor(c.id);
+    const id = document.createElement('span'); id.className = 'id'; id.textContent = c.id;
+    const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = c.gene || (c.kind === 'nucleic' ? 'NA' : '') || `${c.residues} res`;
+    b.append(sw, id, sub);
+    b.addEventListener('click', () => {
+      const next = scene.hidden.filter((h) => !(h.chain && Object.keys(h).length === 1 && [].concat(h.chain).includes(c.id)));
+      const hide = !hidden.has(c.id);
+      if (hide) next.push({ chain: c.id });
+      changeScene({ hidden: next }, `${hide ? 'hide' : 'show'} chain ${c.id}`);
+    });
+    box.append(b);
+  }
+}
+function renderBelow() {
+  const box = $('#below'); box.replaceChildren(); if (!model) return;
+  const add = (text, mono) => { const s = document.createElement('span'); if (mono) s.className = 'mono'; s.textContent = text; box.append(s); };
+  if (scene.color === 'bfactor' || scene.color === 'plddt') {
+    if (model.predicted) for (const p of PLDDT) { const s = document.createElement('span'); s.innerHTML = '<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px"></span>'; s.firstChild.style.background = p[1]; s.append(p[2]); box.append(s); }
+    else add('Blue → red: low → high B-factor (mobility)');
+  } else if (scene.color === 'ss') add('Colored by secondary structure');
+  else if (scene.color === 'rainbow') add('Rainbow from N- to C-terminus');
+  const siteLayer = scene.layers.find((l) => l.select && l.select.site);
+  if (siteLayer) { const lig = matchLigands(siteLayer.select.site)[0]; if (lig) add(`${lig.key}: ${site(lig, siteLayer.select.cutoff || 5).residues.filter((i) => model.residues[i].kind === 'polymer').length} residues within ${siteLayer.select.cutoff || 5} Å`, true); }
+  if (picked) add(`Selected ${titleCase(picked.comp)}${picked.resi}${picked.ins} · chain ${picked.chain}${sync.mode === 'live' ? ' (Claude can see this)' : ''}`, true);
+}
+function populateHeader() {
+  const i = model.info;
+  $('#entry-id').textContent = (DATA.id || i.id || model.filename.replace(/\.(cif|mmcif|pdb|ent|bcif)(\.gz)?$/i, '')).toUpperCase();
+  const described = model.chains.find((c) => c.description);
+  $('#title').textContent = DATA.title || i.title || (described && described.description) || model.filename;
+  const meta = $('#meta'); meta.replaceChildren();
+  const add = (t) => { if (!t) return; const s = document.createElement('span'); s.textContent = t; meta.append(s); };
+  add(model.predicted ? 'Predicted model' : (i.method ? i.method.replace(/\b\w+/g, (w) => w[0] + w.slice(1).toLowerCase()) : ''));
+  add(i.resolution ? i.resolution.toFixed(2) + ' Å' : '');
+  add(`${model.chains.length} chain${model.chains.length === 1 ? '' : 's'}`);
+  add(`${model.atoms.length.toLocaleString()} atoms`);
+  add(model.ligands.length ? `${model.ligands.length} ligand${model.ligands.length === 1 ? '' : 's'}` : 'No ligands');
+  if (DATA.source) add(DATA.source);
+}
+function populateLigands() {
+  const s = $('#ligand'); s.replaceChildren();
+  if (!model.ligands.length) { const o = document.createElement('option'); o.textContent = 'None in this structure'; s.append(o); s.disabled = true; return; }
+  s.disabled = false;
+  for (const l of model.ligands.slice(0, 200)) {
+    const o = document.createElement('option'); o.value = l.key;
+    o.textContent = `${l.key}${l.fullName ? ' · ' + l.fullName.slice(0, 40).toLowerCase() : ''}${l.additive ? ' (additive)' : ''}`;
+    s.append(o);
+  }
+}
+function siteScene(key) {
+  const layers = scene.layers.filter((l) => !(l.select && l.select.site));
+  layers.push({ select: { site: key }, representation: 'sticks', color: 'element' });
+  return { layers, focus: { ligand: key }, opacity: 0.45, representation: 'cartoon' };
+}
+function wire() {
+  for (const t of ['3d', 'renders', 'files']) $('#tab-' + t).addEventListener('click', () => setTab(t));
+  $('#seg-style').addEventListener('click', (e) => {
+    const b = e.target.closest('.chip'); if (!b || b.disabled) return;
+    if (b.dataset.style === 'site') { const key = $('#ligand').value || (model.ligands[0] && model.ligands[0].key); if (key) { touchCamera(); changeScene(siteScene(key), 'binding site of ' + key); } return; }
+    changeScene({ representation: b.dataset.style, opacity: 1, layers: scene.layers.filter((l) => !(l.select && l.select.site)), focus: null }, b.dataset.style + ' style');
+  });
+  $('#seg-color').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (!b) return; const color = b.dataset.color === 'bfactor' && model && model.predicted ? 'plddt' : b.dataset.color; changeScene({ color }, 'color by ' + color); });
+  $('#ligand').addEventListener('change', (e) => { touchCamera(); changeScene(siteScene(e.target.value), 'binding site of ' + e.target.value); });
+  $('#water').addEventListener('change', (e) => changeScene({ waters: e.target.checked }, e.target.checked ? 'show waters' : 'hide waters'));
+  $('#btn-reset').addEventListener('click', () => { if (!viewer) return; touchCamera(); viewer.plugin.managers.camera.reset(); });
+  $('#btn-spin').addEventListener('click', (e) => {
+    if (!viewer) return; spinning = !spinning; e.currentTarget.setAttribute('aria-pressed', String(spinning));
+    viewer.plugin.canvas3d.setProps({ trackball: { animate: spinning ? { name: 'spin', params: { speed: 0.5 } } : { name: 'off', params: {} } } });
+  });
+  $('#btn-shot').addEventListener('click', async () => {
+    if (!viewer) return;
+    try { const uri = await viewer.plugin.helpers.viewportScreenshot.getImageDataUri(); await saveFile(`${($('#entry-id').textContent || 'structure').toLowerCase()}-view.png`, new Blob([b64ToBytes(uri.split(',')[1])], { type: 'image/png' })); }
+    catch (err) { console.error(err); toast('Could not capture the viewport.'); }
+  });
+  $('#btn-view').addEventListener('click', () => {
+    if (!viewer || !model) return;
+    const v = Object.assign({ format: 'molstar-camera', structure: model.filename }, cameraNow());
+    $('#view-note').textContent = sync.mode === 'live' ? 'Claude already sees this view through the workspace. Copy it only to use it elsewhere.' : 'Paste this into the chat and ask Claude to render the structure from this angle.';
+    $('#view-text').value = '{"structure_studio_view": {\n' + Object.entries(v).map(([k, val]) => `  "${k}": ${JSON.stringify(val)}`).join(',\n') + '\n}}';
+    $('#view-sheet').hidden = false; $('#view-copy').focus();
+  });
+  $('#view-copy').addEventListener('click', () => { const ta = $('#view-text'); navigator.clipboard.writeText(ta.value).then(() => toast('View copied'), () => { ta.focus(); ta.select(); toast('Press Ctrl/⌘+C to copy'); }); });
+  $('#view-close').addEventListener('click', () => { $('#view-sheet').hidden = true; });
+  $('#lightbox-close').addEventListener('click', () => { $('#lightbox').hidden = true; });
+  for (const o of ['#view-sheet', '#lightbox']) $(o).addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('#view-sheet').hidden = true; $('#lightbox').hidden = true; } });
+  $('#btn-tools').addEventListener('click', (e) => {
+    if (!viewer) return; const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+    e.currentTarget.setAttribute('aria-pressed', String(on));
+    viewer.plugin.layout.setProps({ showControls: on, regionState: { left: 'collapsed', top: 'full', right: on ? 'full' : 'hidden', bottom: 'hidden' } });
+  });
+  $('#btn-open').addEventListener('click', () => $('#file-input').click());
+  $('#file-input').addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; if (f) await openFile(f); e.target.value = ''; });
+  const stage = $('#stage');
+  stage.addEventListener('dragover', (e) => { if (sync.mode === 'static') { e.preventDefault(); stage.classList.add('dragging'); } });
+  stage.addEventListener('dragleave', (e) => { if (!stage.contains(e.relatedTarget)) stage.classList.remove('dragging'); });
+  stage.addEventListener('drop', async (e) => { if (sync.mode !== 'static') return; e.preventDefault(); stage.classList.remove('dragging'); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) await openFile(f); });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyBackground);
+  new MutationObserver(applyBackground).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+function setTab(name) {
+  for (const t of ['3d', 'renders', 'files']) { $('#tab-' + t).setAttribute('aria-selected', String(t === name)); $('#panel-' + t).hidden = t !== name; }
+  if (name === '3d' && viewer) requestAnimationFrame(() => viewer.handleResize());
+}
+
+/* ---------- Structure loading ---------- */
+async function loadModel(bytes, filename, predicted) {
+  let name = filename;
+  if (/\.gz$/i.test(name)) { bytes = await gunzip(bytes); name = name.replace(/\.gz$/i, ''); }
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const format = ext === 'bcif' ? 'bcif' : (ext === 'pdb' || ext === 'ent') ? 'pdb' : 'mmcif';
+  let m;
+  if (format === 'bcif') m = finishModel(newAtoms(), { format, filename: name, names: {}, entities: {}, genes: {}, hasMaQa: false, info: {} });
+  else { const text = new TextDecoder().decode(bytes); m = format === 'pdb' ? modelFromPdb(text, name) : modelFromCif(text, name); }
+  if (predicted != null) m.predicted = !!predicted;
+  m.bytes = bytes; m.archiveName = 'structure.' + (format === 'mmcif' ? 'cif' : format);
+  model = m; siteCache.clear();
+  populateHeader(); populateLigands(); syncControls();
+}
+async function openFile(file) {
+  try {
+    status('Opening ' + file.name + '…');
+    await loadModel(new Uint8Array(await file.arrayBuffer()), file.name, null);
+    scene = normalize({ color: scene.color }); appliedFocus = null;
+    await draw({ fresh: true }); setTab('3d'); toast('Opened ' + file.name);
+  } catch (e) { console.error(e); status(e.message || String(e), true); }
+}
+
+/* ---------- Renders and files ---------- */
+async function fetchPacked(entry) {
+  const texts = await Promise.all(entry.asset_ids.map((id) => fetch('/_blob/' + id).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })));
+  let bytes = b64ToBytes(texts.join(''));
+  if (entry.encoding === 'gzip+base64') bytes = await gunzip(bytes);
+  if (entry.sha256 && await sha256(bytes) !== entry.sha256) throw new Error(entry.filename + ' did not match its checksum');
+  return bytes;
+}
+async function savePacked(entry, button) {
+  const label = button.textContent; button.disabled = true; button.textContent = 'Preparing…';
+  try { const bytes = await fetchPacked(entry); await saveFile(entry.filename.replace(/\.[^.]+$/, '') + '.zip', new Blob([zipStore([[entry.filename, bytes]])])); }
+  catch (e) { console.error(e); toast('Could not prepare ' + entry.filename + ': ' + (e.message || e)); }
+  finally { button.disabled = false; button.textContent = label; }
+}
+/* Session bundles (structure-studio-session/1): JSON files whose entries carry gzip+base64 data. */
+const bundleCache = new Map();
+function fetchBundle(session) {
+  const key = session.asset_ids.join(',');
+  if (!bundleCache.has(key)) bundleCache.set(key, Promise.all(session.asset_ids.map((id) => fetch('/_blob/' + id).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }))).then((docs) => {
+    const files = {};
+    for (const d of docs) for (const e of d.entries || []) { const f = files[e.filename] || (files[e.filename] = { info: e, data: {} }); f.data[e.part] = e.data; }
+    return files;
+  }));
+  return bundleCache.get(key);
+}
+async function bundleFile(session, file) {
+  const item = (await fetchBundle(session))[file.filename];
+  if (!item) throw new Error(file.filename + ' is missing from the bundle');
+  const text = Array.from({ length: item.info.parts }, (_, i) => { const part = item.data[i + 1]; if (part === undefined) throw new Error('missing part ' + (i + 1)); return part; }).join('');
+  const bytes = await gunzip(b64ToBytes(text));
+  if (file.sha256 && await sha256(bytes) !== file.sha256) throw new Error(file.filename + ' did not match its checksum');
+  return bytes;
+}
+async function saveBundleFile(session, file, button) {
+  const label = button.textContent; button.disabled = true; button.textContent = 'Preparing…';
+  try { const bytes = await bundleFile(session, file); await saveFile(file.filename.replace(/\.[^.]+$/, '') + '.zip', new Blob([zipStore([[file.filename, bytes]])])); }
+  catch (e) { console.error(e); toast('Could not prepare ' + file.filename + ': ' + (e.message || e)); }
+  finally { button.disabled = false; button.textContent = label; }
+}
+const ROLE_LABEL = { pse: 'PyMOL .pse', blend: 'Blender .blend' };
+function actionButton(text, handler) { const b = document.createElement('button'); b.className = 'btn'; b.textContent = text; b.addEventListener('click', () => handler(b)); return b; }
+function renderCard(r) {
+  const fig = document.createElement('figure'); fig.className = 'render';
+  const done = r.status === 'done' || (!r.status && (r.image || r.src));
+  if (!done) fig.classList.add(r.status === 'failed' ? 'failed' : 'pending');
+  const thumb = document.createElement('button'); thumb.className = 'thumb';
+  if (done) {
+    const img = document.createElement('img'); img.loading = 'lazy';
+    img.src = r.src || '/_blob/' + r.image.asset_id; img.alt = `${r.label || r.preset} render`;
+    thumb.append(img); thumb.setAttribute('aria-label', 'Enlarge ' + (r.label || r.preset));
+    thumb.addEventListener('click', () => { $('#lightbox-img').src = img.src; $('#lightbox-img').alt = img.alt; $('#lightbox').hidden = false; $('#lightbox-close').focus(); });
+  } else {
+    thumb.disabled = true;
+    const t = document.createElement('span'); if (r.status !== 'failed') t.className = 'pulse';
+    t.textContent = r.status === 'failed' ? 'Render failed' + (r.error ? ': ' + r.error : '') : `Rendering ${r.preset || ''}… started ${r.started_at ? ago(r.started_at) : 'just now'}`;
+    thumb.append(t);
+  }
+  const cap = document.createElement('figcaption');
+  const name = document.createElement('span'); name.className = 'name'; name.textContent = r.label || r.preset; cap.append(name);
+  if (r.note || r.description) { const d = document.createElement('span'); d.className = 'desc'; d.textContent = r.note || r.description; cap.append(d); }
+  const spec = [r.preset && r.label !== r.preset ? r.preset : '', r.image && r.image.width ? `${r.image.width}×${r.image.height}` : r.spec || '', r.seconds ? `${Math.round(r.seconds)} s` : '', r.created_at ? ago(r.created_at) : ''].filter(Boolean).join(' · ');
+  if (spec) { const s = document.createElement('span'); s.className = 'spec'; s.textContent = spec; cap.append(s); }
+  if (done) {
+    const actions = document.createElement('div'); actions.className = 'card-actions';
+    actions.append(actionButton('Save image', async () => {
+      const blob = r.src ? new Blob([b64ToBytes(r.src.split(',')[1])]) : await fetch('/_blob/' + r.image.asset_id).then((x) => x.blob());
+      await saveFile(r.filename || (r.image && r.image.filename) || 'render.png', blob);
+    }));
+    if (r.session) for (const f of r.session.files || []) actions.append(actionButton(ROLE_LABEL[f.role] || f.filename, (b) => saveBundleFile(r.session, f, b)));
+    if (r.pse) actions.append(actionButton('PyMOL .pse', (b) => savePacked(r.pse, b)));
+    if (r.blend) actions.append(actionButton('Blender .blend', (b) => savePacked(r.blend, b)));
+    if (r.camera && viewer) actions.append(actionButton('View this angle', () => { setTab('3d'); setCamera(r.camera, 600); }));
+    cap.append(actions);
+  }
+  fig.append(thumb, cap);
+  return fig;
+}
+function buildGallery() {
+  const list = sync.renders || DATA.renders || [];
+  const done = list.filter((r) => r.status !== 'failed');
+  $('#render-count').textContent = done.length ? String(done.length) : '';
+  const g = $('#gallery'); g.replaceChildren();
+  if (!list.length) {
+    const p = document.createElement('p'); p.className = 'empty';
+    p.textContent = 'No renders yet. Ask Claude in the chat, for example “render this view with mint_sky_assembly”, and it will appear here when it finishes.';
+    g.append(p); return;
+  }
+  for (const r of list) g.append(renderCard(r));
+}
+function buildFiles() {
+  const box = $('#files'); box.replaceChildren();
+  if (sync.renders) {
+    const ul = document.createElement('ul'); ul.className = 'file-list';
+    const addRow = (label, size, entry, handler) => {
+      const li = document.createElement('li'); const a = document.createElement('span'); a.className = 'fname'; a.textContent = label;
+      const right = document.createElement('span'); right.className = 'fsize'; right.textContent = fmtBytes(size || 0);
+      li.append(a, right);
+      if (entry || handler) li.append(actionButton('Save', handler || ((b) => savePacked(entry, b))));
+      ul.append(li);
+    };
+    const st = sync.meta && sync.meta.structure;
+    if (st && st.asset_id) addRow(st.filename, st.bytes, { filename: st.filename, asset_ids: [st.asset_id], encoding: 'text', sha256: st.sha256 });
+    const src = sync.meta && sync.meta.source_session;
+    if (src && src.asset_ids) for (const f of src.files || []) addRow(`${f.filename} · uploaded session`, f.bytes, null, (b) => saveBundleFile(src, f, b));
+    for (const r of sync.renders) {
+      if (r.session) for (const f of r.session.files || []) addRow(`${f.filename} · ${r.label || r.preset}`, f.bytes, null, (b) => saveBundleFile(r.session, f, b));
+      for (const role of ['pse', 'blend']) if (r[role]) addRow(`${r[role].filename} · ${r.label || r.preset}`, r[role].bytes, r[role]);
+    }
+    const p = document.createElement('p'); p.className = 'note';
+    p.textContent = 'Session files are stored in this workspace and download as .zip files. Open .pse files in PyMOL and .blend files in Blender 5.0 or newer.';
+    if (!ul.children.length) { p.textContent = 'No session files yet. Renders made from the chat add their PyMOL session and Blender scene here.'; box.append(p); return; }
+    box.append(ul, p); return;
+  }
+  const d = DATA.downloads; const p = document.createElement('p'); p.className = 'note';
+  if (!d) { p.textContent = 'No session files are attached to this page.'; box.append(p); return; }
+  const ul = document.createElement('ul'); ul.className = 'file-list';
+  for (const f of d.contents) { const li = document.createElement('li'); const a = document.createElement('span'); a.className = 'fname'; a.textContent = f.name; const b = document.createElement('span'); b.className = 'fsize'; b.textContent = fmtBytes(f.size); li.append(a, b); ul.append(li); }
+  const btn = document.createElement('button'); btn.className = 'btn primary'; btn.textContent = `Save ${d.filename} (${fmtBytes(d.size)})`;
+  btn.addEventListener('click', () => saveFile(d.filename, new Blob([b64ToBytes(d.data)])));
+  p.textContent = 'Session files bundled as one .zip.';
+  box.append(ul, btn, p);
+}
+
+async function main() {
+  window.studio = { get viewer() { return viewer; }, get model() { return model; }, get scene() { return scene; }, sync, resolve, buildScene };
+  wire(); buildGallery(); buildFiles();
+  if (DATA.initial_tab) setTab(DATA.initial_tab);
+  try {
+    const s = DATA.structure;
+    let bytes = b64ToBytes(s.data); if (s.gzip) bytes = await gunzip(bytes);
+    await loadModel(bytes, s.filename, DATA.predicted);
+  } catch (e) { console.error(e); status('Could not read the embedded structure: ' + (e.message || e), true); return; }
+  const connected = connect();
+  try { await createViewer(); applyBackground(); }
+  catch (e) { console.error(e); status(e.message || String(e), true); return; }
+  await connected;
+  /* Give the first database snapshots a moment so a saved shared camera beats the embedded one. */
+  if (sync.db && sync.cameraKnown === undefined) await new Promise((r) => setTimeout(r, 600));
+  const opening = sync.pendingCamera || DATA.camera || null;
+  sync.pendingCamera = null;
+  await draw({ fresh: true, camera: opening });
+  sync.drawn = true;
+  if (sync.pendingCamera) { await settleCamera(sync.pendingCamera); sync.pendingCamera = null; }
+  /* A new workspace has no shared camera yet: record the opening view once so renders match the panel. */
+  setTimeout(() => {
+    if (sync.mode === 'live' && sync.cameraKnown === false && viewer) writeDoc('scene/camera', Object.assign(cameraNow(), { by: 'page', saved_at: new Date().toISOString(), initial: true }));
+  }, 2500);
+}
+main();
+})();
+</script>
