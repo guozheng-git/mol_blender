@@ -2,7 +2,6 @@
   "name": "structure-studio",
   "version": "0.1.0",
   "description": "Interactive Mol* viewer panels, PyMOL sessions and Blender + Molecular Nodes preset renders for protein and nucleic-acid structures.",
-  "author": { "name": "soo" },
   "license": "MIT AND GPL-3.0-or-later",
   "keywords": ["structural-biology", "molstar", "pymol", "blender", "molecular-nodes", "pdb", "alphafold"]
 }
