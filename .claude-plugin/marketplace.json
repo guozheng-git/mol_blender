@@ -1,6 +1,6 @@
 {
   "name": "blender-render",
-  "owner": { "name": "soo" },
+  "owner": { "name": "blender render" },
   "description": "Molecular rendering plugins built on the blender_render renderer.",
   "plugins": [
     {
