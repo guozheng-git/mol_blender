@@ -182,3 +182,56 @@ when that preset is explicitly selected.
   mint protein, purple ligand and pale cyan background with the saved input pose.
 - Artifacts and logs remain ignored: `renders/mint-default.png`, its `.render/`
   directory and `.validation/mint-default*.log`. Preset JSON files were not edited.
+
+## Structure Studio animation recipes
+
+Executed 2026-10-26 on the local Apple Silicon host, on
+`claude/structure-studio-animation-recipes` branched from
+`claude/structure-studio-plugin`. The Claude plugin now includes turntable, rock,
+reveal, cutaway, states and scenes recipes, reusable JSON templates, and movie
+bundling. The shared local renderer gained camera paths, state coordinates and
+cutaway-lid fading; no service/backend or client-specific dependency was added.
+
+- `STRUCTURE_STUDIO_TEST_PYMOL=<local PyMOL Python> python -m pytest -q`:
+  **299 passed**, including two real headless PyMOL integration checks. Three
+  warnings are the deliberate duplicate-ZIP test and existing Authlib deprecations.
+  Checks cover recipe timing, input/template validation, a 360-frame archive,
+  state atom identity, saved-scene camera-only recall, preserved enabled objects,
+  selections, colors and transforms, bundled files and existing still rendering.
+- `node --test tests/structure_studio_viewer.test.cjs`: **9 passed**. This covers
+  browser-script syntax and the existing structure/asset helpers, not actual
+  browser video playback.
+- Built the vendored renderer wheel and both Claude upload ZIPs using
+  `python scripts/build_plugin.py`. Installed the wheel into a new environment
+  outside the checkout. With Python `-I`, the installed camera-path and package
+  identity tests passed (**27 tests**), including installed module-location and
+  manifest checks. The extracted plugin lists all six recipes and contains all
+  six JSON templates and the co-pymol MIT notice.
+- Ran the extracted Claude plugin outside the checkout using its rock template,
+  a real public CIF, a workspace scene snapshot, the installed wheel and the
+  existing local Blender/PyMOL runtimes. A 128 × 96, 4-sample, 4-frame movie took
+  **11.1 s** for the render invocation. PNG, MP4, GIF, frame ZIP, PSE and Blender
+  scene were produced. Recording and restoring its bundle verified all six
+  bundled roles: PSE, blend, MP4, GIF, frames and reusable animation JSON.
+- Real Blender smoke renders used public `1stp.cif` for turntable, rock, reveal
+  and cutaway. States/scenes used an explicitly synthetic three-state DNA
+  fixture derived from public `1bna.cif`, with two stored camera scenes. These
+  fixtures test rendering behavior, not biological motion. All movies are 2 s:
+  turntable/states/scenes have 8 frames at 192 × 144 and 4 samples; rock has
+  8 frames at 256 × 192 and 8 samples; reveal/cutaway have 12 frames at 256 × 192
+  and 8 samples. Render invocations took 11.0 s, 144.4 s, 12.4 s, 21.5 s, 12.5 s
+  and 11.9 s for turntable, rock, reveal, cutaway, states and scenes respectively.
+- FFprobe confirmed each MP4's dimensions, frame count and 2.000 s duration.
+  GIFs decoded to the expected frame counts with infinite looping. Inspected
+  four frames from each movie in a contact sheet: full rotation, both rocking
+  directions, pocket approach, closed/open cutaway, changed molecular states,
+  and saved-scene camera movement are visible. The cutaway still is anchor
+  frame 7, after the lid has disappeared. These are low-sample smoke previews,
+  not publication-quality renders.
+
+Logs, synthetic fixtures and images are ignored under
+`.validation/studio-animation/`; the external package-check directory is recorded
+there. Temporary renderer source snapshots were cleaned by the ordinary local
+runner. No live PyMOL GUI session was touched. No Claude artifact was published
+or modified. No browser connection was available, so actual gallery playback,
+Claude Artifact upload/download and client integration remain unverified.

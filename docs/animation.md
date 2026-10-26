@@ -77,3 +77,25 @@ tool; movie playback depends on the client's support for local media files.
 
 See [validation](validation.md#local-animation-port) for executed Mac checks and
 untested GUI/client behavior.
+
+## Structure Studio recipes
+
+The Claude plugin adds reusable `turntable`, `rock`, `reveal`, `cutaway`, `states`
+and `scenes` templates. See its
+[animation reference](../plugins/structure-studio/skills/structure-studio/references/animations.md)
+for commands, prerequisites and quality controls. Existing `--animation rock|360`
+commands retain their defaults.
+
+The shared renderer also accepts `output.animation.mode = "path"` in a style or
+output override. `path` is a list of 4–360 PyMOL views (18 finite numbers each),
+played at `fps`. Optional `anchor` identifies the still's view; its default is 0.
+`states` supplies one molecular-state index per view and requires the exported
+payload's validated `state_coordinates`. `lid` supplies one opacity per view and
+requires a preset with a ligand-cutout surface. The existing duration, frame,
+archive and memory limits apply. Unknown fields are rejected.
+
+Structure Studio compiles these paths and coordinates from a trusted local
+session. It renders one local movie through the ordinary isolated preview runner,
+records the resolved style and manifest, and stores the movies, frames and recipe
+with the workspace's session bundle. A saved Blender file contains the anchor
+scene; it is not an editable animation timeline.

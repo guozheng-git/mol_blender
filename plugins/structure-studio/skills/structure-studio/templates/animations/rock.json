@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "recipe": "rock",
+  "duration": 6,
+  "fps": 24,
+  "gif": true,
+  "rock_angle": 25
+}

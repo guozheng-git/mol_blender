@@ -34,6 +34,13 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     catalog_dir = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
     # Reject invalid presets before allocating any Blender work.
     resolved = resolve_authored(options, payload, catalog_dir)
+    animation = resolved['style_doc']['output'].get('animation') or {}
+    if animation.get('states'):
+        coordinates = payload.get('state_coordinates')
+        if not coordinates or max(animation['states']) > len(coordinates['coordinates']):
+            raise ValueError('Animation references molecular states missing from the exported payload')
+        if animation['states'][animation.get('anchor', 0)] != coordinates['base']:
+            raise ValueError('The anchor animation state must be the exported state')
     from .animation import encoder, required_names
     if resolved['style_doc']['output'].get('animation'):
         encoder()  # Fail before allocating a Blender process.

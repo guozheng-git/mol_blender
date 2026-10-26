@@ -21,6 +21,7 @@ import artifact_files  # noqa: E402
 import scene as scenes  # noqa: E402
 import studio_env  # noqa: E402
 import structure_io  # noqa: E402
+import animation_recipes  # noqa: E402
 
 PRESETS = HERE.parent / "references" / "presets.json"
 CPU_LONG_EDGE = 1280
@@ -103,6 +104,31 @@ def cmd_presets(args):
     return rows
 
 
+def cmd_recipes(args):
+    return [{"id": name, "description": description,
+             "template": str(HERE.parent / "templates" / "animations" / (name + ".json"))}
+            for name, (_, description) in animation_recipes.RECIPES.items()]
+
+
+def animation_template(args):
+    if not (args.recipe or args.animation_template):
+        if args.focus:
+            raise ValueError("--focus requires --recipe or --animation-template")
+        return None
+    value = (json.loads(Path(args.animation_template).expanduser().read_text()) if args.animation_template
+             else {"version": 1, "recipe": args.recipe})
+    # Validate before overrides so typos in reusable templates cannot be hidden.
+    value = animation_recipes.template(value)
+    for key in ("duration", "fps", "rock_angle", "gif"):
+        if getattr(args, key) is not None:
+            value[key] = getattr(args, key)
+    if args.focus:
+        value["focus"] = args.focus
+    if args.no_preserve_view or args.style_json:
+        raise ValueError("Recipes need the saved camera: choose a named preset and omit --no-preserve-view/--style-json")
+    return animation_recipes.template(value)
+
+
 def run_pymol_session(extra: list[str]) -> dict:
     python = studio_env.pymol_python()
     result = subprocess.run([str(python), str(HERE / "pymol_session.py"), *extra], capture_output=True, text=True)
@@ -159,6 +185,8 @@ def _snapshot(directory: str) -> tuple[str, str]:
 
 
 def cmd_render(args):
+    args.recipe_config = animation_template(args)
+    args.preset = args.preset or ("cyan_mint_cutaway" if args.recipe_config and args.recipe_config["recipe"] == "cutaway" else "mint_sky_assembly")
     executable, env = studio_env.renderer_env()
     directory = output_dir(args.out_dir)
     name_hint = ""
@@ -171,13 +199,15 @@ def cmd_render(args):
             name_hint = scenes.load(str(meta)).get("structure", {}).get("filename", "")
     # Converted input files live only for this render and cannot collide with another input.
     with TemporaryDirectory(prefix="structure-studio-input-") as temporary:
+        args.staging = Path(temporary)
         source = renderable(args.structure, Path(temporary), name_hint)
         return _render_prepared(args, source, directory, executable, env)
 
 
 def _render_prepared(args, source: Path, directory: Path, executable: Path, env: dict):
     session = None
-    if args.scene or args.view or args.fit:
+    recipe = getattr(args, "recipe_config", None)
+    if args.scene or args.view or args.fit or recipe:
         extra = []
         tag = "view"
         if args.scene:
@@ -185,6 +215,8 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
             scene_file = directory / f"{source.stem}-scene.json"
             scene_file.write_text(json.dumps(scene))
             extra += ["--scene", str(scene_file)]
+            if recipe and recipe["recipe"] in {"reveal", "cutaway"} and "focus" not in recipe and scene.get("focus"):
+                recipe["focus"] = scenes.to_pymol(scene["focus"], "enabled")
             tag = f"r{scene.get('revision') or 0}"
         if args.view:
             camera = _json_arg(args.view)
@@ -194,17 +226,44 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
         session = run_pymol_session([str(source), "-o", str(unique(directory / f"{source.stem}-{tag}.pse")), *extra])
         source = Path(session["session"])
     label = Path(args.style_json).stem if args.style_json else args.preset
-    output = unique(Path(args.output).expanduser() if args.output else directory / f"{source.stem}-{label}.png")
+    suffix = f"-{recipe['recipe']}" if recipe else ""
+    output = unique(Path(args.output).expanduser() if args.output else directory / f"{source.stem}-{label}{suffix}.png")
+    animation = None
+    adjusted = cpu_defaults(args)
+    if recipe:
+        config = args.staging / "animation.json"
+        config.write_text(json.dumps(recipe, allow_nan=False))
+        bundle, overrides, report = [args.staging / name for name in ("bundle.json", "overrides.json", "report.json")]
+        prepare = [str(studio_env.pymol_python()), str(HERE / "animation_session.py"), str(source),
+                   "--wheel", str(studio_env.wheel()), "--config", str(config), "--payload", str(bundle),
+                   "--overrides", str(overrides), "--report", str(report)]
+        for key in ("width", "height"):
+            if getattr(args, key) is not None:
+                prepare += ["--" + key, str(getattr(args, key))]
+        result = subprocess.run(prepare, capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise RuntimeError("Animation preparation failed:\n" + (result.stderr or result.stdout)[-3000:])
+        animation = json.loads(report.read_text())
+        source = bundle
+        # The helper fits the movie to the saved viewport; explicit sizes win.
+        adjusted = {k: animation[k] for k in ("width", "height") if getattr(args, k) is None}
+        if args.samples is None and not args.full_quality:
+            adjusted["samples"] = 32
     command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
     command += ["--style-json", args.style_json] if args.style_json else ["--preset", args.preset]
-    adjusted = cpu_defaults(args)
+    if recipe:
+        command += ["--overrides-json", str(overrides)]
     for key in ("width", "height", "samples", "duration", "fps", "rock_angle"):
+        if recipe and key in ("duration", "fps", "rock_angle"):
+            continue
         value = getattr(args, key) if getattr(args, key) is not None else adjusted.get(key)
         if value is not None:
             command += [f"--{key.replace('_', '-')}", str(value)]
     for flag in ("rough", "save_blend", "gif", "transparent"):
         if getattr(args, flag):
             command.append(f"--{flag.replace('_', '-')}")
+    if args.gif is False:
+        command.append("--no-gif")
     if args.no_preserve_view:
         command.append("--no-preserve-view")
     if args.animation:
@@ -219,6 +278,9 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
                    input=str(Path(args.structure).expanduser().resolve()))
     if session:
         payload["outputs"]["session.pse"] = session["session"]
+    if animation:
+        payload["animation"] = animation
+        payload["outputs"]["animation.json"] = artifact_files.write_json(animation["template"], str(output.with_suffix(".animation.json")))
     if args.workspace:
         payload.update(_workspace_steps(args, payload, output))
     result_file = artifact_files.write_json(payload, str(output.with_suffix(".result.json")))
@@ -235,6 +297,9 @@ def _workspace_steps(args, payload: dict, output: Path) -> dict:
         blend = output.with_suffix(".blend")
         blend.write_bytes(Path(payload["outputs"]["render.blend"]).read_bytes())
         files["blend"] = str(blend)
+    for role, name in (("mp4", "render.mp4"), ("gif", "render.gif"), ("frames", "frames.zip"), ("animation", "animation.json")):
+        if payload["outputs"].get(name):
+            files[role] = payload["outputs"][name]
     session = artifact_files.bundle(files, str(output.with_suffix(""))) if files else None
     url = args.url or "<workspace url>"
     job = args.job or "<render id>"
@@ -462,6 +527,7 @@ def parser():
 
     s = sub.add_parser("presets", help="List Blender presets")
     s.add_argument("--general", action="store_true", help="Only presets that work on any structure")
+    sub.add_parser("recipes", help="List animation recipes and their reusable JSON templates")
 
     s = sub.add_parser("session", help="Write a PyMOL .pse (extra flags pass to pymol_session.py)")
     s.add_argument("structure")
@@ -473,7 +539,7 @@ def parser():
 
     s = sub.add_parser("render", help="Render with Blender + Molecular Nodes using a preset")
     s.add_argument("structure", help=".cif/.pdb (optionally .gz) or a .pse session")
-    s.add_argument("--preset", default="mint_sky_assembly")
+    s.add_argument("--preset", help="Default: mint_sky_assembly; cyan_mint_cutaway for the cutaway recipe")
     s.add_argument("--style-json", default="")
     s.add_argument("-o", "--output", default="")
     s.add_argument("--out-dir", default="")
@@ -493,8 +559,12 @@ def parser():
     s.add_argument("--save-blend", action="store_true")
     s.add_argument("--transparent", action="store_true")
     s.add_argument("--no-preserve-view", action="store_true", help="Use the preset's authored camera")
-    s.add_argument("--animation", choices=("rock", "360"))
-    s.add_argument("--gif", action="store_true")
+    motion = s.add_mutually_exclusive_group()
+    motion.add_argument("--animation", choices=("rock", "360"), help="Legacy simple camera orbit")
+    motion.add_argument("--recipe", choices=tuple(animation_recipes.RECIPES))
+    motion.add_argument("--animation-template", default="", help="Reusable animation template JSON")
+    s.add_argument("--focus", default="", help="Enabled PyMOL selection for reveal/cutaway; defaults to the workspace focus or largest non-additive ligand")
+    s.add_argument("--gif", action=argparse.BooleanOptionalAction, default=None)
     s.add_argument("--duration", type=float)
     s.add_argument("--fps", type=int)
     s.add_argument("--rock-angle", type=float)
@@ -578,7 +648,7 @@ def main(argv=None):
     if extra and args.command != "session":
         parser().error("unrecognized arguments: " + " ".join(extra))
     handlers = {"setup": cmd_setup, "doctor": lambda a: studio_env.doctor(), "fetch": cmd_fetch, "info": cmd_info,
-                "presets": cmd_presets, "render": cmd_render, "viewer": cmd_viewer, "workspace": cmd_workspace,
+                "presets": cmd_presets, "recipes": cmd_recipes, "render": cmd_render, "viewer": cmd_viewer, "workspace": cmd_workspace,
                 "meta": cmd_meta, "scene": cmd_scene, "restore": cmd_restore, "unpack": cmd_unpack, "record": cmd_record,
                 "session": lambda a: cmd_session(a, extra)}
     try:

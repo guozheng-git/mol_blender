@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "recipe": "turntable",
+  "duration": 10,
+  "fps": 24,
+  "gif": true
+}

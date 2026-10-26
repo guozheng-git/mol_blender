@@ -15,17 +15,22 @@ import time
 import zipfile
 
 CONTROLS = ('animation', 'duration', 'fps', 'rock_angle', 'gif')
+PATH_VIEW_LENGTH = 18  # one PyMOL get_view() per frame
 MAX_RGBA = 1024**3
 MAX_ARCHIVE = 512 * 1024**2
 MAX_FRAMES = 360
 
 
 def normalize(value, output):
-    if not isinstance(value, dict) or set(value) - {'mode', 'duration', 'fps', 'rock_angle', 'gif'}:
+    if not isinstance(value, dict) or set(value) - {'mode', 'duration', 'fps', 'rock_angle', 'gif', 'path', 'states', 'anchor', 'lid'}:
         raise ValueError('Invalid animation fields')
     mode = value.get('mode', 'none')
-    if mode not in ('none', 'rock', '360'):
-        raise ValueError('animation must be none, rock or 360')
+    if mode not in ('none', 'rock', '360', 'path'):
+        raise ValueError('animation must be none, rock, 360 or path')
+    if {'path', 'states', 'anchor', 'lid'} & set(value) and mode != 'path':
+        raise ValueError('path, states, anchor and lid apply only to mode=path')
+    if mode == 'path':
+        return _normalize_path(value, output)
     if mode == 'none':
         if set(value) - {'mode'}:
             raise ValueError('Animation controls require rock or 360')
@@ -57,6 +62,67 @@ def normalize(value, output):
     return result
 
 
+def _normalize_path(value, output):
+    """A camera path: one PyMOL view per frame, played at fps.
+
+    The first view is the rendered scene's own camera. Every later frame moves
+    the camera by that view's rigid motion relative to the first, so fitted
+    framing and lens choices of the preset are kept.
+    """
+    if output.get('raw_view'):
+        raise ValueError('Animation is incompatible with raw_view')
+    if set(value) - {'mode', 'path', 'fps', 'duration', 'gif', 'states', 'anchor', 'lid'}:
+        raise ValueError('rock_angle applies only to rock')
+    fps = value.get('fps', 24)
+    if type(fps) is not int or not 1 <= fps <= 60:
+        raise ValueError('Animation fps must be an integer from 1 to 60')
+    path = value.get('path')
+    if not isinstance(path, list) or not 4 <= len(path) <= MAX_FRAMES:
+        raise ValueError('Animation path must contain 4 to 360 views')
+    for view in path:
+        if (not isinstance(view, list) or len(view) != PATH_VIEW_LENGTH
+                or any(type(v) not in (int, float) or not math.isfinite(v) for v in view)):
+            raise ValueError('Each animation path view must be 18 finite numbers from PyMOL get_view()')
+        if view[11] >= 0:
+            raise ValueError('Animation path views must keep the camera in front of the origin')
+    duration = len(path) / fps
+    if 'duration' in value and (type(value['duration']) not in (int, float)
+                                or not math.isfinite(value['duration'])
+                                or not math.isclose(value['duration'], duration, abs_tol=1e-8)):
+        raise ValueError('Animation duration must equal the path length divided by fps')
+    if duration > 15:
+        raise ValueError('Animation duration must be at most 15 seconds')
+    if len(path) * output['width'] * output['height'] * 4 > MAX_RGBA:
+        raise ValueError('Animation exceeds 1 GiB of decoded RGBA frames; reduce resolution or duration')
+    gif = value.get('gif', False)
+    if type(gif) is not bool:
+        raise ValueError('gif must be a boolean')
+    result = dict(mode='path', duration=duration, fps=fps, gif=gif,
+                  path=[[float(v) for v in view] for view in path])
+    if 'states' in value:
+        # Molecular state shown on each frame, numbered like PyMOL states.
+        states = value['states']
+        if (not isinstance(states, list) or len(states) != len(path)
+                or any(type(n) is not int or not 1 <= n <= MAX_FRAMES for n in states)):
+            raise ValueError('Animation states must give one PyMOL state number (1-360) per path view')
+        result['states'] = list(states)
+    # The anchor view is the rendered scene's camera (and the still image);
+    # every other frame moves relative to it. Camera-facing cuts aim from it.
+    anchor = value.get('anchor', 0)
+    if type(anchor) is not int or not 0 <= anchor < len(path):
+        raise ValueError('Animation anchor must index one of the path views')
+    result['anchor'] = anchor
+    if 'lid' in value:
+        # Opacity of the surface a ligand cutout removes, per frame: 1 shows
+        # the intact surface, 0 the finished cut.
+        lid = value['lid']
+        if (not isinstance(lid, list) or len(lid) != len(path)
+                or any(type(v) not in (int, float) or not 0 <= v <= 1 for v in lid)):
+            raise ValueError('Animation lid must give one opacity from 0 to 1 per path view')
+        result['lid'] = [float(v) for v in lid]
+    return result
+
+
 def resolve(options, output):
     value = {} if options.get('animation') == 'none' else dict(output.get('animation', {}))
     for key in CONTROLS:
@@ -83,7 +149,7 @@ def required_names(style):
     if output.get('save_blend'):
         names.append('render.blend')
     cfg = output.get('animation')
-    if cfg and cfg.get('mode') in ('rock', '360'):
+    if cfg and cfg.get('mode') in ('rock', '360', 'path'):
         names += ['render.mp4', 'frames.zip']
         if cfg.get('gif'):
             names.append('render.gif')
@@ -168,7 +234,7 @@ def unpack(archive):
         if sum(i.file_size for i in members) > MAX_ARCHIVE or any(i.is_dir() or i.flag_bits & 1 or (i.external_attr >> 16) & 0o170000 == 0o120000 for i in members):
             raise ValueError('Invalid frame archive sizes or members')
         info = source.getinfo('frames.json')
-        if info.file_size > 128 * 1024:
+        if info.file_size > 1024 * 1024:
             raise ValueError('Frame metadata too large')
         meta = json.loads(source.read(info))
         if not isinstance(meta, dict) or meta.get('version') != 1 or any(type(meta.get(k)) is not int for k in ('fps', 'frames', 'width', 'height')):

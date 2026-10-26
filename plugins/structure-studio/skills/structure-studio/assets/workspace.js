@@ -356,11 +356,16 @@ async function bundleFile(session, file) {
 }
 async function saveBundleFile(session, file, button) {
   const label = button.textContent; button.disabled = true; button.textContent = 'Preparing…';
-  try { const bytes = await bundleFile(session, file); await saveFile(file.filename.replace(/\.[^.]+$/, '') + '.zip', new Blob([zipStore([[file.filename, bytes]])])); }
+  try {
+    const bytes = await bundleFile(session, file);
+    if (['mp4', 'gif', 'frames', 'animation'].includes(file.role)) await saveFile(file.filename, new Blob([bytes]));
+    else await saveFile(file.filename.replace(/\.[^.]+$/, '') + '.zip', new Blob([zipStore([[file.filename, bytes]])]));
+  }
   catch (e) { console.error(e); toast('Could not prepare ' + file.filename + ': ' + (e.message || e)); }
   finally { button.disabled = false; button.textContent = label; }
 }
-const ROLE_LABEL = { pse: 'PyMOL .pse', blend: 'Blender .blend' };
+const ROLE_LABEL = { pse: 'PyMOL .pse', blend: 'Blender .blend', mp4: 'Save MP4', gif: 'Save GIF', frames: 'PNG frames', animation: 'Animation recipe' };
+const movieURLs = new Set();
 function actionButton(text, handler) { const b = document.createElement('button'); b.className = 'btn'; b.textContent = text; b.addEventListener('click', () => handler(b)); return b; }
 function renderCard(r) {
   const fig = document.createElement('figure'); fig.className = 'render';
@@ -390,6 +395,21 @@ function renderCard(r) {
       await saveFile(r.filename || (r.image && r.image.filename) || 'render.png', blob);
     }));
     if (r.session) for (const f of r.session.files || []) actions.append(actionButton(ROLE_LABEL[f.role] || f.filename, (b) => saveBundleFile(r.session, f, b)));
+    const movie = r.session && (r.session.files || []).find((f) => f.role === 'mp4');
+    if (movie) actions.prepend(actionButton('Play animation', async (button) => {
+      button.disabled = true;
+      try {
+        const bytes = await bundleFile(r.session, movie);
+        if (!fig.isConnected) return;
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' })); movieURLs.add(url);
+        const video = document.createElement('video'); video.src = url; video.controls = true;
+        video.playsInline = true; video.style.width = '100%';
+        video.loop = !!(r.animation && ['turntable', 'rock'].includes(r.animation.recipe));
+        thumb.hidden = true; fig.insertBefore(video, cap);
+        button.hidden = true; video.play().catch(() => {});
+      } catch (e) { toast('Could not play animation: ' + (e.message || e)); }
+      finally { button.disabled = false; }
+    }));
     if (r.pse) actions.append(actionButton('PyMOL .pse', (b) => savePacked(r.pse, b)));
     if (r.blend) actions.append(actionButton('Blender .blend', (b) => savePacked(r.blend, b)));
     if (r.camera && viewer) actions.append(actionButton('View this angle', () => { setTab('3d'); setCamera(r.camera, 600); }));
@@ -399,6 +419,7 @@ function renderCard(r) {
   return fig;
 }
 function buildGallery() {
+  for (const url of movieURLs) URL.revokeObjectURL(url); movieURLs.clear();
   const list = sync.renders || DATA.renders || [];
   const done = list.filter((r) => r.status !== 'failed');
   $('#render-count').textContent = done.length ? String(done.length) : '';
@@ -430,7 +451,7 @@ function buildFiles() {
       for (const role of ['pse', 'blend']) if (r[role]) addRow(`${r[role].filename} · ${r.label || r.preset}`, r[role].bytes, r[role]);
     }
     const p = document.createElement('p'); p.className = 'note';
-    p.textContent = 'Session files are stored in this workspace and download as .zip files. Open .pse files in PyMOL and .blend files in Blender 5.0 or newer.';
+    p.textContent = 'Open .pse files in PyMOL and .blend files in Blender 5.0 or newer; these download as .zip files. Movies, frames and animation recipes keep their original file formats.';
     if (!ul.children.length) { p.textContent = 'No session files yet. Renders made from the chat add their PyMOL session and Blender scene here.'; box.append(p); return; }
     box.append(ul, p); return;
   }

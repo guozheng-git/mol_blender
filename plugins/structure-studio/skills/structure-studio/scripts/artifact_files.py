@@ -180,6 +180,8 @@ def record(render: dict, assets: dict, *, label: str = "", note: str = "", scene
         doc["scene_revision"] = scene.get("revision")
     if camera is not None:
         doc["camera"] = camera
+    if render.get("animation"):
+        doc["animation"] = render["animation"]
     return doc
 
 

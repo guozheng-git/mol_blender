@@ -43,3 +43,9 @@ THE SOFTWARE.
 
 Structures fetched from the PDB or AlphaFold DB keep their upstream terms (PDB data is CC0;
 AlphaFold DB predictions are CC BY 4.0).
+
+## co-pymol animation recipes
+
+`animation_recipes.py` and the camera-measurement helpers in `animation_session.py`
+are adapted from co-pymol, Copyright (c) 2026 Soo-Jeong Kim, under the MIT License.
+The full notice is included in `skills/structure-studio/references/co-pymol-LICENSE.txt`.

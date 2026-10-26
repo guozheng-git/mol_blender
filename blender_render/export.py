@@ -405,7 +405,35 @@ def _build_single_payload(
     return payload
 
 
-def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_hints=False, enabled_only=True):
+MAX_STATES = 360  # matches the most animation frames
+
+
+def collect_state_coordinates(cmd_obj, selection: str, base_state: int) -> dict[str, Any]:
+    """Every state's coordinates in exported atom order, for state animations.
+
+    Rounded like CIF coordinates. Renderers verify the base state against the
+    exported CIF, so an ordering difference fails instead of scrambling atoms.
+    """
+    count = int(cmd_obj.count_states(selection))
+    if not 2 <= count <= MAX_STATES:
+        raise ValueError(f"State animation needs 2 to {MAX_STATES} states; the selection has {count}")
+    # CIFs can contain atoms without coordinates in any state. Compare the
+    # atoms actually exported in each state, not PyMOL's union atom count.
+    expected = [atom.index for atom in cmd_obj.get_model(selection, state=base_state).atom]
+    atoms = len(expected)
+    if not atoms:
+        raise ValueError("The base state contains no coordinates")
+    coordinates = []
+    for number in range(1, count + 1):
+        indices = [atom.index for atom in cmd_obj.get_model(selection, state=number).atom]
+        coords = cmd_obj.get_coords(selection, state=number)
+        if indices != expected or coords is None or len(coords) != atoms:
+            raise ValueError(f"State {number} does not contain the same {atoms} atoms as the others")
+        coordinates.append([round(float(value), 3) for row in coords for value in row])
+    return {"base": int(base_state), "coordinates": coordinates}
+
+
+def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_hints=False, enabled_only=True, all_states=False):
     """Flatten enabled objects to one CIF while preserving transforms and identity.
 
     PyMOL's multi-object CIF contains separate data blocks; molecular loaders
@@ -422,9 +450,14 @@ def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_
             name: int(object_state(name) if callable(object_state) else current_state()) for name in objects}
     for name in objects:
         provenance["object_transforms"][name] = list(cmd_obj.get_object_matrix(name) or [])
+    if all_states and len(objects) != 1:
+        raise ValueError("State animation needs exactly one enabled object with several states")
     if len(objects) <= 1:
         result = _build_single_payload(cmd_obj, selected, state, include_color_hints=include_color_hints, enabled_only=False)
         result["provenance"] = provenance
+        if all_states:
+            base = state if state > 0 else provenance.get("object_states", {}).get(objects[0], cmd_obj.get_state())
+            result["state_coordinates"] = collect_state_coordinates(cmd_obj, selected, base)
         return result
     temporary = []
     namespace = "_blender_export_" + uuid.uuid4().hex[:12]

@@ -3058,6 +3058,65 @@ def _selection_indices_with_ligand_box_cutout(
 
 
 
+LID_PROPERTY = "bridge_lid_transparency"
+
+
+def _add_lid_transparency(material: bpy.types.Material) -> None:
+    """Let an object's lid property fade this material; 0 leaves it unchanged.
+
+    Surface materials may be assigned inside Geometry Nodes rather than object
+    slots, so the lid copy shares them. An object attribute selects the fade per
+    object: every object without the property renders exactly as before.
+    """
+    tree = getattr(material, "node_tree", None)
+    if tree is None or material.get("bridge_lid_ready"):
+        return
+    output = next((n for n in tree.nodes if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
+    if output is None or not output.inputs["Surface"].links:
+        return
+    shader = output.inputs["Surface"].links[0].from_socket
+    attribute = tree.nodes.new("ShaderNodeAttribute")
+    attribute.attribute_type = "OBJECT"
+    attribute.attribute_name = LID_PROPERTY
+    clear = tree.nodes.new("ShaderNodeBsdfTransparent")
+    mix = tree.nodes.new("ShaderNodeMixShader")
+    mix.name = "Cutaway lid fade"
+    tree.links.new(attribute.outputs["Fac"], mix.inputs[0])
+    tree.links.new(shader, mix.inputs[1])
+    tree.links.new(clear.outputs[0], mix.inputs[2])
+    tree.links.new(mix.outputs[0], output.inputs["Surface"])
+    material["bridge_lid_ready"] = True
+
+
+def _make_cutaway_lid(target_obj, cutter_obj, *, transparency: float):
+    """Copy the part of a surface that the cut removes, so it can fade away."""
+    lid = target_obj.copy()
+    lid.data = target_obj.data.copy()
+    lid.name = f"{target_obj.name}_CutawayLid"
+    for collection in target_obj.users_collection:
+        collection.objects.link(lid)
+    modifier = lid.modifiers.new(name="BridgeCutawayLid", type="BOOLEAN")
+    modifier.operation = "INTERSECT"
+    modifier.object = cutter_obj
+    if hasattr(modifier, "solver"):
+        modifier.solver = "EXACT"
+    if hasattr(modifier, "use_hole_tolerant"):
+        modifier.use_hole_tolerant = True
+    # Bake the lid to a plain mesh once. Left procedural, every per-frame fade
+    # update would recompute its molecular surface and exact Boolean.
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    baked = bpy.data.meshes.new_from_object(
+        lid.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
+    )
+    lid.modifiers.clear()
+    lid.data = baked
+    lid["bridge_cutaway_lid"] = True
+    lid[LID_PROPERTY] = float(transparency)
+    for material in bpy.data.materials:
+        _add_lid_transparency(material)
+    return lid
+
+
 def _apply_surface_ligand_cutout_planes(
     *,
     load_result: Any,
@@ -3086,6 +3145,7 @@ def _apply_surface_ligand_cutout_planes(
     seal_depth_scale: float = 0.3,
     seal_region_scale: float = 2.0,
     runtime_info: dict[str, Any] | None = None,
+    lid_transparency: float | None = None,
 ) -> bool:
     if runtime_info is not None:
         runtime_info.update(
@@ -3206,6 +3266,8 @@ def _apply_surface_ligand_cutout_planes(
         has_geometry_nodes = any(str(getattr(mod, "type", "")).upper() == "NODES" for mod in list(target_obj.modifiers))
     except Exception:
         has_geometry_nodes = False
+    if lid_transparency is not None:
+        _make_cutaway_lid(target_obj, merged_cutter, transparency=lid_transparency)
     if has_geometry_nodes:
         modifier = _add_boolean_difference_modifier(target_obj=target_obj, cutter_obj=merged_cutter)
         applied = modifier is not None
@@ -3299,6 +3361,7 @@ def _apply_surface_ligand_cutout(
     seal_depth_scale: float = 0.3,
     seal_region_scale: float = 2.0,
     runtime_info: dict[str, Any] | None = None,
+    lid_transparency: float | None = None,
 ) -> bool:
     mode = str(cutout_mode or "planes").strip().lower()
     return _apply_surface_ligand_cutout_planes(
@@ -3328,6 +3391,7 @@ def _apply_surface_ligand_cutout(
         seal_depth_scale=seal_depth_scale,
         seal_region_scale=seal_region_scale,
         runtime_info=runtime_info,
+        lid_transparency=lid_transparency,
     )
 
 
@@ -3697,6 +3761,12 @@ def _render(args: argparse.Namespace) -> None:
             ccd_retry_used = True
             return _load_molecule_with_fallback(path, object_name)
 
+    # A lid animation keeps the surface a cutout removes as a separate object,
+    # starting at its anchor-frame opacity so the still shows that frame.
+    lid_cfg = (style_doc.get("output", {}).get("animation") or {})
+    cutaway_lid_transparency = (
+        1.0 - float(lid_cfg["lid"][lid_cfg.get("anchor", 0)]) if lid_cfg.get("lid") else None
+    )
     load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
     _apply_auth_chain_override(load_result, structure_path)
     ss_applied = _apply_pymol_ss_hints(load_result, view_doc)
@@ -4081,6 +4151,7 @@ def _render(args: argparse.Namespace) -> None:
                                 seal_depth_scale=cutout_seal_depth_scale,
                                 seal_region_scale=cutout_seal_region_scale,
                                 runtime_info=cutout_runtime_info,
+                                lid_transparency=cutaway_lid_transparency,
                             )
                             cutout_applied = cutout_applied or bool(applied)
                             surface_cutout_manifest_entries.append(cutout_runtime_info)
@@ -4293,8 +4364,12 @@ def _render(args: argparse.Namespace) -> None:
     if animation_cfg and animation_cfg.get('mode') != 'none':
         from blender_render.animation import normalize
         from blender_render.animation_blender import render as render_animation
+        # Path views are in angstrom; place them with the camera's own scale.
+        world_scale = max(1e-6, float(style_doc.get('camera', {}).get('world_scale', 0.0108)))
         animation_metadata = render_animation(scene, camera, light_target, output_png,
-                                             normalize(animation_cfg, style_doc['output']))
+                                             normalize(animation_cfg, style_doc['output']),
+                                             world_scale=world_scale, view_doc=view_doc,
+                                             structure_path=structure_path)
     rendered = time.monotonic()
     blend_output = _resolve_blend_output_path(style_doc, output_png)
     if blend_output is not None:
