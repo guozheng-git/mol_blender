@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Camera animation over the scene constructed by the shared Blender renderer."""
+"""Camera, molecular-state and cutaway animation for the shared Blender renderer."""
 import shutil
 import tempfile
 from pathlib import Path
@@ -7,6 +7,64 @@ import math
 import bpy
 from mathutils import Matrix, Vector
 from blender_render.animation import angles, package_frames
+
+LID_PROPERTY = "bridge_lid_transparency"
+
+
+def _add_lid_transparency(material: bpy.types.Material) -> None:
+    """Let an object's lid property fade this material; 0 leaves it unchanged.
+
+    Surface materials may be assigned inside Geometry Nodes rather than object
+    slots, so the lid copy shares them. An object attribute selects the fade per
+    object: every object without the property renders exactly as before.
+    """
+    tree = getattr(material, "node_tree", None)
+    if tree is None or material.get("bridge_lid_ready"):
+        return
+    output = next((n for n in tree.nodes if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
+    if output is None or not output.inputs["Surface"].links:
+        return
+    shader = output.inputs["Surface"].links[0].from_socket
+    attribute = tree.nodes.new("ShaderNodeAttribute")
+    attribute.attribute_type = "OBJECT"
+    attribute.attribute_name = LID_PROPERTY
+    clear = tree.nodes.new("ShaderNodeBsdfTransparent")
+    mix = tree.nodes.new("ShaderNodeMixShader")
+    mix.name = "Cutaway lid fade"
+    tree.links.new(attribute.outputs["Fac"], mix.inputs[0])
+    tree.links.new(shader, mix.inputs[1])
+    tree.links.new(clear.outputs[0], mix.inputs[2])
+    tree.links.new(mix.outputs[0], output.inputs["Surface"])
+    material["bridge_lid_ready"] = True
+
+
+def make_cutaway_lid(target_obj, cutter_obj, *, transparency: float):
+    """Copy the part of a surface that the cut removes, so it can fade away."""
+    lid = target_obj.copy()
+    lid.data = target_obj.data.copy()
+    lid.name = f"{target_obj.name}_CutawayLid"
+    for collection in target_obj.users_collection:
+        collection.objects.link(lid)
+    modifier = lid.modifiers.new(name="BridgeCutawayLid", type="BOOLEAN")
+    modifier.operation = "INTERSECT"
+    modifier.object = cutter_obj
+    if hasattr(modifier, "solver"):
+        modifier.solver = "EXACT"
+    if hasattr(modifier, "use_hole_tolerant"):
+        modifier.use_hole_tolerant = True
+    # Bake the lid to a plain mesh once. Left procedural, every per-frame fade
+    # update would recompute its molecular surface and exact Boolean.
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    baked = bpy.data.meshes.new_from_object(
+        lid.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
+    )
+    lid.modifiers.clear()
+    lid.data = baked
+    lid["bridge_cutaway_lid"] = True
+    lid[LID_PROPERTY] = float(transparency)
+    for material in bpy.data.materials:
+        _add_lid_transparency(material)
+    return lid
 
 
 def _orbit_frames(camera, center, config):
@@ -103,7 +161,7 @@ def _set_positions(targets, positions):
 
 def _set_lid(lids, opacity):
     for lid in lids:
-        lid['bridge_lid_transparency'] = 1.0 - opacity
+        lid[LID_PROPERTY] = 1.0 - opacity
         lid.hide_render = opacity <= 0.0
         # The lid is a static mesh: re-sync the object, never its geometry.
         lid.update_tag(refresh={'OBJECT'})

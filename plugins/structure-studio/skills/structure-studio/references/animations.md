@@ -2,7 +2,6 @@
 
 These recipes adapt co-pymol's keyframe timelines and camera measurement to the
 shared local Blender renderer. No co-pymol installation or remote backend is needed.
-The MIT notice is in [co-pymol-LICENSE.txt](co-pymol-LICENSE.txt).
 
 ## Choose a recipe
 

@@ -206,7 +206,7 @@ cutaway-lid fading; no service/backend or client-specific dependency was added.
   outside the checkout. With Python `-I`, the installed camera-path and package
   identity tests passed (**27 tests**), including installed module-location and
   manifest checks. The extracted plugin lists all six recipes and contains all
-  six JSON templates and the co-pymol MIT notice.
+  six JSON templates.
 - Ran the extracted Claude plugin outside the checkout using its rock template,
   a real public CIF, a workspace scene snapshot, the installed wheel and the
   existing local Blender/PyMOL runtimes. A 128 × 96, 4-sample, 4-frame movie took
@@ -264,3 +264,21 @@ separating animation preparation from render dispatch.
 
 Evidence remains ignored under `.validation/studio-animation-review/`. These
 checks do not establish Claude browser playback or Artifact integration.
+
+### Cutaway helper placement and plugin notices
+
+Executed 2026-10-26 after moving lid construction and material fading into
+`animation_blender.py`. Construction and frame updates now share one property
+constant. The main renderer delegates lid creation. The separate co-pymol license
+file and its references were removed at the author's request; source copyright
+and MIT identifiers remain.
+
+- Full suite with real PyMOL checks: **304 passed** in 4.43 s, with the same
+  three warnings. Rebuilt the renderer wheel and both Claude upload ZIPs.
+- Installed the rebuilt wheel into a fresh environment outside the checkout:
+  **27 camera-path and package-identity tests passed** in 2.03 s with Python `-I`.
+- The extracted plugin, using that installed wheel, rendered a 160 × 120,
+  4-sample cutaway from public `1stp.cif`: 12 frames over 2 s, **18.0 s** render
+  time. Inspected the closed, half-faded and fully open frames. All 12 frames
+  differ from the pre-refactor render by at most one channel level on the
+  0–255 scale. Evidence is ignored under `.validation/studio-lid-module/`.
