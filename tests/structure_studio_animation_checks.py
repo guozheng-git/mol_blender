@@ -54,12 +54,32 @@ with pymol2.PyMOL() as instance:
             assert overrides['output']['animation']['states'][-1] == 3
         if recipe == 'cutaway':
             assert summary['anchor'] > 0
-            assert overrides['output']['animation']['lid'][summary['anchor']] == 0
+            opacity = overrides['output']['animation']['lid']
+            assert opacity[0] == 1 and opacity[summary['anchor']] == 0
+            assert opacity == sorted(opacity, reverse=True)
         assert np.allclose(cmd.get_coords('enabled', state=1), original_coords)
+    # Saved sessions can pin an object to a state independent of the global one.
+    cmd.set('state', 3)
+    hidden_state = cmd.get_object_state('hidden')
+    for pinned_state in (2, 3):
+        cmd.set('state', pinned_state, 'molecule')
+        config = template({'version': 1, 'recipe': 'states', 'duration': 1, 'fps': 4})
+        payload, overrides, summary = prepare(cmd, config, width=128, height=96)
+        animation = overrides['output']['animation']
+        assert payload['state_coordinates']['base'] == animation['states'][summary['anchor']] == 1
+        assert payload['cif_text'] == cmd.get_str('cif', '(all) and enabled', state=1)
+        coordinates = np.array(payload['state_coordinates']['coordinates'][0]).reshape(-1, 3)
+        assert np.allclose(coordinates, original_coords, atol=0.00051)
+        assert cmd.get_object_state('hidden') == hidden_state
+    # Camera-only recipes must keep an existing object's state.
+    cmd.set('state', 2, 'molecule')
+    payload, _, _ = prepare(cmd, template({'version': 1, 'recipe': 'rock', 'duration': 1, 'fps': 4}),
+                            width=128, height=96)
+    assert payload['provenance']['object_states']['molecule'] == 2
     try:
         prepare(cmd, template({'version': 1, 'recipe': 'reveal', 'focus': 'resn MISSING'}))
     except ValueError as exc:
         assert 'no enabled atoms' in str(exc)
     else:
         raise AssertionError('Missing focus was accepted')
-print('All six recipes exported through real PyMOL; states, scenes and transforms verified')
+print('All six recipes exported through real PyMOL; pinned states, scenes and transforms verified')

@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 import numpy as np
 import pymol2
-from animation_recipes import Keys, View, frames_for, CUTAWAY_FADE
+from animation_recipes import Keys, View, frames_for
 from pymol_session import ligand_records, residue_selection
 
 
@@ -95,7 +95,7 @@ def prepare(cmd, config, *, width=None, height=None):
                  "fps": config["fps"], "gif": config["gif"]}
     anchor = 0
     if recipe == "cutaway":
-        lid = [round(max(0., 1 - f.fade / CUTAWAY_FADE), 6) for f in frames]
+        lid = [round(f.lid_opacity, 6) for f in frames]
         anchor = next(i for i, opacity in enumerate(lid) if opacity == 0)
         animation.update(lid=lid, anchor=anchor)
     if recipe == "states":
@@ -104,7 +104,9 @@ def prepare(cmd, config, *, width=None, height=None):
             raise ValueError("The movie is too short to show every state; increase duration or FPS")
     cmd.set_view(frames[anchor].view)
     if frames[anchor].state:
-        cmd.set("state", frames[anchor].state)
+        # A saved object-level state overrides the global state in PyMOL.
+        for name in cmd.get_object_list("enabled"):
+            cmd.set("state", frames[anchor].state, name)
     payload = build_render_payload(cmd, include_color_hints=True, all_states=recipe == "states")
     viewport = cmd.get_viewport()
     width = width or (round(height * viewport[0] / viewport[1]) if height else 640)

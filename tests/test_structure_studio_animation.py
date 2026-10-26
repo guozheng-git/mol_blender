@@ -14,10 +14,8 @@ import animation_recipes
 import studio
 
 from animation_recipes import (
-    CUTAWAY_FADE,
     Keys,
     blend,
-    choose_recipe,
     frames_for,
     turn,
 )
@@ -43,6 +41,20 @@ def test_blend_follows_the_shortest_rotation_between_its_ends():
     assert close(blend(VIEW, turn(VIEW, -100), 0.5), turn(VIEW, -50))
 
 
+@pytest.mark.parametrize('rotation', [
+    (0, -1, 0, -1, 0, 0, 0, 0, -1),  # half-turn about (1, -1, 0)
+    (-1, 0, 0, 0, 0, -1, 0, -1, 0),  # half-turn about (0, 1, -1)
+    (-0.6, 0, -0.8, 0, -1, 0, -0.8, 0, 0.6),  # about (1, 0, -2)
+])
+@pytest.mark.parametrize('offset', [-0.0001, 0, 0.0001])
+def test_half_turn_views_keep_their_orientation_through_scene_transitions(rotation, offset):
+    view = turn(rotation + VIEW[9:], offset)
+    assert close(blend(view, FOCUS, 0), view)
+    assert close(blend(FOCUS, view, 1), view)
+    frames = frames_for('scenes', Keys(overview=view, scenes=(view, view)), fps=4)
+    assert all(close(frame.view, view) for frame in frames)
+
+
 def test_turntable_loops_without_a_repeated_frame():
     frames = frames_for("turntable", Keys(overview=VIEW), fps=24)
     assert len(frames) == 240
@@ -53,12 +65,12 @@ def test_turntable_loops_without_a_repeated_frame():
 
 def test_cutaway_starts_buried_then_fades_the_lid_at_the_focus():
     frames = frames_for("cutaway", Keys(overview=VIEW, focus=FOCUS), fps=10)
-    assert frames[0].fade == 0 and close(frames[0].view, VIEW)
-    fading = [f for f in frames if 0 < f.fade < CUTAWAY_FADE]
+    assert frames[0].lid_opacity == 1 and close(frames[0].view, VIEW)
+    fading = [f for f in frames if 0 < f.lid_opacity < 1]
     assert fading and all(close(f.view, FOCUS) for f in fading)
-    assert frames[-1].fade == pytest.approx(CUTAWAY_FADE)
-    fades = [f.fade for f in frames]
-    assert fades == sorted(fades)  # never flickers back to opaque
+    assert frames[-1].lid_opacity == 0
+    opacity = [f.lid_opacity for f in frames]
+    assert opacity == sorted(opacity, reverse=True)  # never flickers back to opaque
 
 
 def test_reveal_eases_into_the_focus_before_rocking():
@@ -101,21 +113,6 @@ def test_recipes_explain_missing_content(recipe, keys, message):
         frames_for(recipe, keys)
 
 
-@pytest.mark.parametrize(
-    ("scenes", "states", "has_focus", "recipe"),
-    [
-        (3, 10, True, "scenes"),
-        (1, 10, True, "states"),
-        (0, 1, True, "reveal"),
-        (0, 1, False, "turntable"),
-    ],
-)
-def test_default_recipe_prefers_the_most_specific_content(
-    scenes, states, has_focus, recipe
-):
-    assert choose_recipe(scenes=scenes, states=states, has_focus=has_focus) == recipe
-
-
 def test_bundled_templates_validate_and_cover_every_recipe():
     templates = list((SKILL / 'templates/animations').glob('*.json'))
     assert {p.stem for p in templates} == set(animation_recipes.RECIPES)
@@ -152,7 +149,7 @@ def test_shortened_timelines_have_exact_frame_budget(recipe):
     assert len(frames) == 14
     assert all(len(f.view) == 18 for f in frames)
     if recipe == 'cutaway':
-        assert frames[0].fade == 0 and frames[-1].fade == CUTAWAY_FADE
+        assert frames[0].lid_opacity == 1 and frames[-1].lid_opacity == 0
 
 
 def test_movie_bundle_and_record_retain_playback_and_reusable_template(tmp_path):

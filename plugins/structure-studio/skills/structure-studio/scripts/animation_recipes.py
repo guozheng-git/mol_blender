@@ -29,7 +29,7 @@ View = tuple[float, ...]
 class Frame:
     view: View
     state: int = 0  # 0 leaves the session's current state
-    fade: float = 0.0  # transparency of the cutaway shell; 0 is opaque
+    lid_opacity: float = 1.0  # cutaway lid: 1 is closed, 0 is fully removed
 
 
 @dataclass(frozen=True)
@@ -83,18 +83,24 @@ def turn(view: View, degrees: float, axis: str = "y") -> View:
 
 
 def _quaternion(m: Matrix) -> tuple[float, float, float, float]:
-    w = math.sqrt(max(0.0, 1 + m[0][0] + m[1][1] + m[2][2])) / 2
-    x = math.copysign(
-        math.sqrt(max(0.0, 1 + m[0][0] - m[1][1] - m[2][2])) / 2, m[2][1] - m[1][2]
-    )
-    y = math.copysign(
-        math.sqrt(max(0.0, 1 - m[0][0] + m[1][1] - m[2][2])) / 2, m[0][2] - m[2][0]
-    )
-    z = math.copysign(
-        math.sqrt(max(0.0, 1 - m[0][0] - m[1][1] + m[2][2])) / 2, m[1][0] - m[0][1]
-    )
-    norm = math.sqrt(w * w + x * x + y * y + z * z)
-    return w / norm, x / norm, y / norm, z / norm
+    """Convert a rotation without losing axis signs at or near a half-turn."""
+    trace = sum(m[i][i] for i in range(3))
+    if trace > 0:
+        scale = 2 * math.sqrt(1 + trace)
+        q = (scale / 4, (m[2][1] - m[1][2]) / scale,
+             (m[0][2] - m[2][0]) / scale, (m[1][0] - m[0][1]) / scale)
+    else:
+        # Use the largest vector component as the denominator when w is small.
+        i = max(range(3), key=lambda index: m[index][index])
+        j, k = (i + 1) % 3, (i + 2) % 3
+        scale = 2 * math.sqrt(1 + m[i][i] - m[j][j] - m[k][k])
+        vector = [0.0, 0.0, 0.0]
+        vector[i] = scale / 4
+        vector[j] = (m[i][j] + m[j][i]) / scale
+        vector[k] = (m[i][k] + m[k][i]) / scale
+        q = ((m[k][j] - m[j][k]) / scale, *vector)
+    norm = math.sqrt(sum(value * value for value in q))
+    return tuple(value / norm for value in q)
 
 
 def _matrix(q: tuple[float, ...]) -> Matrix:
@@ -123,7 +129,7 @@ def blend(a: View, b: View, t: float) -> View:
     return _with_rotation(a, _matrix(q))[:9] + rest + (a[17],)
 
 
-# Segments. Each keeps state and fade from the previous frame unless it sets them.
+# Segments keep state and lid opacity from the previous frame unless they set them.
 
 
 def hold(view: View, seconds: float) -> Segment:
@@ -146,9 +152,9 @@ def rock(view: View, seconds: float, degrees: float) -> Segment:
     )
 
 
-def fade(view: View, seconds: float, to: float) -> Segment:
+def fade_out(view: View, seconds: float) -> Segment:
     def frame(t: float, last: Frame) -> Frame:
-        return replace(last, view=view, fade=to * smooth(t))
+        return replace(last, view=view, lid_opacity=last.lid_opacity * (1 - smooth(t)))
 
     return seconds, frame
 
@@ -158,7 +164,7 @@ def play_states(view: View, seconds: float, states: int, degrees: float) -> Segm
         return Frame(
             view=turn(view, degrees * math.sin(2 * math.pi * t)),
             state=1 + min(states - 1, int(t * states)),
-            fade=last.fade,
+            lid_opacity=last.lid_opacity,
         )
 
     return seconds, frame
@@ -200,9 +206,6 @@ def reveal_recipe(keys: Keys) -> list[Segment]:
     ]
 
 
-CUTAWAY_FADE = 0.8  # keep a ghost of the shell so the pocket stays in context
-
-
 def cutaway_recipe(keys: Keys) -> list[Segment]:
     """Overview with the site buried, push in, fade the shell in front, rock."""
     focus = _require_focus(keys)
@@ -210,7 +213,7 @@ def cutaway_recipe(keys: Keys) -> list[Segment]:
         hold(keys.overview, 1.5),
         move(keys.overview, focus, 3),
         hold(focus, 0.5),
-        fade(focus, 2, CUTAWAY_FADE),
+        fade_out(focus, 2),
         hold(focus, 0.5),
         rock(focus, 4, 12),
     ]
@@ -247,23 +250,12 @@ RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
     ),
     "cutaway": (
         cutaway_recipe,
-        "Overview with the site buried, push in, fade the surface in front of "
-        "it to a ghost, then rock gently.",
+        "Overview with the site buried, push in, fade away the surface covering "
+        "the pocket, then rock gently.",
     ),
     "states": (states_recipe, "Play through all states while rocking ±10°."),
     "scenes": (scenes_recipe, "Fly between saved scenes, holding at each."),
 }
-
-
-def choose_recipe(*, scenes: int, states: int, has_focus: bool) -> str:
-    """Default when the user names no recipe: the most specific content wins."""
-    if scenes >= 2:
-        return "scenes"
-    if states >= 2:
-        return "states"
-    if has_focus:
-        return "reveal"
-    return "turntable"
 
 
 def frames_for(recipe: str, keys: Keys, fps: int = 24, *, duration=None, rock_angle=None) -> list[Frame]:

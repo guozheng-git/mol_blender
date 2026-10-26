@@ -235,3 +235,32 @@ there. Temporary renderer source snapshots were cleaned by the ordinary local
 runner. No live PyMOL GUI session was touched. No Claude artifact was published
 or modified. No browser connection was available, so actual gallery playback,
 Claude Artifact upload/download and client integration remain unverified.
+
+### PR #5 review corrections
+
+Executed 2026-10-26 after fixing object-pinned state export and half-turn camera
+interpolation, removing unused recipe selection, standardizing lid opacity, and
+separating animation preparation from render dispatch.
+
+- Full suite with the local PyMOL integration checks: **304 passed** in 6.67 s,
+  with the same three warnings above. Regression coverage includes exact and
+  near-180-degree rotations about mixed-sign axes, sessions pinned to states 2
+  and 3, unchanged disabled objects, and camera-only preservation of object state.
+- Repackaged both Claude upload ZIPs and ran the extracted plugin outside the
+  checkout. Renderer sources and the vendored wheel did not change. Real PyMOL
+  preparation verified default 640 × 480 / 32 samples, preservation of preset
+  samples with `--full-quality`, and explicit size/sample overrides.
+- Real Blender rendered three 160 × 120, 2 s movies from the extracted plugin:
+  states (8 frames, 32 samples, **12.8 s**), scenes (8 frames, 4 samples,
+  **10.0 s**) and cutaway (12 frames, 4 samples, **17.6 s**). The states/scenes
+  fixture is synthetic DNA derived from public `1bna.cif`, pinned to state 2,
+  with two identical saved cameras at the previously failing half-turn. Cutaway
+  uses public `1stp.cif`.
+- FFprobe verified frame counts, dimensions and 2 s duration. Inspected the
+  contact sheet: supplied states change, identical saved scenes hold steady,
+  and the lid fades from opacity 1 through 0.5 to 0 at anchor frame 7. Scene-tour
+  frames differ from the still by at most one channel level, with mean absolute
+  pixel difference below 0.001 on the 0–255 scale.
+
+Evidence remains ignored under `.validation/studio-animation-review/`. These
+checks do not establish Claude browser playback or Artifact integration.

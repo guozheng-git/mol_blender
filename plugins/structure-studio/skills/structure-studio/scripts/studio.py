@@ -137,6 +137,28 @@ def run_pymol_session(extra: list[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def prepare_animation(args, source: Path, recipe: dict, staging: Path) -> tuple[Path, Path, dict, dict]:
+    """Compile the session into render inputs, a movie summary and quality defaults."""
+    config = staging / "animation.json"
+    config.write_text(json.dumps(recipe, allow_nan=False))
+    bundle, overrides, report = [staging / name for name in ("bundle.json", "overrides.json", "report.json")]
+    command = [str(studio_env.pymol_python()), str(HERE / "animation_session.py"), str(source),
+               "--wheel", str(studio_env.wheel()), "--config", str(config), "--payload", str(bundle),
+               "--overrides", str(overrides), "--report", str(report)]
+    for key in ("width", "height"):
+        if getattr(args, key) is not None:
+            command += ["--" + key, str(getattr(args, key))]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        raise RuntimeError("Animation preparation failed:\n" + (result.stderr or result.stdout)[-3000:])
+    summary = json.loads(report.read_text())
+    # The helper fits the movie to the saved viewport; explicit sizes win.
+    defaults = {k: summary[k] for k in ("width", "height") if getattr(args, k) is None}
+    if args.samples is None and not args.full_quality:
+        defaults["samples"] = 32
+    return bundle, overrides, summary, defaults
+
+
 def cmd_session(args, extra):
     directory = output_dir(args.out_dir)
     source = Path(args.structure).expanduser()
@@ -185,8 +207,8 @@ def _snapshot(directory: str) -> tuple[str, str]:
 
 
 def cmd_render(args):
-    args.recipe_config = animation_template(args)
-    args.preset = args.preset or ("cyan_mint_cutaway" if args.recipe_config and args.recipe_config["recipe"] == "cutaway" else "mint_sky_assembly")
+    recipe = animation_template(args)
+    args.preset = args.preset or ("cyan_mint_cutaway" if recipe and recipe["recipe"] == "cutaway" else "mint_sky_assembly")
     executable, env = studio_env.renderer_env()
     directory = output_dir(args.out_dir)
     name_hint = ""
@@ -199,14 +221,13 @@ def cmd_render(args):
             name_hint = scenes.load(str(meta)).get("structure", {}).get("filename", "")
     # Converted input files live only for this render and cannot collide with another input.
     with TemporaryDirectory(prefix="structure-studio-input-") as temporary:
-        args.staging = Path(temporary)
         source = renderable(args.structure, Path(temporary), name_hint)
-        return _render_prepared(args, source, directory, executable, env)
+        return _render_prepared(args, source, directory, executable, env, recipe=recipe, staging=Path(temporary))
 
 
-def _render_prepared(args, source: Path, directory: Path, executable: Path, env: dict):
+def _render_prepared(args, source: Path, directory: Path, executable: Path, env: dict,
+                     *, recipe: dict | None, staging: Path):
     session = None
-    recipe = getattr(args, "recipe_config", None)
     if args.scene or args.view or args.fit or recipe:
         extra = []
         tag = "view"
@@ -216,7 +237,7 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
             scene_file.write_text(json.dumps(scene))
             extra += ["--scene", str(scene_file)]
             if recipe and recipe["recipe"] in {"reveal", "cutaway"} and "focus" not in recipe and scene.get("focus"):
-                recipe["focus"] = scenes.to_pymol(scene["focus"], "enabled")
+                recipe = {**recipe, "focus": scenes.to_pymol(scene["focus"], "enabled")}
             tag = f"r{scene.get('revision') or 0}"
         if args.view:
             camera = _json_arg(args.view)
@@ -229,26 +250,10 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
     suffix = f"-{recipe['recipe']}" if recipe else ""
     output = unique(Path(args.output).expanduser() if args.output else directory / f"{source.stem}-{label}{suffix}.png")
     animation = None
-    adjusted = cpu_defaults(args)
     if recipe:
-        config = args.staging / "animation.json"
-        config.write_text(json.dumps(recipe, allow_nan=False))
-        bundle, overrides, report = [args.staging / name for name in ("bundle.json", "overrides.json", "report.json")]
-        prepare = [str(studio_env.pymol_python()), str(HERE / "animation_session.py"), str(source),
-                   "--wheel", str(studio_env.wheel()), "--config", str(config), "--payload", str(bundle),
-                   "--overrides", str(overrides), "--report", str(report)]
-        for key in ("width", "height"):
-            if getattr(args, key) is not None:
-                prepare += ["--" + key, str(getattr(args, key))]
-        result = subprocess.run(prepare, capture_output=True, text=True, timeout=120)
-        if result.returncode:
-            raise RuntimeError("Animation preparation failed:\n" + (result.stderr or result.stdout)[-3000:])
-        animation = json.loads(report.read_text())
-        source = bundle
-        # The helper fits the movie to the saved viewport; explicit sizes win.
-        adjusted = {k: animation[k] for k in ("width", "height") if getattr(args, k) is None}
-        if args.samples is None and not args.full_quality:
-            adjusted["samples"] = 32
+        source, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
+    else:
+        adjusted = cpu_defaults(args)
     command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
     command += ["--style-json", args.style_json] if args.style_json else ["--preset", args.preset]
     if recipe:
