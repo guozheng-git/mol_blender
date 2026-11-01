@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae988e
+
+# Run from the repository root after scripts/build_release.py --output dist/release.
+# Linux x86_64 only. No Mac environments or caches are copied into the image.
+%files
+    dist/release/plugin/structure-studio /opt/structure-studio
+    dist/release/release.json /opt/release.json
+
+%post
+    set -eu
+    apt-get update
+    apt-get install -y --no-install-recommends python3 python3-venv ca-certificates ffmpeg \
+        libxrender1 libxxf86vm1 libxfixes3 libxi6 libxkbcommon0 libsm6 libice6 \
+        libgl1 libegl1 libglu1-mesa libgomp1 libx11-6 libxext6 libxinerama1 \
+        libxcursor1 libxrandr2 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+        libdecor-0-0 libfreetype6 libpng16-16 libglut3.12 libxml2 libopengl0 libglx0 libglib2.0-0
+    python3 -m venv /opt/uv-tool
+    /opt/uv-tool/bin/pip install uv==0.11.32
+    export PATH=/opt/uv-tool/bin:$PATH
+    export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
+    python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup
+    rm -rf /var/lib/apt/lists/* /opt/studio-runtime/uv-cache
+
+%environment
+    export PATH=/opt/studio-runtime/render/bin:/opt/studio-runtime/bin:/opt/uv-tool/bin:$PATH
+    export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
+    export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
+    export PYTHONDONTWRITEBYTECODE=1
+
+%runscript
+    exec /opt/studio-runtime/render/bin/blender-render "$@"
+
+%test
+    /opt/studio-runtime/render/bin/blender-render --version
+    /opt/studio-runtime/pymol/bin/python -c 'import pymol2'

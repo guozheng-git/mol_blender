@@ -7,8 +7,9 @@ import pytest
 from PIL import Image
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def browser(request):
+    # End Playwright's synchronous event loop before later asyncio MCP tests.
     executable = request.config.getoption("--browser")
     if not executable:
         pytest.skip("Pass --browser to execute the simulated-host browser checks")

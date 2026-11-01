@@ -17,17 +17,13 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
-import zipfile
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 WHEELS = SKILL_ROOT / "assets" / "wheels"
-BPY = "bpy==5.0.1"
-PYMOL = "pymol-open-source-whl==3.2.0.2"
-PYTHON = "3.11"  # bpy 5.0.1 exists only for CPython 3.11
-PYMOL_PYTHONS = ((3, 10), (3, 14))  # pymol-open-source-whl ships wheels for these
+PYTHON = "3.11.15"  # Rebuilt with uv on each OS; never copy a venv between platforms.
+REQUIREMENTS = SKILL_ROOT / 'references'
 # Shared libraries the manylinux bpy / PyMOL wheels expect from the host, by Debian package.
 LINUX_LIBRARIES = {
     "libXrender.so.1": "libxrender1", "libXxf86vm.so.1": "libxxf86vm1", "libXfixes.so.3": "libxfixes3",
@@ -40,8 +36,6 @@ LINUX_LIBRARIES = {
     "libglut.so.3": "freeglut3", "libxml2.so.2": "libxml2", "libOpenGL.so.0": "libopengl0",
     "libGLX.so.0": "libglx0", "libglib-2.0.so.0": "libglib2.0-0",
 }
-COMMON_LINUX = ["libxrender1", "libxxf86vm1", "libxfixes3", "libxi6", "libxkbcommon0", "libsm6", "libice6",
-                "libgl1", "libegl1", "libglu1-mesa", "libgomp1", "libx11-6", "libxext6"]
 SHIM = '''#!{python}
 """Blender command-line shim over the bpy module: runs `--python SCRIPT -- ARGS` headless."""
 import runpy
@@ -108,36 +102,18 @@ def _save_state(update: dict) -> dict:
 
 def _uv_env() -> dict:
     env = dict(os.environ)
-    env.setdefault("UV_PYTHON_INSTALL_DIR", str(home() / "python"))
-    env.setdefault("UV_CACHE_DIR", str(home() / "uv-cache"))
+    env['UV_PYTHON_INSTALL_DIR'] = str(home() / 'python')
+    env['UV_CACHE_DIR'] = str(home() / 'uv-cache')
     env.setdefault("UV_HTTP_TIMEOUT", "300")
     return env
 
 
 def uv() -> Path:
-    """An uv executable, installed into the studio home with pip when missing."""
+    """Require explicit uv installation; never bootstrap into a user/system Python."""
     found = shutil.which("uv")
     if found:
         return Path(found)
-    target = home() / "uv-tool"
-    executable = target / "bin" / "uv"
-    if executable.is_file():
-        return executable
-    _log("Installing uv (Python package manager)…")
-    attempts = [[sys.executable, "-m", "pip", "install", "--quiet", "--target", str(target), "uv"],
-                [sys.executable, "-m", "pip", "install", "--quiet", "--user", "--break-system-packages", "uv"]]
-    errors = []
-    for command in attempts:
-        result = _run(command, check=False, timeout=600)
-        if executable.is_file():
-            return executable
-        if shutil.which("uv"):
-            return Path(shutil.which("uv"))
-        user_uv = Path.home() / ".local" / "bin" / "uv"
-        if user_uv.is_file():
-            return user_uv
-        errors.append((result.stderr or result.stdout)[-800:])
-    raise SetupError("Could not install uv with pip. Is PyPI reachable from this environment?\n" + "\n".join(errors))
+    raise SetupError('Install uv explicitly and put it on PATH, then rerun setup. No pip fallback is used.')
 
 
 def _check_platform() -> None:
@@ -149,17 +125,22 @@ def _check_platform() -> None:
 
 
 def _venv(path: Path, interpreter: str = PYTHON) -> Path:
+    # Never follow an environment-directory symlink into an unrelated install.
+    if path.is_symlink() or not path.resolve().is_relative_to(home().resolve()):
+        raise SetupError('Managed environments must stay inside STRUCTURE_STUDIO_HOME')
+    if path.exists():
+        cfg = path / 'pyvenv.cfg'
+        if not cfg.is_file() or 'include-system-site-packages = false' not in cfg.read_text().lower():
+            raise SetupError('Refusing to modify a non-isolated environment; choose a fresh studio home')
     python = _bin(path, "python")
     if not python.is_file():
         _log(f"Creating a Python environment at {path} (uv downloads Python {interpreter} if needed)…")
-        _run([uv(), "venv", "--quiet", "-p", interpreter, str(path)], env=_uv_env(), timeout=900)
+        _run([uv(), "venv", "--quiet", "--managed-python", "-p", interpreter, str(path)], env=_uv_env(), timeout=900)
     return python
 
 
 def _pymol_interpreter() -> str:
-    """This sandbox's own Python when PyMOL has wheels for it, which skips downloading 3.11."""
-    low, high = PYMOL_PYTHONS
-    return sys.executable if low <= sys.version_info[:2] <= high else PYTHON
+    return PYTHON
 
 
 # ---------------------------------------------------------------- background setup
@@ -202,62 +183,26 @@ def _wait_until(ready, what: str, timeout: float = 2400) -> None:
         time.sleep(3)
 
 
-def _apt_install(packages: list[str]) -> bool:
-    if platform.system() != "Linux" or not shutil.which("apt-get"):
-        return False
-    prefix = [] if os.geteuid() == 0 else (["sudo", "-n"] if shutil.which("sudo") else None)
-    if prefix is None:
-        return False
-    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
-    if not getattr(_apt_install, "updated", False):
-        _run(prefix + ["apt-get", "update", "-qq"], env=env, check=False, timeout=600)
-        _apt_install.updated = True
-    _log("Installing system libraries: " + " ".join(packages))
-    result = _run(prefix + ["apt-get", "install", "-y", "-qq", "--no-install-recommends", *packages], env=env, check=False, timeout=900)
-    return result.returncode == 0
-
-
 def _import_check(python: Path, code: str, label: str) -> None:
-    """Import a module, installing missing Linux shared libraries until it loads."""
-    tried_common = False
-    installed: set[str] = set()
-    for _ in range(12):
-        result = _run([python, "-c", code], check=False, timeout=900)
-        if result.returncode == 0:
-            return
-        output = result.stderr + result.stdout
-        missing = re.findall(r"(lib[\w.+-]+\.so[\w.]*): cannot open shared object file", output)
-        if not missing:
-            raise SetupError(f"{label} failed to import:\n{output[-3000:]}")
-        packages = [LINUX_LIBRARIES[name] for name in missing if name in LINUX_LIBRARIES]
-        if not tried_common:
-            packages = sorted(set(packages) | set(COMMON_LINUX))
-            tried_common = True
-        packages = [p for p in packages if p not in installed]
-        if not packages or not _apt_install(packages):
-            raise SetupError(f"{label} needs system libraries {missing} that could not be installed automatically "
-                             f"(apt-get unavailable or no root). Install: {' '.join(LINUX_LIBRARIES.get(m, m) for m in missing)}")
-        installed.update(packages)
-    raise SetupError(f"{label} still fails to import after installing system libraries")
+    """Read-only probe; report missing libraries without running apt or sudo."""
+    result = _run([python, '-c', code], check=False, timeout=900)
+    if result.returncode == 0:
+        return
+    output = result.stderr + result.stdout
+    missing = re.findall(r'(lib[\w.+-]+\.so[\w.]*): cannot open shared object file', output)
+    packages = sorted({LINUX_LIBRARIES.get(name, name) for name in missing})
+    hint = ' Ask the system administrator to provide: ' + ', '.join(packages) if packages else ''
+    raise SetupError(f'{label} failed to import.{hint}\n{output[-3000:]}')
 
 
 def setup_pymol() -> Path:
     venv = home() / "pymol"
     python = _venv(venv, _pymol_interpreter())
-    if _run([python, "-c", "import pymol2"], check=False).returncode:
-        _log("Installing open-source PyMOL…")
-        _run([uv(), "pip", "install", "--quiet", "-p", str(python), PYMOL], env=_uv_env(), timeout=900)
-    _import_check(python, "import pymol2\nwith pymol2.PyMOL() as p: p.cmd.fab('AG', 'probe')", "PyMOL")
+    _run([uv(), 'pip', 'sync', '--require-hashes', '--only-binary=:all:', '-p', str(python),
+          str(REQUIREMENTS / 'pymol-requirements.txt')], env=_uv_env(), timeout=900)
+    _import_check(python, "import pymol2\nwith pymol2.PyMOL() as p: p.cmd.fab('AG', 'probe'); assert p.cmd.get_coords('probe').shape[1] == 3", "PyMOL")
     _save_state({"pymol_python": str(python)})
     return python
-
-
-def _requirements_from_wheel(path: Path) -> Path:
-    with zipfile.ZipFile(path) as archive:
-        text = archive.read("blender_render/runtime-requirements.txt").decode()
-    target = Path(tempfile.mkdtemp(prefix="studio-req-")) / "runtime-requirements.txt"
-    target.write_text(text)
-    return target
 
 
 def _site_packages(python: Path) -> Path:
@@ -271,14 +216,9 @@ def setup_render(pymol_python: Path) -> dict:
     python = _venv(venv)
     renderer = wheel()
     digest = hashlib.sha256(renderer.read_bytes()).hexdigest()
-    if _run([python, "-c", "import bpy, molecularnodes"], check=False, timeout=900).returncode:
-        _log("Installing Blender 5.0.1 (bpy) and Molecular Nodes 4.5.10 — about 1.2 GB, typically 1–3 minutes…")
-        requirements = _requirements_from_wheel(renderer)
-        _run([uv(), "pip", "install", "--quiet", "-p", str(python), BPY, "-r", str(requirements)], env=_uv_env(), timeout=1800)
-    if state().get("wheel_sha256") != digest or not _bin(venv, "blender-render").is_file():
-        _log("Installing the renderer package…")
-        _run([uv(), "pip", "install", "--quiet", "--reinstall-package", "pymol-plugin-bridge", "-p", str(python), str(renderer)],
-             env=_uv_env(), timeout=900)
+    _run([uv(), 'pip', 'sync', '--require-hashes', '--only-binary=:all:', '-p', str(python),
+          str(REQUIREMENTS / 'render-requirements.txt')], env=_uv_env(), timeout=1800)
+    _run([uv(), 'pip', 'install', '--no-deps', '-p', str(python), str(renderer)], env=_uv_env(), timeout=900)
     _import_check(python, "import bpy, molecularnodes, blender_render", "Blender (bpy)")
     shim = home() / "bin" / "blender"
     shim.parent.mkdir(parents=True, exist_ok=True)

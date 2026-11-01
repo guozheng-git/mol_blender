@@ -65,6 +65,18 @@ Malformed, truncated, concatenated, duplicate and incomplete inputs are rejected
 before restoration writes. Legacy unpack also refuses overwrites. The focused
 suite passes **51 tests**, including browser JavaScript decoding via Node.
 
+Installer audit: removed automatic apt/sudo and user/global-pip fallbacks. Both
+Studio environments now sync full hash-pinned requirements with uv. The proposed
+3.2.0.2 PyMOL wheel failed real coordinate access on Mac with its declared NumPy 2
+dependency; pinned 3.1.0.4/NumPy 1.26.4 passes both real PyMOL integration checks.
+The setup probe now checks coordinates rather than only imports. A pinned-base
+Apptainer definition rebuilds Linux environments from the same lockfiles.
+
+Packaging now stages wheels/catalogs/ZIPs outside source. `build_release.py`
+refuses dirty source and builds a `git archive` of the exact HEAD, recording
+revision, tree, engine identity and artifact hashes. Generated wheels are no
+longer committed inside source; this avoids a circular source/artifact identity.
+
 - Bound Python and browser decompression before allocating decoded bundles;
   validate all parts, metadata, names, aggregate sizes and checksums.
 - Installation is explicit and isolated. No automatic apt/sudo, user-site pip,

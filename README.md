@@ -2,8 +2,10 @@
 
 Render molecular structures with local Blender and Molecular Nodes, from PyMOL,
 a command line, Claude Code or Codex. The project includes the shared renderer,
-14 built-in presets, JSON preset authoring and an optional **stdio-only MCP** adapter.
-It has no hosted service, OAuth, billing, Slurm, Modal or deployment commands.
+14 built-in presets, Structure Studio with six animation recipes, JSON preset
+authoring and an optional local stdio MCP adapter. An opt-in
+[completed-image delivery adapter](docs/hosted-adapter.md) can be embedded in an
+authenticated host; this repository does not deploy a hosted rendering service.
 
 The previous `main` is preserved on
 [`codex/backup-main-before-minimal-2026-09-29`](https://github.com/magnusbauer/blender_render/tree/codex/backup-main-before-minimal-2026-09-29).
@@ -13,15 +15,17 @@ The previous `main` is preserved on
 Use Python 3.11 (matching Blender's Python ABI):
 
 ```sh
-python3.11 -m venv .venv
+uv sync --locked --extra dev --extra mcp
 source .venv/bin/activate
-python -m pip install -e '.[dev,mcp]'
 ```
 
 Omit `mcp` if you only need the CLI/PyMOL bridge. Rendering requires the versions in
 `blender_render/runtime.lock.json`: Blender 5.0.1, Molecular Nodes 4.5.10, NumPy
 1.26.4 and Biotite 1.6.0, plus the pinned CCD database. PyMOL file import uses a
 separate interpreter with `pymol2`; an existing PyMOL environment is suitable.
+For isolated Studio environments and a Linux rebuild from the same pins, see
+[runtime setup](docs/runtime-environments.md). Installations are explicit and
+never triggered by viewing a structure.
 
 To install the pinned Blender runtime into user-owned storage on Apple Silicon
 macOS or Linux x86_64 (downloads Blender and Python dependencies):

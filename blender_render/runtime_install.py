@@ -29,6 +29,9 @@ def fetch_verified(url, destination, sha256):
 def install(blender="", root=None):
     if sys.version_info[:2] != (3, 11):
         raise RuntimeError("Runtime setup requires Python 3.11 to match Blender's Python ABI.")
+    uv = shutil.which('uv')
+    if not uv:
+        raise RuntimeError('Install uv explicitly before runtime setup; no global pip fallback is used.')
     root = Path(root) if root else config_root() / "runtime"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock = runtime_versions()
@@ -56,11 +59,9 @@ def install(blender="", root=None):
                     source.extractall(root, filter="data")
                 blender = str(root / "blender-5.0.1-linux-x64/blender")
     site = root / "site"
-    if subprocess.run([sys.executable, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
-        subprocess.run([sys.executable, "-m", "ensurepip"], check=True)
     # Lock every wheel, including transitive dependencies. bpy is supplied by
     # Blender; never download a separate bpy wheel into the rendering runtime.
-    subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--require-hashes", "--only-binary=:all:", "--target", str(site), "-r", str(Path(__file__).with_name("runtime-requirements.txt"))], check=True)
+    subprocess.run([uv, 'pip', 'install', '--python', sys.executable, "--no-deps", "--require-hashes", "--only-binary=:all:", "--target", str(site), "-r", str(Path(__file__).with_name("runtime-requirements.txt"))], check=True)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(site)
     env["BLENDER_RENDER_CCD_SHA256"] = lock["ccd_sha256"]

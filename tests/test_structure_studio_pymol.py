@@ -24,7 +24,7 @@ def test_animation_recipes_preserve_session_and_export_states():
     skill = ROOT / 'plugins/structure-studio/skills/structure-studio'
     result = subprocess.run([
         PYMOL_PYTHON, str(ROOT / 'tests/structure_studio_animation_checks.py'),
-        str(skill / 'scripts'), str(next((skill / 'assets/wheels').glob('*.whl'))),
+        str(skill / 'scripts'), os.environ.get('STRUCTURE_STUDIO_TEST_WHEEL', str(ROOT)),
         str(ROOT / 'examples/1stp.cif'),
     ], capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr

@@ -1,0 +1,2 @@
+bpy==5.0.1
+-r ../blender_render/runtime-requirements.txt
