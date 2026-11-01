@@ -3086,6 +3086,7 @@ def _apply_surface_ligand_cutout_planes(
     seal_depth_scale: float = 0.3,
     seal_region_scale: float = 2.0,
     runtime_info: dict[str, Any] | None = None,
+    lid_transparency: float | None = None,
 ) -> bool:
     if runtime_info is not None:
         runtime_info.update(
@@ -3206,6 +3207,9 @@ def _apply_surface_ligand_cutout_planes(
         has_geometry_nodes = any(str(getattr(mod, "type", "")).upper() == "NODES" for mod in list(target_obj.modifiers))
     except Exception:
         has_geometry_nodes = False
+    if lid_transparency is not None:
+        from blender_render.animation_blender import make_cutaway_lid
+        make_cutaway_lid(target_obj, merged_cutter, transparency=lid_transparency)
     if has_geometry_nodes:
         modifier = _add_boolean_difference_modifier(target_obj=target_obj, cutter_obj=merged_cutter)
         applied = modifier is not None
@@ -3299,6 +3303,7 @@ def _apply_surface_ligand_cutout(
     seal_depth_scale: float = 0.3,
     seal_region_scale: float = 2.0,
     runtime_info: dict[str, Any] | None = None,
+    lid_transparency: float | None = None,
 ) -> bool:
     mode = str(cutout_mode or "planes").strip().lower()
     return _apply_surface_ligand_cutout_planes(
@@ -3328,6 +3333,7 @@ def _apply_surface_ligand_cutout(
         seal_depth_scale=seal_depth_scale,
         seal_region_scale=seal_region_scale,
         runtime_info=runtime_info,
+        lid_transparency=lid_transparency,
     )
 
 
@@ -3697,6 +3703,12 @@ def _render(args: argparse.Namespace) -> None:
             ccd_retry_used = True
             return _load_molecule_with_fallback(path, object_name)
 
+    # A lid animation keeps the surface a cutout removes as a separate object,
+    # starting at its anchor-frame opacity so the still shows that frame.
+    lid_cfg = (style_doc.get("output", {}).get("animation") or {})
+    cutaway_lid_transparency = (
+        1.0 - float(lid_cfg["lid"][lid_cfg.get("anchor", 0)]) if lid_cfg.get("lid") else None
+    )
     load_result = _load_with_ccd_retry(structure_path, "BridgeCustom")
     _apply_auth_chain_override(load_result, structure_path)
     ss_applied = _apply_pymol_ss_hints(load_result, view_doc)
@@ -4081,6 +4093,7 @@ def _render(args: argparse.Namespace) -> None:
                                 seal_depth_scale=cutout_seal_depth_scale,
                                 seal_region_scale=cutout_seal_region_scale,
                                 runtime_info=cutout_runtime_info,
+                                lid_transparency=cutaway_lid_transparency,
                             )
                             cutout_applied = cutout_applied or bool(applied)
                             surface_cutout_manifest_entries.append(cutout_runtime_info)
@@ -4293,8 +4306,12 @@ def _render(args: argparse.Namespace) -> None:
     if animation_cfg and animation_cfg.get('mode') != 'none':
         from blender_render.animation import normalize
         from blender_render.animation_blender import render as render_animation
+        # Path views are in angstrom; place them with the camera's own scale.
+        world_scale = max(1e-6, float(style_doc.get('camera', {}).get('world_scale', 0.0108)))
         animation_metadata = render_animation(scene, camera, light_target, output_png,
-                                             normalize(animation_cfg, style_doc['output']))
+                                             normalize(animation_cfg, style_doc['output']),
+                                             world_scale=world_scale, view_doc=view_doc,
+                                             structure_path=structure_path)
     rendered = time.monotonic()
     blend_output = _resolve_blend_output_path(style_doc, output_png)
     if blend_output is not None:

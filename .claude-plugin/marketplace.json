@@ -6,7 +6,7 @@
     {
       "name": "structure-studio",
       "source": "./plugins/structure-studio",
-      "description": "Interactive Mol* viewer panels, PyMOL sessions and Blender + Molecular Nodes preset renders for protein and nucleic-acid structures."
+      "description": "Interactive Mol* workspaces, PyMOL sessions, Blender preset renders and reusable molecular animation recipes for protein and nucleic-acid structures."
     }
   ]
 }

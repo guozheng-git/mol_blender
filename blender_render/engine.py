@@ -30,7 +30,8 @@ CAPABILITIES = sorted({
     'material.fog_glow', 'material.edge_highlight', 'material.uniform_polymer_color',
     'geometry.edge_rounding', 'geometry.element_palette', 'world.directional_gradient',
     'world.separate_illumination', 'camera.depth_of_field', 'camera.reference_framing',
-    'animation.camera_orbit', 'encoding.ffmpeg',
+    'animation.camera_orbit', 'animation.camera_path', 'animation.molecular_states',
+    'animation.cutaway_lid', 'encoding.ffmpeg',
 })
 
 

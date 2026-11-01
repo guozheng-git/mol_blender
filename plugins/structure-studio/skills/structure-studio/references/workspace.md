@@ -26,6 +26,14 @@ Render ids look like `r-20261014-101201-mint_sky_assembly`. A render document st
 
 `{"status": "failed", "error": "…"}` marks a failed render. Older records carry `pse` and `blend` objects (each with `asset_ids` of gzip+base64 text parts) instead of `session`. The page and `studio.py unpack` still read them.
 
+Recipe movies also store an `animation` object with `recipe`, `fps`, `frames`,
+`duration`, `anchor`, dimensions, focus and the reusable template. Camera paths
+and PNG frame data stay in files, not database documents. Their session bundle
+adds roles `mp4`, `gif` (when requested), `frames` (the lossless ZIP), and
+`animation` (the template JSON). The same upload/restore protocol handles them.
+The gallery decodes the MP4 for playback and verifies bundle file hashes before
+playback or download. Existing still-only records remain valid.
+
 Access rules declared at publish: everyone admitted reads. `scene/*` is writable at `interact` (the Share menu's Contributor and above). `renders/*` and `workspace/*` are writable at `admin` (Editors and the owner). The owner always writes.
 
 ## File store

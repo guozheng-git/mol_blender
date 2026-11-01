@@ -202,7 +202,7 @@ def test_render_staging_is_cleaned_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(studio.studio_env, "renderer_env", lambda: (Path("unused"), {}))
     staged = []
 
-    def fail(args, path, directory, executable, env):
+    def fail(args, path, directory, executable, env, *, recipe, staging):
         assert path.read_bytes() == b"data_test\n"
         staged.append(path)
         raise RuntimeError("render failure")

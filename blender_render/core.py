@@ -170,6 +170,26 @@ def _looks_like_pdb_atoms(text: str) -> bool:
     return any(line.startswith(("ATOM", "HETATM")) for line in text.splitlines())
 
 
+def _state_coordinate_errors(states: Any) -> list[str]:
+    """Per-state coordinates for state animations; shape only, order is checked in Blender."""
+    if not isinstance(states, dict) or set(states) != {"base", "coordinates"}:
+        return ["'state_coordinates' must contain exactly 'base' and 'coordinates'."]
+    coordinates = states["coordinates"]
+    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= 360:
+        return ["'state_coordinates.coordinates' must list 2 to 360 states."]
+    if type(states["base"]) is not int or not 1 <= states["base"] <= len(coordinates):
+        return ["'state_coordinates.base' must number one of the listed states."]
+    length = len(coordinates[0]) if isinstance(coordinates[0], list) else 0
+    if not length or length % 3:
+        return ["Each state must list x, y and z for every atom."]
+    for index, values in enumerate(coordinates, 1):
+        if not isinstance(values, list) or len(values) != length:
+            return [f"State {index} must have the same atoms as state 1."]
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+            return [f"State {index} coordinates must be finite numbers."]
+    return []
+
+
 def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
 
@@ -222,6 +242,10 @@ def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
                 or not all(isinstance(item, (int, float)) for item in viewport)
             ):
                 errors.append("'view.viewport_px' must be [width, height] when provided.")
+
+    states = payload.get("state_coordinates")
+    if states is not None:
+        errors.extend(_state_coordinate_errors(states))
 
     if errors:
         bullet = "\n".join(f"- {item}" for item in errors)
@@ -307,6 +331,14 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
         glow = material.get("glow")
         if isinstance(glow, dict) and float(glow.get("strength", 0)) > 0 and "emission_color" not in material:
             errors.append(f"materials.{name}.glow requires emission_color")
+    animation = style_doc.get("output", {}).get("animation") if isinstance(style_doc.get("output"), dict) else None
+    if isinstance(animation, dict) and animation.get("lid") and not any(
+            isinstance(entry, dict) and entry.get("ligand_cutout_radius", 0) for entry in style_doc.get("styles", [])):
+        errors.append("output.animation.lid needs a preset with a ligand cutout, such as cyan_mint_cutaway")
+    if isinstance(animation, dict) and animation.get("states"):
+        for entry in style_doc.get("styles", []):
+            if isinstance(entry, dict) and (entry.get("ligand_cutout_radius", 0) or "wireframe_width_angstrom" in entry):
+                errors.append(f"styles.{entry.get('name')}: state animations cannot follow cut surfaces or wire overlays; choose a preset without them")
     for path, direction in gradients:
         if isinstance(direction, list) and direction and all(isinstance(v, (int, float)) for v in direction) and not any(direction):
             errors.append(f"{path} must be nonzero")
@@ -390,12 +422,18 @@ def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[P
 
     view_path = bundle_dir / "view.json"
     view_doc = dict(payload["view"])
+    view_doc.pop("state_coordinates_file", None)  # Only the staged payload can supply coordinates.
     color_hints = payload.get("color_hints")
     if isinstance(color_hints, dict):
         view_doc["color_hints"] = color_hints
     ss_hints = payload.get("ss_hints")
     if isinstance(ss_hints, dict):
         view_doc["ss_hints"] = ss_hints
+    states = payload.get("state_coordinates")
+    if isinstance(states, dict):
+        states_path = bundle_dir / "states.json"
+        states_path.write_text(json.dumps(states), encoding="utf-8")
+        view_doc["state_coordinates_file"] = str(states_path)
     view_path.write_text(json.dumps(view_doc, indent=2), encoding="utf-8")
 
     payload_path = temp_root / "payload.json"

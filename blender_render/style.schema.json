@@ -76,8 +76,47 @@
               "enum": [
                 "none",
                 "rock",
-                "360"
+                "360",
+                "path"
               ]
+            },
+            "anchor": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 359
+            },
+            "lid": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 360,
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "states": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 360,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 360
+              }
+            },
+            "path": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 360,
+              "items": {
+                "type": "array",
+                "minItems": 18,
+                "maxItems": 18,
+                "items": {
+                  "type": "number"
+                }
+              }
             },
             "duration": {
               "type": "number",

@@ -85,6 +85,12 @@ def required_capabilities(style: dict) -> list[str]:
     cfg = style.get('output', {}).get('animation', {})
     if cfg.get('mode') in ('rock', '360'):
         required.update(('animation.camera_orbit', 'encoding.ffmpeg'))
+    if cfg.get('mode') == 'path':
+        required.update(('animation.camera_path', 'encoding.ffmpeg'))
+    if cfg.get('states'):
+        required.add('animation.molecular_states')
+    if cfg.get('lid'):
+        required.add('animation.cutaway_lid')
     return sorted(required)
 
 
