@@ -135,6 +135,15 @@ def test_animation_capabilities_are_in_local_engine():
     assert set(resolved['render_spec']['required_capabilities']) <= set(CAPABILITIES)
 
 
+def test_animation_capability_diagnostics_are_preserved():
+    from blender_render.compatibility import sanitize
+    from blender_render.engine import CAPABILITIES
+    evidence = dict(version=1, reason='capability_missing', phase='negotiation',
+                    component='engine', before_execution=True,
+                    expected={'capabilities': list(CAPABILITIES)}, observed={}, log_refs=[])
+    assert sanitize(evidence) == evidence
+
+
 def test_orbit_angles_loop_without_duplicate_endpoint():
     rock = animation.angles(dict(mode='rock', duration=1, fps=4, rock_angle=10))
     assert rock == pytest.approx([0, 10, 0, -10])
