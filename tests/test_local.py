@@ -114,7 +114,7 @@ def test_pymol_preserves_context_and_loads_generated_png(monkeypatch,tmp_path):
 
 def test_pymol_run_shared_namespace(monkeypatch,tmp_path):
     import sys
-    source=Path(pymol_bridge_plugin.__file__)
+    source=Path(pymol_bridge_plugin.__file__).resolve()
     monkeypatch.setitem(sys.modules,'pymol',SimpleNamespace(cmd=SimpleNamespace(extend=lambda *a:None)))
     namespace={'__file__':str(tmp_path/'pymol/__init__.py'),'__script__':str(source)}
     exec(compile(source.read_text(),str(source),'exec'),namespace)

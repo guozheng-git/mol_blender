@@ -282,6 +282,7 @@ and MIT identifiers remain.
   time. Inspected the closed, half-faded and fully open frames. All 12 frames
   differ from the pre-refactor render by at most one channel level on the
   0–255 scale. Evidence is ignored under `.validation/studio-lid-module/`.
+
 # Local `main_merged` candidate, 2026-11-01
 
 Merge order, exact PR heads and selective integration decisions are recorded in
@@ -293,6 +294,13 @@ PyMOL and Chrome enabled (the generated-wheel comparison was deselected until
 the frozen build). The imported browser fixture originally kept Playwright's
 event loop alive across unrelated MCP tests; restricting its lifetime to each
 browser module fixed the combined-suite failure.
+
+The first frozen-source run passed 377 tests. An outside-checkout run exposed
+two source assumptions: the catalog builder read a checkout path instead of the
+imported package's data, and a test compared `/var` with its `/private/var`
+canonical path. Both were corrected. Setup also rejects existing environments
+whose Python patch version differs from the pin; the Blender reopen acceptance
+script works with both a native executable and Studio's bpy shim.
 
 Real local acceptance used public 1STP and a locally generated trusted PyMOL
 session, Blender 5.0.1, Molecular Nodes 4.5.10 and NumPy 1.26.4. The controller

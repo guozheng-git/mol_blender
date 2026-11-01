@@ -42,7 +42,7 @@ def preset_catalog() -> list[dict]:
     gallery = {row["preset"]: row for row in json.loads((ROOT / "examples/presets/gallery.json").read_text())}
     rows = []
     for preset_id, filename, _, description, aliases, family in presets._PRESETS:
-        style = json.loads((ROOT / "blender_render" / filename).read_text())
+        style = json.loads(Path(presets.__file__).with_name(filename).read_text())
         queries = [s.get("selection", {}).get("query", "") if isinstance(s.get("selection"), dict) else "" for s in style["styles"]]
         chains = sorted({c for q in queries for c in re.findall(r"chain ([A-Za-z0-9,+]+)", q)})
         example = gallery.get(preset_id, {})

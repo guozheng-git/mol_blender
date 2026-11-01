@@ -106,9 +106,12 @@ with pymol2.PyMOL() as p:
     pse = next(p['path'] for p in restored if p['role'] == 'pse')
     blend = next(p['path'] for p in restored if p['role'] == 'blend')
     run('pse-reopen', [args.pymol, reopened, pse])
-    run('blend-reopen', [config['blender'], '--background', '--disable-autoexec', blend,
-                         '--python-exit-code', '1', '--python-expr',
-                         "import bpy; assert bpy.context.scene.camera; assert len(bpy.data.objects)>1; print('REOPEN_OK')"])
+    reopen_blend = root / 'reopen_blend.py'
+    reopen_blend.write_text("import bpy, sys\nbpy.ops.wm.open_mainfile(filepath=sys.argv[-1], load_ui=False, use_scripts=False)\n"
+                            "assert bpy.context.scene.camera\nassert len(bpy.data.objects)>1\nprint('REOPEN_OK')\n")
+    # The same script works with native Blender and Studio's bpy command shim.
+    run('blend-reopen', [config['blender'], '--background', '--disable-autoexec',
+                         '--python-exit-code', '1', '--python', reopen_blend, '--', blend])
     workspace = json.loads(run('workspace-reopen', [sys.executable, script, 'workspace', pse,
                                                     '--out-dir', root / 'workspace']))
     evidence['workspace'] = workspace

@@ -36,3 +36,14 @@ def test_setup_refuses_aliased_or_global_environment(tmp_path, monkeypatch):
     (tmp_path / 'studio/pymol').mkdir()
     with pytest.raises(studio_env.SetupError, match='non-isolated'):
         studio_env._venv(tmp_path / 'studio/pymol')
+
+
+def test_existing_environment_must_match_python_pin(tmp_path, monkeypatch):
+    monkeypatch.setenv('STRUCTURE_STUDIO_HOME', str(tmp_path))
+    env = tmp_path / 'pymol'
+    (env / 'bin').mkdir(parents=True)
+    (env / 'bin/python').touch()
+    (env / 'pyvenv.cfg').write_text('include-system-site-packages = false\n')
+    monkeypatch.setattr(studio_env, '_run', lambda command: subprocess.CompletedProcess(command, 0, '3.12.0\n', ''))
+    with pytest.raises(studio_env.SetupError, match='Expected Python'):
+        studio_env._venv(env)

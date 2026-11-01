@@ -82,7 +82,7 @@ def _run(command: list[str], *, env: dict | None = None, timeout: float = 1800, 
 def wheel() -> Path:
     found = sorted(WHEELS.glob("*.whl"))
     if not found:
-        raise SetupError(f"No renderer wheel in {WHEELS}; rebuild the plugin with scripts/build_plugin.py")
+        raise SetupError('Use the staged plugin produced by scripts/build_release.py; source checkouts do not contain generated wheels.')
     return found[-1]
 
 
@@ -136,6 +136,9 @@ def _venv(path: Path, interpreter: str = PYTHON) -> Path:
     if not python.is_file():
         _log(f"Creating a Python environment at {path} (uv downloads Python {interpreter} if needed)…")
         _run([uv(), "venv", "--quiet", "--managed-python", "-p", interpreter, str(path)], env=_uv_env(), timeout=900)
+    version = _run([python, '-c', "import sys; print('.'.join(map(str, sys.version_info[:3])))"]).stdout.strip()
+    if version != interpreter:
+        raise SetupError(f'Expected Python {interpreter}, found {version}; choose a fresh STRUCTURE_STUDIO_HOME')
     return python
 
 
