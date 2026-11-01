@@ -308,10 +308,12 @@ Blender/bpy installation test.
   A workspace was rebuilt from the restored PSE.
 - The generated MP4 played in real headless Chrome with advancing playback time.
   Re-encoding a saved archive passed without launching Blender.
-- A real Mac PyMOL 3.1 Qt GUI played the cached Blender frames, preserved objects
+- A real Mac PyMOL Qt GUI played the cached Blender frames, preserved objects
   and camera, exported native cached PNGs with exact RGB pixels, and completed
   native MP4 plus later plugin MP4/GIF exports without a render. The GUI used a
   separate uv environment with PySide6 6.8.1; it closed after the acceptance script.
+  Distribution pin: `pymol-open-source-whl==3.1.0.4`; that wheel reports runtime
+  version `3.2.0a`. Preserve both identities when comparing Linux results.
 - Viewer simulations exercise save/reopen in a new browser context after the
   original URL is revoked. They do not establish live ChatGPT/Claude persistence
   or automatic next-step model image access.
