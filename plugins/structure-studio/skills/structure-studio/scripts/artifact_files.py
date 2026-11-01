@@ -11,13 +11,21 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 import struct
 import time
+import zlib
 from pathlib import Path, PureWindowsPath
 
 PART_CHARS = 15 * 1024 * 1024
 ENCODING = "gzip+base64"
 BUNDLE_FORMAT = "structure-studio-session/1"
+MAX_FILE_BYTES = 128 * 1024 * 1024
+MAX_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_ENCODED_BYTES = 256 * 1024 * 1024
+MAX_PART_BYTES = 20 * 1024 * 1024
+MAX_PARTS = 64
+MAX_FILES = 64
 HOW_TO_DECODE = ("For each filename, join the `data` strings of its entries in `part` order across all bundle "
                  "files, base64-decode, gunzip, and compare with `sha256`. `studio.py restore` does this.")
 
@@ -26,10 +34,35 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _read_bounded(path, limit):
+    with Path(path).expanduser().open('rb') as handle:
+        data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError('Bundle input exceeds size limit')
+    return data
+
+
+def _decode(text, limit=MAX_FILE_BYTES):
+    """Stop inflation at the declared size (or the hard limit for legacy parts)."""
+    if not isinstance(text, (str, bytes)) or len(text) > MAX_ENCODED_BYTES:
+        raise ValueError('Encoded bundle exceeds size limit')
+    try:
+        compressed = base64.b64decode(text, validate=True)
+        inflater = zlib.decompressobj(wbits=31)
+        raw = inflater.decompress(compressed, limit + 1)
+        if len(raw) > limit or inflater.unconsumed_tail:
+            raise ValueError('Decoded bundle exceeds size limit')
+        if not inflater.eof or inflater.unused_data:
+            raise ValueError('Truncated or concatenated gzip bundle')
+        return raw
+    except (zlib.error, UnicodeError) as exc:
+        raise ValueError('Invalid gzip/base64 bundle') from exc
+
+
 def pack(path: str, out_dir: str) -> dict:
     """Write ``NAME.gz.b64[.partNN].txt`` files and describe them."""
     source = Path(path).expanduser()
-    raw = source.read_bytes()
+    raw = _read_bounded(source, MAX_FILE_BYTES)
     text = base64.b64encode(gzip.compress(raw, compresslevel=6, mtime=0))
     directory = Path(out_dir).expanduser()
     directory.mkdir(parents=True, exist_ok=True)
@@ -47,10 +80,24 @@ def pack(path: str, out_dir: str) -> dict:
 def bundle(files: dict, out_stem: str) -> dict:
     """Write ``OUT_STEM.session.json`` (or ``.session.partNN.json``) holding ``{role: path}`` files."""
     entries, described = [], []
+    total = encoded = 0
+    names = set()
+    if not 1 <= len(files) <= MAX_FILES:
+        raise ValueError('Invalid bundle file count')
     for role, path in files.items():
         source = Path(path).expanduser()
-        raw = source.read_bytes()
+        _destination(Path(out_stem).expanduser().parent.resolve(), source.name)
+        if source.name in names:
+            raise ValueError('Duplicate bundle filename')
+        names.add(source.name)
+        raw = _read_bounded(source, MAX_FILE_BYTES)
+        total += len(raw)
+        if total > MAX_TOTAL_BYTES:
+            raise ValueError('Bundle total exceeds size limit')
         text = base64.b64encode(gzip.compress(raw, compresslevel=6, mtime=0)).decode("ascii")
+        encoded += len(text)
+        if encoded > MAX_ENCODED_BYTES:
+            raise ValueError('Encoded bundle exceeds size limit')
         chunks = [text[i:i + PART_CHARS] for i in range(0, len(text), PART_CHARS)] or [""]
         info = {"role": role, "filename": source.name, "bytes": len(raw), "sha256": sha256(raw)}
         described.append(info)
@@ -88,23 +135,57 @@ def _destination(directory: Path, filename: str) -> Path:
 
 def _bundle_entries(bundle_files: list[str]) -> dict:
     pieces: dict[str, dict] = {}
+    if not 1 <= len(bundle_files) <= MAX_PARTS:
+        raise ValueError('Invalid bundle part count')
+    input_size = total = encoded = 0
+    documents = set()
+    expected_count = None
     for path in bundle_files:
-        data = json.loads(Path(path).expanduser().read_text())
-        if data.get("format") != BUNDLE_FORMAT:
+        raw = _read_bounded(path, min(MAX_PART_BYTES, MAX_ENCODED_BYTES - input_size))
+        input_size += len(raw)
+        data = json.loads(raw)
+        if not isinstance(data, dict) or data.get("format") != BUNDLE_FORMAT:
             raise ValueError(f"{path} is not a {BUNDLE_FORMAT} bundle")
+        if (type(data.get('count')) is not int or not 1 <= data['count'] <= MAX_PARTS
+                or type(data.get('index')) is not int or not 1 <= data['index'] <= data['count']
+                or data['index'] in documents
+                or (expected_count is not None and data['count'] != expected_count)):
+            raise ValueError('Invalid or duplicate bundle document')
+        expected_count = data['count']
+        documents.add(data['index'])
+        if not isinstance(data.get('entries'), list) or len(data['entries']) > MAX_FILES * MAX_PARTS:
+            raise ValueError('Invalid bundle entries')
         for entry in data["entries"]:
+            if not isinstance(entry, dict):
+                raise ValueError('Invalid bundle entry')
+            _destination(Path.cwd().resolve(), entry.get('filename'))
+            if (type(entry.get('bytes')) is not int or not 0 <= entry['bytes'] <= MAX_FILE_BYTES
+                    or not isinstance(entry.get('sha256'), str)
+                    or not re.fullmatch('[a-f0-9]{64}', entry['sha256'])
+                    or not isinstance(entry.get('role'), str) or len(entry['role']) > 64
+                    or not isinstance(entry.get('data'), str) or len(entry['data']) > MAX_PART_BYTES):
+                raise ValueError('Invalid bundle metadata or size limit')
+            if entry['filename'] not in pieces:
+                total += entry['bytes']
+                if len(pieces) >= MAX_FILES or total > MAX_TOTAL_BYTES:
+                    raise ValueError('Bundle total exceeds size limit')
+            encoded += len(entry['data'])
+            if encoded > MAX_ENCODED_BYTES:
+                raise ValueError('Encoded bundle exceeds size limit')
             item = pieces.setdefault(entry["filename"], {"info": entry, "parts": {}})
             fields = ("role", "filename", "parts", "bytes", "sha256", "encoding")
             if any(entry.get(k) != item["info"].get(k) for k in fields):
                 raise ValueError(f"{entry['filename']}: inconsistent bundle metadata")
             if entry.get("encoding") != ENCODING:
                 raise ValueError(f"Unsupported bundle encoding: {entry.get('encoding')!r}")
-            if (type(entry["parts"]) is not int or type(entry["part"]) is not int
-                    or not 1 <= entry["part"] <= entry["parts"]):
+            if (type(entry.get("parts")) is not int or type(entry.get("part")) is not int
+                    or not 1 <= entry["part"] <= entry["parts"] <= MAX_PARTS):
                 raise ValueError(f"{entry['filename']}: invalid bundle part")
             if entry["part"] in item["parts"]:
                 raise ValueError(f"{entry['filename']}: duplicate bundle part {entry['part']}")
             item["parts"][entry["part"]] = entry["data"]
+    if len(documents) != expected_count:
+        raise ValueError('missing bundle parts; download every document')
     return pieces
 
 
@@ -119,10 +200,11 @@ def restore(bundle_files: list[str], out_dir: str) -> list[dict]:
         missing = [n for n in range(1, info["parts"] + 1) if n not in item["parts"]]
         if missing:
             raise ValueError(f"{filename}: missing bundle parts {missing}; download every asset id in the record")
-        raw = gzip.decompress(base64.b64decode("".join(item["parts"][n] for n in range(1, info["parts"] + 1))))
+        raw = _decode("".join(item["parts"][n] for n in range(1, info["parts"] + 1)), info['bytes'])
         if sha256(raw) != info["sha256"] or len(raw) != info["bytes"]:
             raise ValueError(f"{filename}: checksum mismatch")
-        if target.exists() and (not target.is_file() or target.read_bytes() != raw):
+        if target.exists() and (not target.is_file() or target.stat().st_size != len(raw)
+                                or _read_bounded(target, len(raw)) != raw):
             raise FileExistsError(f"Refusing to overwrite {target}")
         decoded.append((target, raw, info))
     directory.mkdir(parents=True, exist_ok=True)
@@ -137,14 +219,23 @@ def restore(bundle_files: list[str], out_dir: str) -> list[dict]:
 
 def unpack(parts: list[str], output: str, expected_sha256: str = "") -> dict:
     """Join downloaded parts (in order), decode, and verify against the recorded checksum."""
-    text = b"".join(Path(p).expanduser().read_bytes().strip() for p in parts)
-    raw = gzip.decompress(base64.b64decode(text))
+    if not 1 <= len(parts) <= MAX_PARTS:
+        raise ValueError('Invalid bundle part count')
+    chunks, size = [], 0
+    for path in parts:
+        chunk = _read_bounded(path, min(MAX_PART_BYTES, MAX_ENCODED_BYTES - size)).strip()
+        size += len(chunk)
+        chunks.append(chunk)
+    raw = _decode(b''.join(chunks))
     digest = sha256(raw)
     if expected_sha256 and digest != expected_sha256:
         raise ValueError(f"Checksum mismatch for {output}: got {digest}, expected {expected_sha256}")
     target = Path(output).expanduser()
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f'Refusing to overwrite {target}')
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(raw)
+    with target.open('xb') as handle:
+        handle.write(raw)
     return {"path": str(target.resolve()), "bytes": len(raw), "sha256": digest, "verified": bool(expected_sha256)}
 
 

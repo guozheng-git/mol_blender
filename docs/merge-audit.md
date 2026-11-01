@@ -58,6 +58,13 @@ See [hosted-adapter.md](hosted-adapter.md) for the embedding contract and limits
 
 ## Release gates
 
+Bundle hardening is implemented in Python and the viewer: 128 MiB decoded per
+file, 256 MiB aggregate decoded/encoded input, 20 MiB per document and at most
+64 files/parts. Inflation stops at the declared size before checksum validation.
+Malformed, truncated, concatenated, duplicate and incomplete inputs are rejected
+before restoration writes. Legacy unpack also refuses overwrites. The focused
+suite passes **51 tests**, including browser JavaScript decoding via Node.
+
 - Bound Python and browser decompression before allocating decoded bundles;
   validate all parts, metadata, names, aggregate sizes and checksums.
 - Installation is explicit and isolated. No automatic apt/sudo, user-site pip,

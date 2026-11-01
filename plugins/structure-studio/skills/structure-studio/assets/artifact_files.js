@@ -4,8 +4,33 @@
   else root.StructureStudioFiles = factory();
 })(globalThis, function () {
 'use strict';
-function b64ToBytes(b64) { const bin = atob(b64.replace(/\s+/g, '')); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
-async function gunzip(bytes) { const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')); return new Uint8Array(await new Response(s).arrayBuffer()); }
+const LIMITS = Object.freeze({file:128 * 1024 * 1024, total:256 * 1024 * 1024, encoded:256 * 1024 * 1024, part:20 * 1024 * 1024, parts:64, files:64});
+function boundedSize(size, limit) { if (!Number.isSafeInteger(size) || size < 0 || size > limit) throw new Error('Bundle exceeds size limit'); return size; }
+function safeName(name) { if (typeof name !== 'string' || !name || ['.', '..'].includes(name) || /[/\\:\0]/.test(name)) throw new Error('Unsafe bundle filename'); }
+function b64ToBytes(b64) {
+  if (typeof b64 !== 'string' || b64.length > LIMITS.encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64)) throw new Error('Invalid or oversized base64');
+  const bin = atob(b64); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out;
+}
+async function readStream(stream, limit) {
+  boundedSize(limit, LIMITS.encoded);
+  const reader = stream.getReader(), chunks = []; let size = 0;
+  try {
+    for (;;) { const {done, value} = await reader.read(); if (done) break; size += value.length;
+      if (size > limit) { await reader.cancel(); throw new Error('Bundle exceeds size limit'); } chunks.push(value); }
+  } finally { reader.releaseLock(); }
+  const result = new Uint8Array(size); let offset = 0;
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; } return result;
+}
+async function readResponse(response, limit = LIMITS.part) {
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  if (Number(response.headers.get('content-length')) > limit) throw new Error('Bundle exceeds size limit');
+  if (!response.body) throw new Error('Missing response body');
+  return readStream(response.body, limit);
+}
+async function gunzip(bytes, limit = LIMITS.file) {
+  boundedSize(bytes.length, LIMITS.encoded); boundedSize(limit, LIMITS.file);
+  return readStream(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')), limit);
+}
 async function sha256(bytes) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join(''); }
 /* ---------- Minimal stored ZIP (MVSX scenes and session downloads) ---------- */
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -28,15 +53,52 @@ function zipStore(files) {
 
 
 async function decodeAsset(parts, entry) {
-  const bytes = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  if (!Array.isArray(parts) || !parts.length || parts.length > LIMITS.parts) throw new Error('Invalid part count');
+  const bytes = new Uint8Array(boundedSize(parts.reduce((size, part) => size + part.length, 0), LIMITS.encoded));
   let offset = 0;
   for (const part of parts) { bytes.set(part, offset); offset += part.length; }
   let raw;
-  if (entry.encoding === 'text') raw = bytes;
-  else if (entry.encoding === 'gzip+base64') raw = await gunzip(b64ToBytes(new TextDecoder().decode(bytes)));
+  const limit = entry.bytes === undefined ? LIMITS.file : boundedSize(entry.bytes, LIMITS.file);
+  if (entry.encoding === 'text') { boundedSize(bytes.length, limit); raw = bytes; }
+  else if (entry.encoding === 'gzip+base64') raw = await gunzip(b64ToBytes(new TextDecoder().decode(bytes)), limit);
   else throw new Error('Unsupported asset encoding: ' + entry.encoding);
+  if (entry.bytes !== undefined && raw.length !== entry.bytes) throw new Error('Bundle size mismatch');
   if (entry.sha256 && await sha256(raw) !== entry.sha256) throw new Error(entry.filename + ' did not match its checksum');
   return raw;
 }
-return { b64ToBytes, gunzip, sha256, zipStore, decodeAsset };
+function parseBundles(docs) {
+  if (!Array.isArray(docs) || !docs.length || docs.length > LIMITS.parts) throw new Error('Invalid part count');
+  const files = new Map(), indices = new Set(); let total = 0, encoded = 0;
+  for (const doc of docs) {
+    if (doc.format !== 'structure-studio-session/1' || doc.count !== docs.length || !Number.isInteger(doc.index) || doc.index < 1 || doc.index > doc.count || indices.has(doc.index)) throw new Error('Invalid or missing bundle document');
+    indices.add(doc.index);
+    if (!Array.isArray(doc.entries) || doc.entries.length > LIMITS.files * LIMITS.parts) throw new Error('Invalid bundle entries');
+    for (const entry of doc.entries) {
+      safeName(entry.filename); boundedSize(entry.bytes, LIMITS.file);
+      if (entry.encoding !== 'gzip+base64' || typeof entry.role !== 'string' || entry.role.length > 64 || typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isInteger(entry.parts) || entry.parts < 1 || entry.parts > LIMITS.parts || !Number.isInteger(entry.part) || entry.part < 1 || entry.part > entry.parts || typeof entry.data !== 'string' || entry.data.length > LIMITS.part) throw new Error('Invalid bundle metadata');
+      encoded += entry.data.length; boundedSize(encoded, LIMITS.encoded);
+      if (!files.has(entry.filename)) {
+        total += entry.bytes; boundedSize(total, LIMITS.total);
+        if (files.size >= LIMITS.files) throw new Error('Too many bundle files');
+        files.set(entry.filename, {info:entry, data:new Map()});
+      }
+      const item = files.get(entry.filename);
+      for (const key of ['role','filename','bytes','sha256','encoding','parts']) if (item.info[key] !== entry[key]) throw new Error('Inconsistent bundle metadata');
+      if (item.data.has(entry.part)) throw new Error('Duplicate bundle part');
+      item.data.set(entry.part, entry.data);
+    }
+  }
+  for (const item of files.values()) if (item.data.size !== item.info.parts) throw new Error('Missing bundle parts');
+  return files;
+}
+async function decodeBundle(files, file) {
+  safeName(file.filename);
+  const item = files.get(file.filename);
+  if (!item || file.bytes !== item.info.bytes || file.sha256 !== item.info.sha256 || file.role !== item.info.role) throw new Error('Bundle record mismatch');
+  const text = Array.from({length:item.info.parts}, (_, i) => item.data.get(i + 1)).join('');
+  const raw = await gunzip(b64ToBytes(text), item.info.bytes);
+  if (raw.length !== item.info.bytes || await sha256(raw) !== item.info.sha256) throw new Error('Bundle checksum or size mismatch');
+  return raw;
+}
+return { b64ToBytes, gunzip, sha256, zipStore, decodeAsset, readResponse, parseBundles, decodeBundle, LIMITS };
 });

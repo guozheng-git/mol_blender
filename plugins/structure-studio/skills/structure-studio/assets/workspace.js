@@ -5,7 +5,7 @@ const $ = (s) => document.querySelector(s);
 
 const engine = createStructureScene(DATA.molecular_data);
 const { normalize, resolve, buildScene, sceneFiles, matchLigands, site, chainColor, showChain, titleCase } = engine;
-const { b64ToBytes, gunzip, sha256, zipStore, decodeAsset } = StructureStudioFiles;
+const { b64ToBytes, gunzip, sha256, zipStore, decodeAsset, readResponse, parseBundles, decodeBundle, LIMITS } = StructureStudioFiles;
 const { PLDDT } = DATA.molecular_data;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const toInt = (hex) => parseInt(hex.slice(1), 16);
@@ -322,11 +322,12 @@ async function openFile(file) {
 
 /* ---------- Renders and files ---------- */
 async function fetchPacked(entry) {
-  const parts = await Promise.all(entry.asset_ids.map(async (id) => {
-    const response = await fetch('/_blob/' + id);
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    return new Uint8Array(await response.arrayBuffer());
-  }));
+  if (!Array.isArray(entry.asset_ids) || !entry.asset_ids.length || entry.asset_ids.length > LIMITS.parts) throw new Error('Invalid part count');
+  const parts = []; let total = 0;
+  for (const id of entry.asset_ids) {
+    const bytes = await readResponse(await fetch('/_blob/' + encodeURIComponent(id)), Math.min(LIMITS.part, LIMITS.encoded - total));
+    total += bytes.length; parts.push(bytes);
+  }
   return decodeAsset(parts, entry);
 }
 async function savePacked(entry, button) {
@@ -338,21 +339,23 @@ async function savePacked(entry, button) {
 /* Session bundles (structure-studio-session/1): JSON files whose entries carry gzip+base64 data. */
 const bundleCache = new Map();
 function fetchBundle(session) {
+  if (!Array.isArray(session.asset_ids) || !session.asset_ids.length || session.asset_ids.length > LIMITS.parts) throw new Error('Invalid bundle part count');
   const key = session.asset_ids.join(',');
-  if (!bundleCache.has(key)) bundleCache.set(key, Promise.all(session.asset_ids.map((id) => fetch('/_blob/' + id).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }))).then((docs) => {
-    const files = {};
-    for (const d of docs) for (const e of d.entries || []) { const f = files[e.filename] || (files[e.filename] = { info: e, data: {} }); f.data[e.part] = e.data; }
-    return files;
-  }));
+  if (!bundleCache.has(key)) {
+    bundleCache.clear(); // Retain only the active bundle, not every downloaded scene.
+    bundleCache.set(key, (async () => {
+      const docs = []; let total = 0;
+      for (const id of session.asset_ids) {
+        const bytes = await readResponse(await fetch('/_blob/' + encodeURIComponent(id)), Math.min(LIMITS.part, LIMITS.encoded - total));
+        total += bytes.length; docs.push(JSON.parse(new TextDecoder().decode(bytes)));
+      }
+      return parseBundles(docs);
+    })().catch(error => { bundleCache.delete(key); throw error; }));
+  }
   return bundleCache.get(key);
 }
 async function bundleFile(session, file) {
-  const item = (await fetchBundle(session))[file.filename];
-  if (!item) throw new Error(file.filename + ' is missing from the bundle');
-  const text = Array.from({ length: item.info.parts }, (_, i) => { const part = item.data[i + 1]; if (part === undefined) throw new Error('missing part ' + (i + 1)); return part; }).join('');
-  const bytes = await gunzip(b64ToBytes(text));
-  if (file.sha256 && await sha256(bytes) !== file.sha256) throw new Error(file.filename + ' did not match its checksum');
-  return bytes;
+  return decodeBundle(await fetchBundle(session), file);
 }
 async function saveBundleFile(session, file, button) {
   const label = button.textContent; button.disabled = true; button.textContent = 'Preparing…';

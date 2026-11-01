@@ -11,6 +11,7 @@ const root = path.join(__dirname, '..');
 const assets = path.join(root, 'plugins/structure-studio/skills/structure-studio/assets');
 const createScene = require(path.join(assets, 'scene.js'));
 const { decodeAsset, sha256, zipStore } = require(path.join(assets, 'artifact_files.js'));
+const { gunzip, parseBundles, decodeBundle, readResponse } = require(path.join(assets, 'artifact_files.js'));
 const data = JSON.parse(fs.readFileSync(path.join(assets, 'molecular-data.json')));
 const blankPdb = new TextEncoder().encode(
   'ATOM      1  CA  GLY     1       0.000   0.000   0.000  1.00 90.00           C\n');
@@ -45,6 +46,28 @@ test('legacy session parts still decompress and verify', async () => {
   assert.deepEqual(await decodeAsset([encoded.slice(0, 5), encoded.slice(5)], entry), bytes);
   await assert.rejects(decodeAsset([encoded], { ...entry, sha256: 'wrong' }), /checksum/);
   await assert.rejects(decodeAsset([encoded], { ...entry, encoding: 'unknown' }), /Unsupported/);
+});
+
+test('gzip expansion stops at the declared size and streamed downloads are bounded', async () => {
+  await assert.rejects(gunzip(gzipSync(Buffer.alloc(1000000)), 16), /size limit/);
+  await assert.rejects(readResponse(new Response(Buffer.alloc(500)), 16), /size limit/);
+  await assert.rejects(gunzip(gzipSync(Buffer.from('data')).subarray(0, 12)), /./);
+});
+
+test('bundle parsing validates parts, metadata, hashes and dangerous filenames', async () => {
+  const raw = new TextEncoder().encode('trusted session bytes');
+  const entry = {filename:'test.pse', role:'pse', bytes:raw.length, sha256:await sha256(raw), encoding:'gzip+base64', parts:1, part:1, data:gzipSync(raw).toString('base64')};
+  const doc = {format:'structure-studio-session/1', index:1, count:1, entries:[entry]};
+  assert.deepEqual(await decodeBundle(parseBundles([doc]), entry), raw);
+  for (const update of [{bytes:-1}, {bytes:2**40}, {parts:2**40}, {part:0}, {filename:'../x'}, {sha256:'bad'}]) {
+    assert.throws(() => parseBundles([{...doc, entries:[{...entry, ...update}]}]));
+  }
+  assert.throws(() => parseBundles([{...doc, entries:[entry, entry]}]), /Duplicate/);
+  assert.throws(() => parseBundles([{...doc, count:2}]), /missing/);
+  assert.throws(() => parseBundles([{...doc, entries:[{...entry, parts:2}]}]), /Missing/);
+  const small = {...entry, bytes:1};
+  await assert.rejects(decodeBundle(parseBundles([{...doc, entries:[small]}]), small), /size limit/);
+  await assert.rejects(decodeBundle(parseBundles([doc]), {...entry, sha256:'0'.repeat(64)}), /mismatch/);
 });
 
 for (const scene of [
