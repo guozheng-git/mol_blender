@@ -282,3 +282,65 @@ and MIT identifiers remain.
   time. Inspected the closed, half-faded and fully open frames. All 12 frames
   differ from the pre-refactor render by at most one channel level on the
   0–255 scale. Evidence is ignored under `.validation/studio-lid-module/`.
+# Local `main_merged` candidate, 2026-11-01
+
+Merge order, exact PR heads and selective integration decisions are recorded in
+[merge-audit.md](merge-audit.md). This is a local prerelease candidate, not a
+published release or evidence of working live hosted clients.
+
+Before the version freeze, the combined source passed **376 tests** with real
+PyMOL and Chrome enabled (the generated-wheel comparison was deselected until
+the frozen build). The imported browser fixture originally kept Playwright's
+event loop alive across unrelated MCP tests; restricting its lifetime to each
+browser module fixed the combined-suite failure.
+
+Real local acceptance used public 1STP and a locally generated trusted PyMOL
+session, Blender 5.0.1, Molecular Nodes 4.5.10 and NumPy 1.26.4. The controller
+and PyMOL used isolated uv environments; Blender and its locked dependencies
+were reused read-only from an existing native runtime. This is not a fresh
+Blender/bpy installation test.
+
+- Still plus all six recipes rendered at 192 × 144, 4 samples and 4 frames.
+  MP4 counts/duration and GIF frames/looping passed, and every animation had
+  changing lossless-frame hashes. The 24-frame contact sheet was inspected.
+- PSE, Blender scene, MP4, GIF, frame archive and recipe bundles restored with
+  exact hashes for all six recipes. A restored PSE and Blender scene reopened.
+  A workspace was rebuilt from the restored PSE.
+- The generated MP4 played in real headless Chrome with advancing playback time.
+  Re-encoding a saved archive passed without launching Blender.
+- A real Mac PyMOL 3.1 Qt GUI played the cached Blender frames, preserved objects
+  and camera, exported native cached PNGs with exact RGB pixels, and completed
+  native MP4 plus later plugin MP4/GIF exports without a render. The GUI used a
+  separate uv environment with PySide6 6.8.1; it closed after the acceptance script.
+- Viewer simulations exercise save/reopen in a new browser context after the
+  original URL is revoked. They do not establish live ChatGPT/Claude persistence
+  or automatic next-step model image access.
+
+Reproduce on configured local runtimes (output directories must be new):
+
+```sh
+uv sync --locked --extra dev --extra mcp --extra hosted
+python scripts/build_release.py --output dist/release
+python scripts/verify_release.py dist/release
+STRUCTURE_STUDIO_TEST_PYMOL=/path/to/pymol/python \
+STRUCTURE_STUDIO_TEST_WHEEL=/path/to/built.whl \
+python -m pytest -q tests --browser /path/to/Chrome
+python scripts/validate_local_acceptance.py \
+  --skill dist/release/plugin/structure-studio/skills/structure-studio \
+  --config /path/to/config.json --fixture examples/1stp.cif \
+  --pymol /path/to/pymol/python --output .validation/acceptance \
+  --browser /path/to/Chrome
+```
+
+Freeze with version `0.4.0rc1` (plugin `0.4.0-rc.1`) and rebuild from that commit.
+`dist/release/release.json` records the exact revision, tree, engine identity and
+wheel/ZIP hashes. Final source and installed-wheel results are saved beside the
+candidate as `validation.json` after the freeze, avoiding another source change.
+The installed check must run outside the checkout, with the package source
+removed from its copied test fixtures and installed module paths asserted.
+
+Remaining release gates: Linux Apptainer build/CUDA execution; real hosted
+attachment, save/reopen and automatic image-context acceptance; final-quality
+visual review. The low-sample tests verify execution and preservation, not final
+scientific figure quality. Nothing was pushed, deployed or published.
+

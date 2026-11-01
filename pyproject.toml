@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymol-plugin-bridge"
-version = "0.3.0"
+version = "0.4.0rc1"
 description = "Local molecular rendering from PyMOL, Claude, and Codex."
 readme = "README.md"
 requires-python = ">=3.11"
