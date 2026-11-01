@@ -1,0 +1,12 @@
+{
+  "name": "blender-render",
+  "owner": { "name": "blender render" },
+  "description": "Molecular rendering plugins built on the blender_render renderer.",
+  "plugins": [
+    {
+      "name": "structure-studio",
+      "source": "./plugins/structure-studio",
+      "description": "Interactive Mol* viewer panels, PyMOL sessions and Blender + Molecular Nodes preset renders for protein and nucleic-acid structures."
+    }
+  ]
+}

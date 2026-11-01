@@ -1,0 +1,266 @@
+<title>__PAGE_TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen instrument panel — identity bar, viewport, then a compact control deck. */
+:root {
+  --bg: #f3f6f5;
+  --surface: #ffffff;
+  --sunken: #e9eeec;
+  --fg: #14211e;
+  --muted: #5a6a65;
+  --line: #d5dedb;
+  --accent: #0b7a69;
+  --accent-soft: #d9efea;
+  --accent-fg: #ffffff;
+  --canvas: #ffffff;
+  --danger: #a33a2a;
+  --warn: #b7791f;
+  --shadow: 0 1px 2px rgb(20 33 30 / 0.06), 0 4px 16px rgb(20 33 30 / 0.06);
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1311; --surface: #141c19; --sunken: #1a2420; --fg: #e3ebe8; --muted: #8e9f99;
+    --line: #26322e; --accent: #45c6ab; --accent-soft: #173a32; --accent-fg: #04201a;
+    --canvas: #0a0f0d; --danger: #ef8a78; --warn: #e2b04a;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1311; --surface: #141c19; --sunken: #1a2420; --fg: #e3ebe8; --muted: #8e9f99;
+  --line: #26322e; --accent: #45c6ab; --accent-soft: #173a32; --accent-fg: #04201a;
+  --canvas: #0a0f0d; --danger: #ef8a78; --warn: #e2b04a;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; line-height: 1.45;
+  padding-inline: 16px; padding-block: 0; box-sizing: border-box;
+}
+*, *::before, *::after { box-sizing: border-box; }
+button, select, input, textarea { font: inherit; color: inherit; }
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding-block: 12px; max-width: 1200px; margin-inline: auto; }
+
+/* Identity bar */
+.bar { display: grid; gap: 8px; min-width: 0; }
+.ident { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.entry-id { font-family: var(--font-data); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; }
+.title { margin: 0; font-size: 16px; font-weight: 600; text-wrap: balance; min-width: 0; overflow-wrap: anywhere; }
+.meta { margin: 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.meta span { white-space: nowrap; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.tab { appearance: none; border: 0; background: none; padding: 7px 12px 8px; color: var(--muted); font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab:focus-visible, .chip:focus-visible, .btn:focus-visible, select:focus-visible, .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tab .count { font-family: var(--font-data); font-size: 11px; color: var(--muted); margin-left: 4px; }
+
+/* 3D panel */
+.panel { min-height: 0; }
+#panel-3d { display: grid; grid-template-rows: minmax(300px, 1fr) auto auto; gap: 10px; height: 100%; }
+.stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--canvas); box-shadow: var(--shadow); }
+#molstar { position: absolute; inset: 0; }
+.stage.dragging::after { content: "Drop to open"; position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: 8px; display: grid; place-items: center; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--canvas) 80%, transparent); z-index: 20; }
+.status { position: absolute; left: 12px; bottom: 10px; z-index: 10; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); padding: 4px 9px; border-radius: 6px; max-width: calc(100% - 24px); }
+.status.error { color: var(--danger); }
+.status:empty { display: none; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); min-height: 18px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.legend .mono { font-family: var(--font-data); color: var(--fg); }
+
+.deck { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.row { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; min-width: 0; }
+.row .label { width: 46px; flex: none; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.chip { appearance: none; border: 1px solid var(--line); background: var(--surface); padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 13px; color: var(--fg); }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 4px 8px; max-width: 100%; min-width: 0; font-family: var(--font-data); font-size: 12.5px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+.actions { gap: 6px; }
+.btn { appearance: none; border: 1px solid var(--line); background: var(--sunken); padding: 5px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--fg); }
+.btn:hover { border-color: var(--accent); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Renders and files */
+.scroll { height: 100%; overflow: auto; padding-block: 2px 16px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.render { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
+.thumb { display: block; width: 100%; padding: 0; border: 0; background: var(--sunken); cursor: zoom-in; }
+.thumb img { display: block; width: 100%; height: auto; max-width: 100%; }
+.render figcaption { padding: 10px 12px; display: grid; gap: 6px; }
+.render .name { font-family: var(--font-data); font-size: 12.5px; font-weight: 500; }
+.render .desc { color: var(--muted); font-size: 12.5px; }
+.render .spec { color: var(--muted); font-size: 11.5px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.render .btn { justify-self: start; }
+.empty { color: var(--muted); padding: 24px 0; max-width: 60ch; }
+.files { display: grid; gap: 14px; max-width: 640px; }
+.file-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.file-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--line); font-family: var(--font-data); font-size: 12.5px; min-width: 0; }
+.file-list li:first-child { border-top: 0; }
+.file-list .fname { overflow-wrap: anywhere; min-width: 0; }
+.file-list .fsize { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 65ch; margin: 0; }
+
+/* Overlays */
+.overlay { position: fixed; inset: 0; z-index: 50; background: rgb(8 14 12 / 0.55); display: grid; place-items: center; padding: 16px; }
+.sheet { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 16px; display: grid; gap: 10px; box-shadow: var(--shadow); }
+.sheet h2 { margin: 0; font-size: 15px; }
+.sheet textarea { width: 100%; min-height: 150px; resize: vertical; font-family: var(--font-data); font-size: 12px; background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.sheet .row { justify-content: flex-end; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 140px); height: auto; border-radius: 8px; display: block; margin-inline: auto; }
+.lightbox .sheet { width: min(1100px, 100%); }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; background: var(--fg); color: var(--bg); padding: 7px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
+@media (max-width: 480px) {
+  .row .label { width: 100%; }
+  #panel-3d { grid-template-rows: minmax(320px, 58vh) auto auto; height: auto; }
+  .app { height: auto; min-height: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<style>
+/* Workspace additions: sync state, chain toggles, picked residue, live render cards. */
+.bar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+.sync { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.sync[data-mode="live"] .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sync[data-mode="local"] .dot { background: var(--warn); }
+.below { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; min-height: 20px; font-size: 12px; color: var(--muted); }
+.below .mono { font-family: var(--font-data); color: var(--fg); }
+.chains { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chain { appearance: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 3px 10px 3px 5px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chain:hover { border-color: var(--accent); }
+.chain:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chain .swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.chain .id { font-family: var(--font-data); font-weight: 500; }
+.chain .sub { color: var(--muted); }
+.chain[aria-pressed="false"] { opacity: 0.55; }
+.chain[aria-pressed="false"] .swatch { background: transparent !important; border: 1.5px dashed var(--muted); }
+.chain[aria-pressed="false"] .id { text-decoration: line-through; }
+.render.pending .thumb, .render.failed .thumb { aspect-ratio: 4 / 3; display: grid; place-items: center; cursor: default; color: var(--muted); font-size: 13px; padding: 12px; text-align: center; }
+.render.failed .thumb { color: var(--danger); }
+.pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+.card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Mol*'s snapshot and trajectory pickers: scenes come from the workspace, not from Mol* snapshots. */
+#molstar .msp-viewport-top-left-controls { display: none !important; }
+.card-actions .btn { font-size: 12.5px; padding: 4px 9px; }
+</style>
+<style>/*__MOLSTAR_CSS__*/</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="bar-top">
+      <div class="ident"><span class="entry-id" id="entry-id"></span><h1 class="title" id="title"></h1></div>
+      <span class="sync" id="sync" data-mode="static"><span class="dot"></span><span id="sync-text">Offline copy</span></span>
+    </div>
+    <p class="meta" id="meta"></p>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" id="tab-3d" aria-controls="panel-3d" aria-selected="true">3D view</button>
+      <button class="tab" role="tab" id="tab-renders" aria-controls="panel-renders" aria-selected="false">Renders<span class="count" id="render-count"></span></button>
+      <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false">Files</button>
+    </nav>
+  </header>
+
+  <main class="panel">
+    <section id="panel-3d" role="tabpanel" aria-labelledby="tab-3d">
+      <div class="stage" id="stage">
+        <div id="molstar"></div>
+        <div class="status" id="status" role="status">Loading Mol*…</div>
+      </div>
+      <div class="below" id="below" aria-live="polite"></div>
+      <div class="deck">
+        <div class="row"><span class="label" id="lbl-chains">Chains</span><div class="chains" id="chains" role="group" aria-labelledby="lbl-chains"></div></div>
+        <div class="row"><span class="label" id="lbl-style">Style</span>
+          <div class="seg" role="group" aria-labelledby="lbl-style" id="seg-style">
+            <button class="chip" data-style="cartoon">Cartoon</button>
+            <button class="chip" data-style="surface">Surface</button>
+            <button class="chip" data-style="spacefill">Atoms</button>
+            <button class="chip" data-style="site">Binding site</button>
+          </div>
+        </div>
+        <div class="row"><span class="label" id="lbl-color">Color</span>
+          <div class="seg" role="group" aria-labelledby="lbl-color" id="seg-color">
+            <button class="chip" data-color="chain">Chain</button>
+            <button class="chip" data-color="ss">Secondary</button>
+            <button class="chip" data-color="rainbow">N→C</button>
+            <button class="chip" data-color="bfactor" id="chip-b">B-factor</button>
+          </div>
+        </div>
+        <div class="row"><label class="label" for="ligand">Ligand</label>
+          <select id="ligand"></select>
+          <label class="check"><input type="checkbox" id="water"> Waters</label>
+        </div>
+        <div class="row actions">
+          <button class="btn" id="btn-reset">Reset view</button>
+          <button class="btn" id="btn-spin" aria-pressed="false">Spin</button>
+          <button class="btn" id="btn-shot">Snapshot</button>
+          <button class="btn" id="btn-view">Copy view</button>
+          <button class="btn" id="btn-open">Open file…</button>
+          <button class="btn" id="btn-tools" aria-pressed="false">Mol* tools</button>
+          <input type="file" id="file-input" class="sr" accept=".cif,.mmcif,.pdb,.ent,.gz">
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-renders" class="panel scroll" role="tabpanel" aria-labelledby="tab-renders" hidden>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <section id="panel-files" class="panel scroll" role="tabpanel" aria-labelledby="tab-files" hidden>
+      <div class="files" id="files"></div>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="view-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="view-h">
+    <h2 id="view-h">Current view</h2>
+    <p class="note" id="view-note">Paste this into the chat and ask Claude to render the structure from this angle.</p>
+    <textarea id="view-text" readonly></textarea>
+    <div class="row"><button class="btn" id="view-close">Close</button><button class="btn primary" id="view-copy">Copy</button></div>
+  </div>
+</div>
+<div class="overlay lightbox" id="lightbox" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Render preview">
+    <img id="lightbox-img" alt="">
+    <div class="row"><button class="btn" id="lightbox-close">Close</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script type="application/json" id="studio-data">__STUDIO_DATA__</script>
+<script>
+/* Mol*'s bundled Emscripten (embind) glue builds two shapes of named wrapper with new Function().
+   Artifact pages may forbid evaluating strings, so serve exactly those shapes with closures. */
+(() => {
+  const Native = Function;
+  const named = /^return function [\w$]+\(\) \{\s*"use strict";\s*return body\.apply\(this, arguments\);\s*\};?\s*$/;
+  const dyn = /^return function dynCall_[\w$]+\([\w, ]*\) \{\s*return dynCall\(rawFunction(?:, [\w, ]*)?\);\s*\};?\s*$/;
+  function SafeFunction(...args) {
+    const body = String(args[args.length - 1]);
+    if (args.length === 2 && args[0] === 'body' && named.test(body)) return (fn) => function () { return fn.apply(this, arguments); };
+    if (args.length === 3 && args[0] === 'dynCall' && args[1] === 'rawFunction' && dyn.test(body)) return (call, raw) => function (...a) { return call(raw, ...a); };
+    return Native.apply(this, args);
+  }
+  SafeFunction.prototype = Native.prototype;
+  try { window.Function = SafeFunction; } catch (e) { /* keep the native constructor */ }
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/molstar@__MOLSTAR_VERSION__/build/viewer/molstar.js"></script>
+<script>/*__SCENE_JS__*/</script>
+<script>/*__ARTIFACT_FILES_JS__*/</script>
+<script>/*__WORKSPACE_JS__*/</script>

@@ -63,10 +63,12 @@ try:
         raise RuntimeError("Source snapshot changed during preview")
     manifest_path = Path(args.run_manifest)
     manifest = json.loads(manifest_path.read_text())
+    # The pip `bpy` module has no executable; record its extension module instead.
+    binary = Path(bpy.app.binary_path or bpy.__file__)
     manifest["development_source"] = {
         "sha256": cfg["identity"]["sha256"], "loaded_modules": loaded,
-        "runtime_versions": versions, "blender_binary": bpy.app.binary_path,
-        "blender_binary_sha256": digest_file(Path(bpy.app.binary_path)),
+        "runtime_versions": versions, "blender_binary": str(binary),
+        "blender_binary_sha256": digest_file(binary),
         "pid": os.getpid(), "ccd_sha256": cfg["ccd_sha256"],
         "runtime_modules": {module.__name__: {"path": module.__file__, "sha256": digest_file(Path(module.__file__))}
                             for module in (molecularnodes, biotite, numpy)},
