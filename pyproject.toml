@@ -14,14 +14,15 @@ license-files = ["LICENSE", "LICENSES/GPL-3.0-or-later.txt", "THIRD_PARTY_NOTICE
 dependencies = ["jsonschema>=4.23,<5", "pillow>=11,<13"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "numpy==1.26.4", "build>=1.2,<2"]
+dev = ["pytest>=8,<10", "numpy==1.26.4", "build>=1.2,<2", "playwright>=1.50,<2"]
 mcp = ["fastmcp==2.14.7"]
+hosted = ["fastmcp==2.14.7"]
 
 [project.scripts]
 blender-render = "blender_render.cli:main"
 
 [tool.setuptools]
-packages = ["blender_render"]
+packages = ["blender_render", "blender_render.hosted"]
 
 [tool.setuptools.package-data]
 blender_render = ["*.json", "*.txt"]

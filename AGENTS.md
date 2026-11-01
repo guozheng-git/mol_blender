@@ -3,7 +3,9 @@
 This branch supports PyMOL export, direct local Blender rendering, preset authoring,
 and optional stdio MCP for Claude/Codex. Keep one shared renderer in
 `blender_render/blender_custom_render.py`. CLI, PyMOL and MCP use `local.py` and the
-isolated `developer.preview` runner; do not add service queues or remote backends.
+isolated `developer.preview` runner. The optional `blender_render.hosted` adapter
+presents already-authorized outputs; keep service queues and remote execution out
+of the renderer. Import hosted dependencies only when explicitly selected.
 
 - Export CIF first and assign secondary structure in PyMOL before export.
 - Preserve enabled selections, transforms, colors and the saved camera by default.

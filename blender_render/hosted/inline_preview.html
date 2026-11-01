@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Molecular render</title>
+<style>
+:root{color-scheme:light dark;font:14px system-ui,sans-serif}
+html,body{margin:0;padding:0;background:transparent}img{display:block;width:100%;height:auto;object-fit:contain}nav{display:flex;gap:8px;flex-wrap:wrap;padding:10px 0}nav[hidden]{display:none}a,button{font:inherit;color:inherit;border:1px solid #8886;border-radius:6px;padding:7px 12px;text-decoration:none}img[hidden]{display:none}p{margin:0;padding:12px;color:inherit}
+</style>
+<main id="render">
+<img id="preview" alt="Blender molecular render" hidden>
+<p id="status" role="status">Waiting for the rendered image…</p>
+<nav id="downloads" aria-label="Download render" hidden></nav>
+<button id="share" type="button" hidden>Ask ChatGPT about this image</button>
+<p id="handoff" role="status" hidden></p>
+<button id="save" type="button" hidden>Save files to Library</button>
+<p id="saved" role="status" hidden></p>
+<button id="library" type="button" disabled>Use saved image</button>
+<p id="library-status" role="status" hidden></p>
+</main>
+<!-- viewer-options -->
+<script>
+const viewerOptions = JSON.parse(document.getElementById('viewer-options')?.textContent || '{}');
+const image = document.getElementById('preview');
+const status = document.getElementById('status');
+let shown = false;
+let saveSource = null;
+let saveFiles = [];
+let saving = false;
+const pendingUploads = new Map();
+let restoredFileId = null;
+const saveButton = document.getElementById('save');
+const savedStatus = document.getElementById('saved');
+const libraryButton = document.getElementById('library');
+const libraryStatus = document.getElementById('library-status');
+const library = {mode: false, busy: false, selection: null, generation: 0};
+const MAX_FILE_BYTES = 64 * 1024 * 1024;
+function libraryAvailable() {
+  return !!(window.openai?.selectFiles && window.openai?.getFileDownloadUrl);
+}
+function refreshLibrary() {
+  libraryButton.disabled = library.busy || !libraryAvailable();
+  if (library.mode && !library.busy) {
+    libraryStatus.hidden = false;
+    if (libraryButton.disabled) libraryStatus.textContent = 'Library selection is unavailable in this ChatGPT view.';
+    else if (!handoff.image) libraryStatus.textContent = 'Choose a PNG or JPEG from your Library. The original render is not needed.';
+  }
+}
+function hostFileCall(method, ...args) {
+  // Only machine operations time out; the user can take as long as needed in the picker.
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('ChatGPT file operation timed out')), 30000);
+    Promise.resolve().then(() => window.openai[method](...args))
+      .then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+function persistFiles(files, selected = library.selection) {
+  const png = files['render.png'] || null;
+  const ids = [selected?.fileId || png?.fileId].filter(Boolean);
+  // The API is synchronous: this records state, not a durable-storage receipt.
+  return window.openai?.setWidgetState?.({
+    modelContent: selected ? 'An image was retrieved from ChatGPT file storage; saving to Space is not confirmed.' : 'Uploaded render files: ' + Object.keys(files).join(', '),
+    privateContent: {savedImage:png, savedFiles:files, libraryImage:selected}, imageIds:ids
+  });
+}
+function blobData(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Image could not be read'));
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+}
+async function libraryPixels(file) {
+  const url = await savedFileUrl(file.fileId);
+  const blob = await fetchFile(url, ['image/png', 'image/jpeg']);
+  const bitmap = await createImageBitmap(blob); // Reject malformed image bytes before updating model state.
+  let modelBlob = blob;
+  const dimensions = {width:bitmap.width, height:bitmap.height};
+  try {
+    if (bitmap.width * bitmap.height > 64000000) throw new Error('Image dimensions are too large');
+    if (blob.size > 2 * 1024 * 1024 || Math.max(bitmap.width, bitmap.height) > 2048) {
+      const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      modelBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!modelBlob) throw new Error('Image preview could not be prepared');
+    }
+  } finally { bitmap.close(); }
+  const preview = {mimeType:modelBlob.type, data:await blobData(modelBlob)};
+  if (!validInlineImage(preview, ['image/png', 'image/jpeg'])) throw new Error('Image preview is too large to send');
+  let sha256 = null;
+  if (globalThis.crypto?.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    sha256 = Array.from(new Uint8Array(digest), x => x.toString(16).padStart(2, '0')).join('');
+  }
+  return {preview, sha256, ...dimensions};
+}
+async function useLibraryFile(file, generation) {
+  const loaded = await libraryPixels(file);
+  if (generation !== library.generation) return false;
+  library.selection = {fileId:file.fileId, fileName:file.fileName || 'saved-image', mimeType:loaded.preview.mimeType};
+  image.src = 'data:' + loaded.preview.mimeType + ';base64,' + loaded.preview.data;
+  libraryStatus.dataset.sha256 = loaded.sha256 || '';
+  libraryStatus.dataset.width = loaded.width;
+  libraryStatus.dataset.height = loaded.height;
+  setModelImage(loaded.preview, 'library-image');
+  await persistFiles(savedFiles);
+  libraryStatus.hidden = false;
+  libraryStatus.textContent = 'Image retrieved from ChatGPT. Use “Ask ChatGPT about this image” to send it.';
+  resize();
+  return true;
+}
+libraryButton.onclick = async () => {
+  if (library.busy || !libraryAvailable()) return;
+  library.busy = true; refreshLibrary();
+  libraryStatus.hidden = false;
+  libraryStatus.textContent = 'Choose one saved PNG or JPEG image…';
+  const generation = ++library.generation;
+  try {
+    const files = await window.openai.selectFiles();
+    if (!files?.length) { libraryStatus.textContent = 'No image selected.'; return; }
+    if (files.length !== 1 || typeof files[0]?.fileId !== 'string' || !files[0].fileId ||
+        !['image/png','image/jpeg'].includes(files[0].mimeType)) throw new Error('Choose exactly one PNG or JPEG image');
+    libraryStatus.textContent = 'Retrieving the image from ChatGPT Library…';
+    await useLibraryFile(files[0], generation);
+  } catch (error) {
+    libraryStatus.textContent = 'Library image was not loaded. ' + (error instanceof TypeError ? 'The file request failed; check this viewer’s network permissions.' : error.message);
+  } finally { library.busy = false; libraryButton.disabled = !libraryAvailable(); resize(); }
+};
+// Standard MCP Apps image delivery is independent of optional file storage.
+const host = {ready: false, capabilities: {}, pending: new Map(), sequence: 0};
+const handoff = {image: null, contextKey: null, contextBusy: false,
+                 sharing: false, postedImages: new Set()};
+const MAX_INLINE_IMAGE_BASE64_CHARS = 2796204;
+const shareButton = document.getElementById('share');
+const handoffStatus = document.getElementById('handoff');
+function requestHost(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = 'image-' + (++host.sequence);
+    const timer = setTimeout(() => { host.pending.delete(id); reject(new Error('Host response timed out')); }, 10000);
+    host.pending.set(id, {resolve, reject, timer});
+    parent.postMessage({jsonrpc:'2.0', id, method, params}, '*');
+  });
+}
+function imageContent(value) {
+  return [{type:'text', text:'Rendered molecular image' + (value.job ? ' for job ' + value.job : '') + '.'},
+          {type:'image', mimeType:value.mimeType, data:value.data}];
+}
+function validInlineImage(value, formats) {
+  return value && formats.includes(value.mimeType) &&
+    typeof value.data === 'string' && value.data.length > 0 && value.data.length <= MAX_INLINE_IMAGE_BASE64_CHARS &&
+    /^[A-Za-z0-9+/]+={0,2}$/.test(value.data);
+}
+function updateHandoff() {
+  shareButton.hidden = !(host.ready && handoff.image && host.capabilities.message?.image && viewerOptions.imageMessage !== false);
+  shareButton.disabled = handoff.sharing || !!(handoff.image && handoff.postedImages.has(handoff.image.key));
+  shareButton.textContent = handoff.image && handoff.postedImages.has(handoff.image.key) ? 'Image sent to ChatGPT' : 'Ask ChatGPT about this image';
+  if (!host.ready || !handoff.image || handoff.contextBusy || handoff.contextKey === handoff.image.key ||
+      !host.capabilities.updateModelContext?.image || viewerOptions.backgroundContext === false) return;
+  const value = handoff.image;
+  handoff.contextKey = value.key; // Do not retry a failed/ambiguous request automatically.
+  handoff.contextBusy = true;
+  requestHost('ui/update-model-context', {content:imageContent(value)})
+    .then(result => {
+      if (result?.isError) throw new Error('Context rejected');
+      if (handoff.image?.key === value.key) {
+        handoffStatus.hidden = false;
+        handoffStatus.textContent = 'Host accepted the image context request. Next-message image access is unverified.';
+      }
+    })
+    .catch(() => {
+      if (handoff.image?.key === value.key) {
+        handoffStatus.hidden = false;
+        handoffStatus.textContent = 'Image context could not be confirmed. You can send it using the button.';
+      }
+    })
+    .finally(() => { handoff.contextBusy = false; updateHandoff(); });
+}
+function normalizeEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') return null;
+  return envelope.mcp_tool_result || envelope.call_tool_result || envelope;
+}
+function resultImages(result) {
+  const supplied = result._meta?.preview || result.preview;
+  const content = Array.isArray(result.content) ? result.content : [];
+  const modelImage = value => validInlineImage(value, ['image/png', 'image/jpeg']);
+  return {
+    preview: supplied || content.find(item => item.type === 'image' && ['image/png','image/gif'].includes(item.mimeType)),
+    model: modelImage(supplied) ? supplied : content.find(modelImage)
+  };
+}
+function setModelImage(value, job) {
+  if (!value) return;
+  const key = job + '/' + value.mimeType + '/' + value.data;
+  if (handoff.image?.key === key) return;
+  handoff.image = {mimeType:value.mimeType, data:value.data, key, job};
+  handoffStatus.hidden = true;
+  updateHandoff();
+}
+shareButton.onclick = async () => {
+  if (handoff.sharing || !host.ready || !handoff.image || !host.capabilities.message?.image || viewerOptions.imageMessage === false || handoff.postedImages.has(handoff.image.key)) return;
+  const value = handoff.image;
+  handoff.sharing = true;
+  updateHandoff();
+  handoffStatus.hidden = false;
+  handoffStatus.textContent = 'Sending image to ChatGPT…';
+  try {
+    const content = imageContent(value);
+    content[0].text += viewerOptions.messagePrompt || ' Describe what you can see in this image.';
+    const result = await requestHost('ui/message', {role:'user', content});
+    if (result?.isError) throw new Error('Image rejected');
+    handoff.postedImages.add(value.key);
+    if (handoff.image?.key === value.key) handoffStatus.textContent = 'Image sent to ChatGPT for this conversation.';
+  } catch (_) {
+    if (handoff.image?.key === value.key) handoffStatus.textContent = 'Image delivery is unconfirmed. Check the chat before retrying.';
+  } finally { handoff.sharing = false; updateHandoff(); }
+};
+let storedImage = window.openai?.widgetState?.privateContent?.savedImage || null;
+let savedFiles = window.openai?.widgetState?.privateContent?.savedFiles || {};
+if (storedImage && !savedFiles['render.png']) savedFiles['render.png'] = storedImage;
+const fileTypes = {'render.png':'image/png','render.gif':'image/gif','render.mp4':'video/mp4',
+  'render.blend':'application/octet-stream','manifest.json':'application/json','frames.zip':'application/zip'};
+function alreadySaved(file) { return !!savedFiles[file.name]?.fileId && savedFiles[file.name].jobId === file.jobId; }
+function hydrateState(state) {
+  const files = state?.privateContent?.savedFiles || {};
+  for (const [name, file] of Object.entries(files)) {
+    if (fileTypes[name] && typeof file?.fileId === 'string' && file.fileId &&
+        (!saveSource || file.jobId === saveSource.jobId)) savedFiles[name] = file;
+  }
+  storedImage = savedFiles['render.png'] || storedImage;
+  if (!library.selection && state?.privateContent?.libraryImage) library.selection = state.privateContent.libraryImage;
+}
+function httpsUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && !url.username && !url.password) return url;
+  } catch (_) {}
+  return null;
+}
+function rendererUrl(value, purpose) {
+  const url = httpsUrl(value);
+  if (!url) return null;
+  const preview = url.pathname.startsWith('/preview/');
+  const download = url.pathname.startsWith('/download/');
+  if (purpose === 'preview' && preview) return url;
+  if (purpose === 'download' && download) return url;
+  if (purpose === 'save' && (preview || (download && url.searchParams.get('delivery') === 'ack'))) return url;
+  return null;
+}
+async function savedFileUrl(fileId) {
+  const {downloadUrl} = await hostFileCall('getFileDownloadUrl', {fileId});
+  const url = httpsUrl(downloadUrl);
+  if (!url) throw new Error('Invalid saved-file URL');
+  return url.href;
+}
+async function fetchFile(url, formats) {
+  const response = await fetch(url, {credentials:'omit', signal:AbortSignal.timeout(30000)});
+  if (!response.ok) throw new Error('The file could not be retrieved');
+  const mimeType = response.headers.get('content-type')?.split(';')[0];
+  if (!formats.includes(mimeType)) throw new Error('Unsupported file type');
+  if (Number(response.headers.get('content-length')) > MAX_FILE_BYTES) throw new Error('File exceeds 64 MiB');
+  const blob = await response.blob();
+  if (!blob.size || blob.size > MAX_FILE_BYTES) throw new Error('File is empty or exceeds 64 MiB');
+  return blob;
+}
+function downloadControls(links = []) {
+  const bar = document.getElementById('downloads');
+  bar.replaceChildren();
+  const entries = new Map();
+  for (const item of links) {
+    const url = rendererUrl(item.url, 'download');
+    if (fileTypes[item.name] && url) entries.set(item.name, {...item, url: url.href});
+  }
+  for (const [name, file] of Object.entries(savedFiles)) {
+    if (!saveSource || file.jobId === saveSource.jobId) entries.set(name, {...entries.get(name), name, jobId:file.jobId});
+  }
+  for (const item of entries.values()) {
+    if (!fileTypes[item.name]) continue;
+    const href = item.url || null;
+    const saved = savedFiles[item.name];
+    if (!href && !saved?.fileId) continue;
+    const link = document.createElement('a');
+    link.textContent = 'Download ' + item.name.split('.').pop().toUpperCase();
+    link.href = href || '#'; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.addEventListener('click', async event => {
+      const file = savedFiles[item.name];
+      if (file?.fileId && (!item.jobId || file.jobId === item.jobId)) {
+        event.preventDefault();
+        try {
+          const href = await savedFileUrl(file.fileId);
+          if (window.openai?.openExternal) window.openai.openExternal({href});
+          else window.open(href, '_blank', 'noopener,noreferrer');
+        } catch (_) { savedStatus.hidden=false; savedStatus.textContent='The saved file could not be opened.'; }
+      } else if (href && window.openai?.openExternal) {
+        event.preventDefault(); window.openai.openExternal({href});
+      }
+    });
+    bar.append(link);
+  }
+  bar.hidden = !bar.children.length;
+}
+let downloadLinks = [];
+async function restoreSavedImage() {
+  const saved = library.selection || savedFiles['render.gif'] || storedImage;
+  if (!saved?.fileId || !window.openai?.getFileDownloadUrl || restoredFileId === saved.fileId) return;
+  restoredFileId = saved.fileId;
+  const generation = library.generation;
+  try {
+    if (!library.selection && savedFiles['render.gif']?.fileId === saved.fileId) {
+      const url = await savedFileUrl(saved.fileId);
+      if (generation !== library.generation) return;
+      image.src = url;
+    } else {
+      if (!await useLibraryFile(saved, generation)) return;
+    }
+    savedStatus.hidden = false;
+    savedStatus.textContent = 'Uploaded image reopened from ChatGPT. This does not confirm it appears in Space.';
+  } catch (_) {
+    savedStatus.hidden = false;
+    savedStatus.textContent = 'The saved image could not be reopened. Use “Use saved image” to select it again.';
+  }
+}
+function refreshSaving() {
+  refreshLibrary();
+  hydrateState(window.openai?.widgetState);
+  downloadControls(downloadLinks);
+  if (!image.getAttribute('src') && (library.selection || savedFiles['render.gif'] || storedImage)) restoreSavedImage();
+  if (!saveSource) return;
+  const available = !!(window.openai?.uploadFile && window.openai?.setWidgetState);
+  saveButton.hidden = !available;
+  if (!available) {
+    savedStatus.hidden = false;
+    savedStatus.textContent = 'File saving is unavailable in this host. The image is still visible in this panel.';
+    resize();
+  }
+}
+saveButton.onclick = async () => {
+  if (saving || !saveSource || !window.openai?.uploadFile || !window.openai?.setWidgetState) return;
+  const sources = saveFiles.map(file => ({...file}));
+  saving = true; saveButton.disabled = true; savedStatus.hidden = false;
+  const failed = [];
+  for (const source of sources) {
+    if (alreadySaved(source)) continue;
+    const key = source.jobId + '/' + source.name;
+    savedStatus.textContent = 'Saving ' + source.name.split('.').pop().toUpperCase() + ' to ChatGPT…';
+    try {
+      let fileId = pendingUploads.get(key);
+      if (!fileId) {
+        let blob;
+        if (source.name === 'render.png' && validInlineImage(source, ['image/png'])) {
+          blob = new Blob([Uint8Array.from(atob(source.data), c => c.charCodeAt(0))], {type:source.mimeType});
+        } else {
+          const url = rendererUrl(source.url, 'save');
+          if (!fileTypes[source.name] || !url) throw new Error();
+          blob = await fetchFile(url.href, [fileTypes[source.name]]);
+        }
+        if (blob.size > MAX_FILE_BYTES) throw new Error();
+        const fileName = typeof source.fileName === 'string' && /^[A-Za-z0-9_.-]{1,100}$/.test(source.fileName) ? source.fileName : source.name;
+        ({fileId} = await hostFileCall('uploadFile', new File([blob], fileName, {type:fileTypes[source.name]}), {library:true}));
+        if (typeof fileId !== 'string' || !fileId) throw new Error();
+        pendingUploads.set(key, fileId);
+      }
+      if (saveSource.jobId !== source.jobId) break;
+      const nextFiles = {...savedFiles, [source.name]:{fileId, jobId:source.jobId}};
+      const nextImage = nextFiles['render.png'] || null;
+      await persistFiles(nextFiles);
+      savedFiles = nextFiles; storedImage = nextImage;
+      pendingUploads.delete(key);
+      downloadControls(downloadLinks);
+    } catch (_) { failed.push(source.name); }
+  }
+  const confirmed = sources.filter(alreadySaved).map(f => f.name.split('.').pop().toUpperCase());
+  savedStatus.textContent = (confirmed.length ? confirmed.join(', ') + ' uploaded; Library saving requested, not confirmed. Check Space for the file. ' : '') +
+    (failed.length ? failed.join(', ') + ' not saved. Retry or download these files.' : '');
+  saveButton.disabled = !failed.length;
+  saveButton.textContent = failed.length ? 'Retry saving files' : 'Files uploaded';
+  saving = false; resize();
+};
+function resize() {
+  const height = Math.ceil(document.getElementById('render').getBoundingClientRect().height);
+  window.openai?.notifyIntrinsicHeight?.(height);
+  if (parent !== window) parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height}}, '*');
+}
+function openLibraryPicker() {
+  if (!library.mode) {
+    // A fresh reuse panel must not recover stale state or contact the original server.
+    savedFiles = {}; storedImage = null; library.selection = null; restoredFileId = null;
+    handoff.image = null; saveSource = null; saveFiles = []; downloadLinks = [];
+    library.generation++; image.removeAttribute('src'); image.hidden = true;
+    saveButton.hidden = true; shown = false; status.hidden = false;
+    downloadControls(); updateHandoff();
+  }
+  library.mode = true;
+  status.textContent = 'Open an image from your ChatGPT Library.';
+  refreshLibrary();
+}
+function render(envelope) {
+  const result = normalizeEnvelope(envelope);
+  if (!result) return;
+  const reuse = result._meta?.library?.mode === 'reuse';
+  if (reuse) {
+    openLibraryPicker();
+    return;
+  }
+  const {preview, model} = resultImages(result);
+  const job = result.structuredContent?.job_id || result._meta?.saveImage?.jobId || '';
+  setModelImage(model, job);
+  const legacy = result._meta?.saveImage || result.saveImage;
+  const files = result._meta?.saveFiles || result.saveFiles || (legacy ? [{...legacy,name:'render.png',mimeType:'image/png'}] : []);
+  const source = files.find(file => fileTypes[file.name]);
+  if (source) {
+    savedFiles = Object.fromEntries(Object.entries(savedFiles).filter(([,file]) => file.jobId === source.jobId));
+    storedImage = savedFiles['render.png'] || null;
+    if (saveSource && source.jobId !== saveSource.jobId) { restoredFileId = null; library.selection = null; library.generation++; }
+  }
+  if (files.length) saveFiles = files.filter(file => fileTypes[file.name]);
+  if (source) {
+    saveSource = source;
+    saveButton.hidden = !(window.openai?.uploadFile && window.openai?.setWidgetState);
+    if (saveFiles.every(alreadySaved)) { saveButton.disabled = true; saveButton.textContent = 'Files uploaded'; }
+    refreshSaving();
+  }
+  const links = result._meta?.downloads || result.downloads;
+  if (Array.isArray(links)) downloadLinks = links;
+  downloadControls(downloadLinks);
+  if ((library.selection || savedFiles['render.gif'] || storedImage) && window.openai?.getFileDownloadUrl) {
+    restoreSavedImage();
+    return;
+  }
+  if (preview?.mimeType === 'image/gif' && typeof preview.url === 'string' && preview.url.length < 4096) {
+    const url = rendererUrl(preview.url, 'preview');
+    if (url) {
+      if (image.getAttribute('src') !== url.href) image.src = url.href;
+      return;
+    }
+  }
+  if (validInlineImage(preview, ['image/png', 'image/gif'])) {
+    const source = 'data:' + preview.mimeType + ';base64,' + preview.data;
+    if (image.getAttribute('src') !== source) image.src = source;
+    return;
+  }
+  if (!shown && result.structuredContent) {
+    status.textContent = 'The image preview is unavailable. Rendering has not been repeated.';
+  }
+}
+new ResizeObserver(resize).observe(document.getElementById('render'));
+image.onload = () => {
+  shown = true;
+  image.hidden = false;
+  status.hidden = true;
+  resize();
+};
+image.onerror = () => {
+  shown = false;
+  image.hidden = true;
+  status.hidden = false;
+  status.textContent = 'The preview is unavailable or has expired. Rendering has not been repeated.';
+  if ((storedImage || savedFiles['render.gif']) && !image.dataset.restoring) { image.dataset.restoring = 'true'; restoreSavedImage(); }
+  resize();
+};
+window.addEventListener('message', event => {
+  if (event.source !== parent || event.data?.jsonrpc !== '2.0') return;
+  const message = event.data;
+  const waiting = host.pending.get(message.id);
+  if (waiting && ("result" in message || "error" in message)) {
+    clearTimeout(waiting.timer); host.pending.delete(message.id);
+    if (message.error) waiting.reject(new Error("Host rejected request"));
+    else waiting.resolve(message.result);
+    return;
+  }
+  if (message.method === 'ping' && message.id !== undefined) {
+    parent.postMessage({jsonrpc:'2.0',id:message.id,result:{}}, '*');
+  }
+  if (message.method === 'ui/notifications/tool-result') render(message.params);
+  if (message.id === 'initialize' && message.result) {
+    host.ready = true;
+    host.capabilities = message.result.hostCapabilities || {};
+    parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'}, '*');
+    updateHandoff();
+  }
+});
+window.addEventListener('openai:set_globals', event => {
+  hydrateState(event.detail?.globals?.widgetState);
+  render(event.detail?.globals?.toolResponseMetadata);
+  refreshSaving();
+});
+// Some hosts install file extensions after the tool-result notification.
+let bridgeChecks = 0;
+const bridgeTimer = setInterval(() => {
+  refreshLibrary();
+  if (saveSource && window.openai?.uploadFile && window.openai?.setWidgetState) refreshSaving();
+  if (window.openai?.uploadFile && window.openai?.setWidgetState && window.openai?.selectFiles) clearInterval(bridgeTimer);
+  else if (++bridgeChecks >= 30) clearInterval(bridgeTimer);
+}, 1000);
+hydrateState(window.openai?.widgetState);
+refreshLibrary();
+downloadControls();
+render(window.openai?.toolResponseMetadata);
+render(window.openai?.toolOutput);
+if ((library.selection || storedImage || savedFiles['render.gif']) && !image.getAttribute('src')) restoreSavedImage();
+if (parent !== window) parent.postMessage({jsonrpc:'2.0',id:'initialize',method:'ui/initialize',params:{
+  appInfo:{name:'Blender Render',version:'0.2.0b1'},appCapabilities:{},protocolVersion:'2026-01-26'
+}}, '*');
+setTimeout(() => {
+  if (!library.mode && !shown && !image.getAttribute('src')) {
+    status.textContent = 'ChatGPT has not supplied the image to this viewer. Rendering has not been repeated.';
+    resize();
+  }
+}, 15000);
+</script>
+</html>

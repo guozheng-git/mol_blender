@@ -50,6 +50,12 @@ unconfirmed. Pixel availability in the next model step, Library/Space persistenc
 inline placement and real host reuse are acceptance gates, not consequences of
 passing simulated-host tests. Do not launch paid hosted renders for this audit.
 
+Implemented under `blender_render.hosted`: original native handoff and viewer
+code with a new authenticated, read-only `CompletedPNG` provider boundary.
+The source adapter and imported Chromium simulations pass **55 tests**, including
+original-URL revocation, saved-byte reuse and rejection of invalid artifacts.
+See [hosted-adapter.md](hosted-adapter.md) for the embedding contract and limits.
+
 ## Release gates
 
 - Bound Python and browser decompression before allocating decoded bundles;
