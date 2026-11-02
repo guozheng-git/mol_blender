@@ -13,7 +13,6 @@ def run(directory):
     from ..engine import generate_manifest
     from ..local import render_payload
     directory = Path(directory).resolve()
-    os.umask(0o077)
     with (directory / 'worker.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if (directory / 'result.json').exists() or (directory / 'cancel.requested').exists():
@@ -56,6 +55,7 @@ def run(directory):
 
 
 def main():
+    os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('job_directory', type=Path)
     raise SystemExit(run(parser.parse_args().job_directory))

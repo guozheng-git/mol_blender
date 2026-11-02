@@ -1368,6 +1368,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cluster = [
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
 dev = [
     { name = "build" },
     { name = "numpy" },
@@ -1391,8 +1395,10 @@ requires-dist = [
     { name = "pillow", specifier = ">=11,<13" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.50,<2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
+    { name = "starlette", marker = "extra == 'cluster'", specifier = "==1.10.0" },
+    { name = "uvicorn", marker = "extra == 'cluster'", specifier = "==0.54.0" },
 ]
-provides-extras = ["dev", "mcp", "hosted"]
+provides-extras = ["dev", "mcp", "hosted", "cluster"]
 
 [[package]]
 name = "pyperclip"

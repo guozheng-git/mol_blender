@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 
-from .common import TERMINAL, atomic_json, job_id, json_bytes, read_json, validate_request
+from .common import ARTIFACTS, TERMINAL, atomic_json, job_id, json_bytes, read_json, validate_request
 from .slurm import SubmissionUnknown
 
 
@@ -146,6 +146,32 @@ class Store:
                 record['status'] = 'submission_unknown'
                 self.save(record)
             return self.public(self.refresh(record))
+
+    def list_jobs(self, owner):
+        with self.locked():
+            records = [read_json(p, 64 * 1024) for p in self.root.glob('*/job.json')]
+            own = sorted((r for r in records if r['owner'] == owner),
+                         key=lambda r: r['created_at'], reverse=True)[:100]
+            return [self.public(self.refresh(r)) for r in own]
+
+    def open_artifact(self, owner, identifier, name):
+        with self.locked():
+            record = self.refresh(self.owned(owner, identifier))
+            if record['status'] != 'completed' or name not in ARTIFACTS:
+                raise NotFound('Artifact not found')
+            directory = self.directory(identifier)
+            receipt = read_json(directory / 'result.json', 64 * 1024)
+            metadata = receipt['artifacts'].get(name)
+            if not metadata:
+                raise NotFound('Artifact not found')
+            path = (directory / metadata['path']).resolve()
+            if not path.is_relative_to(directory / 'out') or not path.is_file():
+                raise NotFound('Artifact not found')
+            handle = path.open('rb')
+            if os.fstat(handle.fileno()).st_size != metadata['bytes']:
+                handle.close()
+                raise Conflict('Artifact changed after completion')
+            return handle, metadata
 
     def cancel(self, owner, identifier):
         with self.locked():

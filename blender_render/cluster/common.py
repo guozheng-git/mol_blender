@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from urllib.parse import urlsplit
 
 PROTOCOL = 1
 MAX_REQUEST = 20 * 1024**2
@@ -18,6 +19,16 @@ TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'expired'})
 PAYLOAD_KEYS = frozenset({'version', 'generated_at_utc', 'selection', 'state', 'run_id',
     'structure_summary', 'view', 'dss', 'ss_hints', 'cif_text', 'pdb_text', 'color_hints',
     'provenance', 'state_coordinates'})
+
+
+def validate_url(url):
+    parsed = urlsplit(url)
+    if (parsed.username or parsed.password or parsed.query or parsed.fragment or
+            parsed.path not in ('', '/') or not parsed.hostname):
+        raise ValueError('Use a service origin URL without credentials, query, fragment or path')
+    if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', '::1', 'localhost'}):
+        raise ValueError('Use HTTPS, or loopback HTTP through an SSH tunnel')
+    return url.rstrip('/')
 
 
 def json_bytes(value):
