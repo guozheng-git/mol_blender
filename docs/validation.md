@@ -354,3 +354,75 @@ attachment, save/reopen and automatic image-context acceptance; final-quality
 visual review. The low-sample tests verify execution and preservation, not final
 scientific figure quality. Nothing was pushed, deployed or published.
 
+# Optional shared cluster candidate, 2026-11-01
+
+Version **0.4.0rc2** adds an optional authenticated gateway, durable per-user job
+records, Slurm/Apptainer workers, and explicit PyMOL/CLI cluster submission. The
+renderer stays shared with local rendering. No service was deployed or published.
+
+- Final source suite with real PyMOL and Chrome enabled: **415 passed** in 28.48 s.
+- The wheel installed in a separate uv environment outside the checkout:
+  **415 passed** in 28.21 s. Its copied test tree contained no package source;
+  installed module locations and the complete engine manifest were asserted.
+- Four warnings in each suite: one deliberate duplicate-ZIP test, two existing
+  FastMCP/Authlib deprecations and the pinned Starlette test client's HTTPX
+  deprecation. There were no skipped tests in these runs.
+- Cluster checks cover authentication/revocation, ownership, quotas, bounded
+  data-only input, rejection of path-bearing export IDs, safe artifact paths,
+  cancellation, expiry, request idempotency, lost-response recovery, scheduler
+  uncertainty/reconciliation, polling backoff, checksum failures, TLS-origin
+  policy and local-render independence. HTTP client checks use an actual local
+  TCP listener; scheduler command behavior is simulated.
+- Resource isolation checks confirm CPU/thread limits and CUDA visibility survive
+  the isolated preview runner. Only Apptainer's fixed driver-library path can pass
+  through; unrelated library paths and service credentials stay excluded. This is
+  a code-level check, not evidence of an actual CUDA allocation.
+
+`scripts/validate_cluster_local.py` exercised the real PyMOL bridge through a
+temporary authenticated loopback gateway, a **local scheduler substitute**, the
+shared worker and actual Blender. It ran once against the final source and once
+against the installed wheel, using public 1STP, the existing pinned native Blender
+runtime, isolated uv controller/PyMOL environments and CPU rendering:
+
+- One still and one four-frame rocking movie per run, 192 × 144 and four samples.
+- Private local receipts recovered the original submitted jobs; no duplicate
+  render was submitted. Every downloaded artifact passed size and SHA-256 checks.
+- Both saved `.blend` scenes reopened with their camera and objects present.
+- The downloaded frame archive passed bounded unpacking and four-frame checks;
+  FFmpeg decoded the entire MP4. This does not add a new interactive GUI playback
+  claim to the earlier PyMOL GUI acceptance record.
+- Source and installed-wheel still/anchor images had identical RGB pixels and
+  matching resolved styles/cameras. The source still was visually inspected.
+  PNG file hashes differ because of metadata; per-download integrity was verified.
+- Runtime: **22.69 s source**, **22.31 s installed wheel**, including PyMOL export,
+  submission, polling, both renders, downloads and scene reopen checks.
+- Temporary listeners were closed and validation credentials removed.
+
+Reproduce with an already configured local runtime and a new output directory:
+
+```sh
+uv sync --locked --extra dev --extra mcp --extra cluster
+STRUCTURE_STUDIO_TEST_PYMOL=/path/to/pymol/python \
+STRUCTURE_STUDIO_TEST_WHEEL=/path/to/built.whl \
+python -m pytest tests --browser=/path/to/Chrome -q
+python scripts/validate_cluster_local.py \
+  --config /path/to/config.json --pymol /path/to/pymol/python \
+  --fixture examples/1stp.cif --output .validation/cluster-acceptance
+```
+
+The tested engine identity is
+`a2cbbc13912aece3f71af6dab1c0ad2e82b99e0d8d5935e6d16d5300bd330ff4`.
+Final wheel/plugin ZIPs are rebuilt from the committed source using
+`scripts/build_release.py`; their revision and hashes are recorded in
+`release.json`. `scripts/verify_release.py` compares every packaged source byte
+against that revision. Execution evidence is stored with the local artifacts in
+`validation.json`, without putting local paths or molecular data into Git.
+
+**Remaining cluster gate:** the authorized Linux machine reported online through
+Tailscale, but SSH connections through LAN, Tailscale IPv4/IPv6 and the Tailscale
+SSH wrapper timed out. No remote files were changed, Slurm jobs submitted, SIF
+built, Linux runtime reused or CUDA rendering verified there. The reusable uv
+container definition and Slurm launch arguments still need real target-host
+validation before opening the service to other users. The source/wheel tests and
+Mac renders do not satisfy that gate. See [shared cluster setup](shared-cluster.md).
+

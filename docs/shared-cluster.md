@@ -187,6 +187,8 @@ other jobs are not bound. `srun` supplies CPU affinity and GPU allocation, and t
 launcher forwards its `CUDA_VISIBLE_DEVICES` through the clean environment. Slurm
 must enforce the site's CPU, memory and device limits. SIF/runtime directories
 should be read-only to service clients and immutable while jobs are active.
+The isolated renderer retains these compute limits and Apptainer's fixed driver
+library path, while discarding unrelated library paths and credentials.
 
 ## Lifecycle and administrator recovery
 
@@ -226,4 +228,5 @@ The launcher follows the documented behavior of
 [Slurm sacct](https://slurm.schedmd.com/sacct.html),
 [Apptainer binds](https://apptainer.org/docs/user/latest/bind_paths_and_mounts.html),
 [Apptainer environment overrides](https://apptainer.org/docs/user/latest/environment_and_metadata.html),
+[Apptainer NVIDIA support](https://apptainer.org/docs/user/latest/gpu.html),
 and [uv container environments](https://docs.astral.sh/uv/guides/integration/docker/).
