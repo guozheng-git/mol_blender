@@ -77,6 +77,17 @@ def test_snapshot_tracks_python_and_assets(tmp_path):
     assert second["sha256"] != third["sha256"]
 
 
+def test_installed_source_snapshot_does_not_require_git(tmp_path, monkeypatch):
+    package = tmp_path / 'installed/blender_render'
+    package.mkdir(parents=True)
+    (package / 'blender_custom_render.py').write_text('value = 1\n')
+    monkeypatch.setenv('PATH', str(tmp_path / 'no-executables'))
+    identity = developer.snapshot_source(package.parent, tmp_path / 'snapshot')
+    assert all(identity[key] is None for key in ('git_head', 'git_branch', 'git_status'))
+    assert identity['files'] == developer.source_files(package)
+    assert identity['sha256'] == developer.source_digest(identity['files'])
+
+
 def test_preview_default_source_is_working_checkout_not_installed_package(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     args = developer.parser().parse_args(["preview", "bundle.json", "--output", "preview", "--blender", "blender",

@@ -55,7 +55,12 @@ def snapshot_source(checkout: Path, destination: Path) -> dict:
     if before != copied or before != source_files(source):
         raise RuntimeError("Source changed while snapshotting; retry once edits are saved")
     def git(*args):
-        result = subprocess.run(["git", "-C", str(checkout), *args], capture_output=True, text=True)
+        try:
+            result = subprocess.run(["git", "-C", str(checkout), *args], capture_output=True, text=True)
+        except FileNotFoundError:
+            # Installed wheels and minimal containers need no Git executable.
+            # The complete byte inventory above remains the source identity.
+            return None
         return result.stdout.strip() if result.returncode == 0 else None
     return {"checkout": str(checkout), "snapshot": str(destination),
             "git_head": git("rev-parse", "HEAD"), "git_branch": git("branch", "--show-current"),
