@@ -517,7 +517,71 @@ wheel used for the successful cluster tests, and detailed execution evidence is
 stored alongside the frozen artifacts in `validation.json` without committing
 machine paths or molecular outputs.
 
-This completes the real Slurm/Apptainer validation gate. It does not deploy a
-permanent multi-user service, configure site TLS/identity infrastructure, or
-resolve the separate live hosted-client attachment/save/reopen/image-context
-acceptance gates noted above.
+That validation used temporary gateways. The persistent deployment is recorded
+below. The separate live hosted-client attachment/save/reopen/image-context
+acceptance gates noted above remain separate work.
+
+## Persistent shared cluster service — 0.4.0rc4 (2026-11-01)
+
+At the user's request, a persistent gateway was deployed on the authorized Linux
+desktop's cluster interface using free port **8772**. The user explicitly selected
+**no authentication**: all callers share a queue and can list, fetch, cancel and
+delete its jobs. Token authentication remains the default for other deployments;
+open mode requires `authentication: none`. HTTPS certificate validation remains
+enabled, using a private CA supplied by the shared client setup script.
+
+The gateway is an enabled systemd user service with `Restart=on-failure` and
+`Linger=yes`. A forced process kill during the animation test recovered
+automatically in **7.02 seconds**, with a new gateway PID and the **same Slurm job**.
+The gateway remained active after the test clients and SSH commands exited.
+Boot startup is configured; the desktop was **not rebooted** for this test.
+
+Actual runtime checks:
+
+- Mac source suite: **425 passed**, four existing warnings, **24.05 s**. The tested
+  and deployed wheel contents are byte-identical; ZIP timestamps differ between
+  the intermediate and frozen builds.
+- Installed Linux wheel outside the checkout: **45 cluster tests passed**, one
+  dependency deprecation warning, **3.58 s**. Both token and open modes exercise
+  real HTTP connections; a scheduler substitute in these tests is complemented
+  by the hardware checks below.
+- A real PyMOL process inside a separate CPU Slurm allocation used the shared
+  controller and verified HTTPS endpoint without credentials. Its still and
+  four-frame rock animation ran in separate real Slurm/Apptainer allocations on
+  **NVIDIA H200 NVL / CUDA**. The complete endpoint acceptance took **562.59 s**,
+  including queue time, restart recovery, downloads and inspections. Slurm
+  recorded **3:44** for the still and **3:37** for the animation allocation.
+- Downloads passed size/hash checks. Both Blender scenes reopened, the movie
+  decoded, GIF/frame counts matched, and animation frames differed. Chrome played
+  the downloaded 192×144 MP4 with advancing time and `paused=false`.
+- A generated, trusted PyMOL session and the Blender/movie/frame artifacts were
+  bundled, restored with matching hashes, and reopened. No executable session
+  was uploaded to the gateway.
+- Two credential-free client profiles saw the same job. Exact retries reused
+  one Slurm allocation, conflicting retries were rejected, and a separate queued
+  allocation was cancelled through the API. All three test jobs were deleted;
+  only their small idempotency records remain in the service spool.
+- Direct local rendering on the Mac still completed on Apple Metal, and its saved
+  Blender scene reopened. Shared client setup preserved existing local runtime
+  paths while recording its controller interpreter. The Mac client also reached
+  the live gateway using the configured private CA.
+
+The deployment uses one GPU, four CPUs and 8 GiB per render, at most four active
+jobs in the shared queue, a one-hour render deadline, 24-hour result retention,
+and a 20 GiB spool admission limit. Jobs use the configured service Unix identity
+and Slurm account. Shared client files are not writable by other users; TLS keys
+and the spool remain private. The open API intentionally exposes shared job
+results to callers who can reach the endpoint.
+
+The **frozen application revision is `67ea217`**. Its wheel and plugin ZIPs passed
+`scripts/verify_release.py`. The offline image update verified identical runtime
+contracts and render/PyMOL requirements, then replaced only the application wheel
+using uv. Existing Linux environments stayed at their original absolute paths;
+no Mac environment was copied and jobs run no installers. The gateway and image
+both reported renderer identity
+`ffa37d1043dd73118c60004b04b8583e3bfaedd6bd43d646a959f0fc4b91f3d2`.
+The deployed SIF has SHA-256
+`d2705cd5fd6a7037b967091522dd99f43999ff174b30fcf3bece2bf0f1be668d`.
+Machine-specific connection details and execution evidence are retained locally,
+outside version control. All source/documentation commits remain local; no push
+was performed.
