@@ -9,6 +9,7 @@ from pathlib import Path
 import socket
 import struct
 import sys
+import tempfile
 import time
 
 import pytest
@@ -90,6 +91,19 @@ def test_concurrent_start_does_not_duplicate_worker(runtime):
     with concurrent.futures.ThreadPoolExecutor(2) as executor:
         a, b = [executor.submit(warm_worker.start, settings=runtime) for _ in range(2)]
         assert a.result()['id'] == b.result()['id']
+
+
+def test_long_scratch_path_keeps_bulk_data_out_of_container_tmp(runtime, tmp_path, monkeypatch):
+    scratch = tmp_path / ('scratch-' + 'x' * 80)
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, 'tempdir', str(scratch))
+    session = warm_worker.start(settings=runtime)
+    assert Path(session['root']).parent == scratch
+    assert len(os.fsencode(session['socket'])) < 100
+    socket_root = Path(session['socket']).parent
+    assert socket_root != Path(session['root'])
+    warm_worker.stop()
+    assert not Path(session['root']).exists() and not socket_root.exists()
 
 
 def test_changed_runtime_or_compute_allocation_requires_restart(runtime, monkeypatch):

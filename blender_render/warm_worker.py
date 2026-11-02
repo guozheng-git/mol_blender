@@ -66,12 +66,22 @@ def _session(registry):
         return None
     session = json.loads(path.read_text())
     root = _private(Path(session['root']))
-    if not root.name.startswith('br-warm-') or session['socket'] != str(root / 'worker.sock'):
-        raise ValueError('Invalid warm worker session path')
     cfg = json.loads((root / 'worker.json').read_text())
+    socket_root = _private(Path(session['socket']).parent)
+    if (not root.name.startswith('br-warm-') or session['socket'] != cfg['socket'] or
+            Path(session['socket']).name != 'worker.sock' or
+            (socket_root != root and not socket_root.name.startswith('br-sock-'))):
+        raise ValueError('Invalid warm worker session path')
     if cfg['worker_id'] != session['id']:
         raise ValueError('Warm worker session identity changed')
     return session
+
+
+def _cleanup(root, socket_path):
+    socket_root = Path(socket_path).parent
+    if socket_root != root:
+        shutil.rmtree(socket_root, ignore_errors=True)
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def _alive(pid):
@@ -99,13 +109,15 @@ def _existing(registry):
         if _alive(session['blender_pid']):
             raise RuntimeError('Warm supervisor exited; waiting for its Blender process to stop. Retry shortly.')
         # An unclean exit may leave only this verified, private source snapshot.
-        shutil.rmtree(session['root'])
         (registry / 'session.json').unlink(missing_ok=True)
+        _cleanup(Path(session['root']), session['socket'])
         return None
 
 
 def status():
-    return _existing(_registry()) or {'status': 'stopped'}
+    registry = _registry()
+    with _lock(registry):
+        return _existing(registry) or {'status': 'stopped'}
 
 
 def _fingerprint(settings):
@@ -141,11 +153,13 @@ def start(*, idle_timeout=900, settings=None):
             if current['key'] != key:
                 raise RuntimeError('Warm worker source/runtime changed. Run blender-render worker stop, then retry.')
             return current
-        # Keep Unix socket names short even when config or Darwin TMPDIR paths are long.
-        base = tempfile.gettempdir()
-        if len(os.fsencode(base)) > 50:
-            base = '/tmp'
-        root = Path(tempfile.mkdtemp(prefix='br-warm-', dir=base)).resolve()
+        # Keep bulk source/CCD data on the selected scratch filesystem. Only the
+        # tiny IPC socket needs a short name (Darwin has a 104-byte path limit).
+        root = Path(tempfile.mkdtemp(prefix='br-warm-')).resolve()
+        socket_root = root
+        if len(os.fsencode(str(root / 'worker.sock'))) >= 100:
+            socket_root = Path(tempfile.mkdtemp(prefix='br-sock-', dir='/tmp')).resolve()
+        socket_path = str(socket_root / 'worker.sock')
         process = None
         try:
             identity = snapshot_source(Path(__file__).resolve().parent.parent, root / 'source')
@@ -161,6 +175,7 @@ def start(*, idle_timeout=900, settings=None):
             if digest_file(root / 'components.bcif') != inputs['ccd_sha256']:
                 raise RuntimeError('CCD changed during startup')
             cfg = {'root': str(root), 'registry': str(registry), 'worker_id': uuid.uuid4().hex,
+                   'socket': socket_path,
                    'identity': identity, 'key': key, 'idle_timeout': idle_timeout,
                    'blender': str(settings['blender']), 'runtime_paths': paths,
                    'ccd': str(root / 'components.bcif'), 'ccd_sha256': inputs['ccd_sha256']}
@@ -184,7 +199,7 @@ def start(*, idle_timeout=900, settings=None):
             if process and process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
-            shutil.rmtree(root, ignore_errors=True)
+            _cleanup(root, socket_path)
             (registry / 'session.json').unlink(missing_ok=True)
             raise
 
@@ -231,7 +246,7 @@ class Supervisor:
         self.last_activity = time.monotonic()
         self.completed = 0
         self.session = {'id': cfg['worker_id'], 'pid': os.getpid(), 'blender_pid': process.pid,
-                        'root': cfg['root'], 'socket': str(Path(cfg['root']) / 'worker.sock'),
+                        'root': cfg['root'], 'socket': cfg['socket'],
                         'key': cfg['key'], 'source_sha256': cfg['identity']['sha256'],
                         'idle_timeout': cfg['idle_timeout']}
 
@@ -352,7 +367,7 @@ def serve(config_path):
         path = registry / 'session.json'
         if path.exists() and json.loads(path.read_text()).get('id') == cfg['worker_id']:
             path.unlink()
-        shutil.rmtree(root, ignore_errors=True)
+        _cleanup(root, cfg['socket'])
 
 
 if __name__ == '__main__':
