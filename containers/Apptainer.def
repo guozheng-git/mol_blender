@@ -22,6 +22,7 @@ From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b
     /opt/uv-tool/bin/pip install uv==0.11.32
     export PATH=/opt/uv-tool/bin:$PATH
     export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
+    export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
     python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup
     # The same uv-managed render/PyMOL environments serve local CLI and Slurm jobs.
     # No dependency resolution, installation or environment copy happens at runtime.
