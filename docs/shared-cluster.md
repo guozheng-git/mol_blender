@@ -133,8 +133,9 @@ For an application-only update to an already validated Linux SIF, first verify
 the base image against its recorded SHA-256. Then use
 [`Apptainer-update.def`](../containers/Apptainer-update.def) with `BASE_IMAGE` and
 `RELEASE_DIR` build arguments. It requires identical render/PyMOL requirement
-files and runs the same uv setup offline, keeping the Linux environments at their
-original absolute paths. Changed dependency pins require a full image build.
+files and an identical runtime contract, then replaces only the application wheel
+with uv offline. The Linux environments stay at their original absolute paths.
+Changed dependency pins require a full image build.
 Record the new SIF hash and run `cluster doctor` before switching the gateway;
 gateway and image must contain the same wheel.
 

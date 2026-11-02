@@ -25,7 +25,25 @@ From: {{ BASE_IMAGE }}
     export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
     export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
     export UV_OFFLINE=1
-    python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup --only render
+    # uv sync needs registry metadata even when every dependency is installed.
+    # The base image intentionally drops its cache. Check the complete runtime
+    # contract and install only the new local wheel, without resolving packages.
+    /opt/studio-runtime/render/bin/python - <<'PY'
+    import hashlib, json, pathlib, subprocess, sys, sysconfig, zipfile
+    wheels = list(pathlib.Path('/opt/structure-studio/skills/structure-studio/assets/wheels').glob('*.whl'))
+    assert len(wheels) == 1
+    wheel = wheels[0]
+    old = pathlib.Path(sysconfig.get_paths()['purelib']) / 'blender_render/engine-manifest.json'
+    with zipfile.ZipFile(wheel) as archive:
+        manifest = json.loads(archive.read('blender_render/engine-manifest.json'))
+    assert manifest['runtime_requirements'] == json.loads(old.read_text())['runtime_requirements'], 'Runtime pins changed; use a full build'
+    subprocess.run(['/opt/uv-tool/bin/uv', 'pip', 'install', '--offline', '--no-deps',
+                    '--python', sys.executable, str(wheel)], check=True)
+    state_path = pathlib.Path('/opt/studio-runtime/state.json')
+    state = json.loads(state_path.read_text())
+    state['wheel_sha256'] = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    state_path.write_text(json.dumps(state, indent=2) + '\n')
+    PY
     /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check
 
 %test
