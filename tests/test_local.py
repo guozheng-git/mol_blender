@@ -115,7 +115,7 @@ print(json.dumps({'prefix': sys.prefix, 'package': blender_render.__file__,
                             env=local_bridge.controller_environment(), capture_output=True, text=True, check=True)
     observed = json.loads(result.stdout)
     assert observed['prefix'] == sys.prefix
-    assert Path(observed['package']).parent == Path(local_bridge.__file__).parent
+    assert Path(observed['package']).resolve().parent == Path(local_bridge.__file__).resolve().parent
     assert observed['config'] == str(tmp_path / 'client-config')
     assert observed['gpu'] == '2'
     assert os.environ[variable] == foreign  # The running PyMOL keeps its own runtime.

@@ -585,3 +585,41 @@ The deployed SIF has SHA-256
 Machine-specific connection details and execution evidence are retained locally,
 outside version control. All source/documentation commits remain local; no push
 was performed.
+
+## Embedded PyMOL controller handoff (2026-11-01)
+
+The live Mac PyMOL 2.5.4 application exposed an integration gap in the earlier
+headless checks: its Conda launcher sets `PYTHONEXECUTABLE`. Inheriting that value
+made the explicitly selected uv Python lose its virtual-environment package
+paths, producing a platform-library warning followed by a missing `jsonschema`
+error. The dependency was already installed in the correct controller. The
+failure happened before writing a submission receipt or creating a Slurm job.
+
+Commit `1c2c6ee` gives both local and cluster PyMOL bridges the same child-process
+environment helper. It removes `PYTHONEXECUTABLE`, `PYTHONHOME` and
+`__PYVENV_LAUNCHER__`, selects the current package explicitly, and preserves the
+running PyMOL's own environment, client configuration and GPU visibility.
+
+Executed checks:
+
+- Reproduced the reported import failure using the actual launcher setting.
+- **68 relevant source tests passed** in **4.02 s**, with three dependency
+  deprecation warnings. New regressions launch real controller processes under
+  foreign Python settings and submit over real HTTP in token and open modes;
+  a scheduler substitute keeps those automated tests independent of Slurm.
+- Built a local wheel/plugin candidate from `1c2c6ee`, verified its source bytes,
+  and ran **68 tests against the installed wheel outside the checkout** in
+  **6.21 s**. The package-location assertion resolves macOS's equivalent
+  `/var` and `/private/var` paths.
+- Reloaded the repaired bridge in the user's existing PyMOL GUI and verified
+  that its child imported `jsonschema` from the uv controller environment.
+- Retried the user's bundled thioredoxin example once, at **384×288 / 8 samples**.
+  The real Slurm/Apptainer job completed on **NVIDIA L40S / CUDA** in **16.98 s**
+  from submission to worker completion. Fetching through the same GUI verified
+  the artifact hash, saved the PNG and visibly displayed it in PyMOL.
+- A separate direct local render completed in **11.26 s** while the parent had
+  the same problematic launcher setting, exercising the repaired local bridge.
+
+The repaired client was validated against the frozen persistent gateway/image
+over protocol 1. GUI observations and machine-specific evidence are retained
+outside version control. The fix and validation commits remain local.
