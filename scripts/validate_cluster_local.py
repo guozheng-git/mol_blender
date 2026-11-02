@@ -102,6 +102,9 @@ with pymol2.PyMOL() as p:
         samples=4, save_blend=1, auto_preview=0, _self=p.cmd, **motion)
     Path(sys.argv[3], sys.argv[4]+'.submitted.json').write_text(json.dumps(result))
 ''')
+    reopen = root / 'reopen_blend.py'
+    reopen.write_text("import bpy, sys\nbpy.ops.wm.open_mainfile(filepath=sys.argv[-1], load_ui=False, use_scripts=False)\n"
+                      "assert bpy.context.scene.camera\nassert len(bpy.data.objects)>1\nprint('REOPEN_OK')\n")
     try:
         client = Client('acceptance')
         for name in ('still', 'rock'):
@@ -119,8 +122,8 @@ with pymol2.PyMOL() as p:
                 assert png.size == (192, 144)
                 assert png.convert('RGB').getcolors(50) is None
             blend = fetched['outputs']['render.blend']
-            reopened = subprocess.run([runtime['blender'], '--background', blend, '--python-expr',
-                'import bpy; assert bpy.context.scene.camera; assert len(bpy.data.objects)>1; print("REOPEN_OK")'],
+            reopened = subprocess.run([runtime['blender'], '--background', '--disable-autoexec',
+                '--python-exit-code', '1', '--python', str(reopen), '--', blend],
                 capture_output=True, text=True, timeout=120)
             (root / (name + '-reopen.log')).write_text(reopened.stdout + '\n' + reopened.stderr)
             assert reopened.returncode == 0 and 'REOPEN_OK' in reopened.stdout
