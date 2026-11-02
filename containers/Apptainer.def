@@ -5,6 +5,7 @@ From: debian@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae
 # Linux x86_64 only. No Mac environments or caches are copied into the image.
 %arguments
     RELEASE_DIR=dist/release
+    BUILD_PROXY=
 
 %files
     {{ RELEASE_DIR }}/plugin/structure-studio /opt/structure-studio
@@ -12,6 +13,11 @@ From: debian@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae
 
 %post
     set -eu
+    # Optional build-only proxy; never inherited by render jobs.
+    if [ -n '{{ BUILD_PROXY }}' ]; then
+        export http_proxy='{{ BUILD_PROXY }}' https_proxy='{{ BUILD_PROXY }}'
+        export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy"
+    fi
     apt-get update
     apt-get install -y --no-install-recommends python3 python3-venv ca-certificates ffmpeg \
         libxrender1 libxxf86vm1 libxfixes3 libxi6 libxkbcommon0 libsm6 libice6 \
