@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae988e
+From: debian@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae988e
 
 # Run from the repository root after scripts/build_release.py --output dist/release.
 # Linux x86_64 only. No Mac environments or caches are copied into the image.
