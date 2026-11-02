@@ -3,6 +3,8 @@ import os
 import re
 import shlex
 import subprocess
+from datetime import datetime
+import pwd
 
 
 class SubmissionUnknown(RuntimeError):
@@ -21,16 +23,36 @@ class Slurm:
                 env[name] = os.environ[name]
         return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30, check=True)
 
-    def script(self, directory):
+    def container_command(self, directory):
         c = self.config
         command = [c.apptainer, 'exec', '--cleanenv', '--containall', '--no-home',
                    '--no-mount', 'hostfs,bind-paths,cwd', '--bind', f'{directory}:/job',
                    '--pwd', '/job']
         if c.gpus:
             command.append('--nv')
-        command.extend([str(c.image), '/opt/studio-runtime/render/bin/python', '-I',
-                        '-m', 'blender_render.cluster.worker', '/job'])
-        return '#!/bin/sh\nset -eu\numask 077\nexec ' + shlex.join(command) + '\n'
+        runtime = str(c.runtime_home or '/opt/studio-runtime')
+        if c.runtime_home:
+            command.extend(['--bind', f'{runtime}:{runtime}:ro',
+                            '--env', 'STRUCTURE_STUDIO_HOME=' + runtime,
+                            '--env', 'BLENDER_RENDER_HOME=' + runtime + '/blender-render'])
+        command.extend([str(c.image), runtime + '/render/bin/python', '-I',
+                        '-m', 'blender_render.cluster.worker'])
+        return command
+
+    def script(self, directory):
+        command = self.container_command(directory) + ['/job']
+        # srun establishes task CPU affinity and CUDA_VISIBLE_DEVICES before the
+        # small fixed shell forwards those settings into the clean container.
+        launch = ('set -eu\n'
+                  f'export APPTAINERENV_OMP_NUM_THREADS={self.config.cpus}\n'
+                  f'export APPTAINERENV_OPENBLAS_NUM_THREADS={self.config.cpus}\n')
+        if self.config.gpus:
+            launch += 'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:?Slurm did not assign a GPU}"\n'
+        launch += 'exec "$@"'
+        task = [self.config.srun, '--export=ALL', '--ntasks=1',
+                f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores',
+                '/bin/sh', '-c', launch, 'blender-cluster', *command]
+        return '#!/bin/sh\nset -eu\numask 077\nexec ' + shlex.join(task) + '\n'
 
     def submit(self, directory, identifier):
         c = self.config
@@ -66,8 +88,13 @@ class Slurm:
 
     def state(self, identifier):
         identifier = self.checked_id(identifier)
-        output = self.run([self.config.squeue, '--noheader', '--jobs=' + identifier,
-                           '--format=%T']).stdout.strip()
+        try:
+            output = self.run([self.config.squeue, '--noheader', '--jobs=' + identifier,
+                               '--format=%T']).stdout.strip()
+        except subprocess.CalledProcessError:
+            # Some Slurm versions return nonzero once a job leaves squeue.
+            # Accounting is still authoritative for the terminal state.
+            output = ''
         if output:
             return output.splitlines()[0].split()[0].rstrip('+')
         output = self.run([self.config.sacct, '--noheader', '--parsable2', '--allocations',
@@ -80,3 +107,23 @@ class Slurm:
 
     def cancel(self, identifier):
         self.run([self.config.scancel, self.checked_id(identifier)])
+
+    def find_submission(self, identifier, created_at):
+        """Recover an ambiguous sbatch outcome by its exact unique job name and Unix owner."""
+        from .common import job_id
+        name = 'br-' + job_id(identifier)
+        owner = pwd.getpwuid(os.getuid()).pw_name
+        pending = self.run([self.config.squeue, '--noheader', '--user=' + owner,
+                           '--name=' + name, '--format=%i|%j']).stdout
+        since = datetime.fromtimestamp(created_at - 3600).strftime('%Y-%m-%dT%H:%M:%S')
+        history = self.run([self.config.sacct, '--noheader', '--parsable2', '--allocations',
+                           '--user=' + owner, '--name=' + name, '--starttime=' + since,
+                           '--format=JobIDRaw,JobName%64']).stdout
+        matches = set()
+        for line in (pending + '\n' + history).splitlines():
+            fields = line.split('|')
+            if len(fields) >= 2 and fields[1].strip() == name:
+                matches.add(self.checked_id(fields[0].strip()))
+        if len(matches) > 1:
+            raise RuntimeError('Multiple matching Slurm jobs; administrator review required')
+        return next(iter(matches), None)

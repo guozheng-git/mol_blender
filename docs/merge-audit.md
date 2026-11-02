@@ -37,6 +37,11 @@ the shared animation modules with current `main` and its explicit port `1f345bf`
 
 ## PR #3 boundary
 
+Subsequent explicitly requested work adds a new optional cluster service under
+`blender_render.cluster`, documented in [shared-cluster.md](shared-cluster.md).
+It wraps the current renderer; the legacy service/worker architecture below was
+not restored. The PR audit records the original merge decision.
+
 The PR is stacked on `codex/chatgpt-inline-results`, not current main. Its full
 ancestry includes #2, remote queues, Modal/Slurm workers, authentication, consumer
 records and old interactive installation code. Its seven direct commits are

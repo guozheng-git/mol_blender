@@ -99,6 +99,11 @@ def test_quota_and_scheduler_failure_are_not_silent_success(store):
     with pytest.raises(Quota):
         store.submit('alice', request('f' * 32))
     store.scheduler.state_value = 'COMPLETED'
+    identifier = store.scheduler.submissions[0]
+    assert store.status('alice', identifier)['status'] == 'finalizing'
+    record = store.owned('alice', identifier)
+    record['completion_seen_at'] -= 61
+    store.save(record)
     assert store.status('alice', store.scheduler.submissions[0])['status'] == 'failed'
 
 
@@ -158,6 +163,42 @@ def test_slurm_accounting_fallback_and_ambiguous_output(config, monkeypatch):
         scheduler.submit(config.spool, 'a' * 32)
     with pytest.raises(ValueError):
         scheduler.cancel('123; rm anything')
+
+
+def test_slurm_removed_queue_entry_still_uses_accounting(config, monkeypatch):
+    scheduler = Slurm(config)
+    def run(command):
+        if command[0] == config.squeue:
+            raise subprocess.CalledProcessError(1, command, stderr='Invalid job id')
+        return SimpleNamespace(stdout='123|CANCELLED by 1000|\n')
+    monkeypatch.setattr(scheduler, 'run', run)
+    assert scheduler.state('123') == 'CANCELLED'
+
+
+def test_reuses_linux_uv_environment_at_its_original_path(config, tmp_path):
+    from dataclasses import replace
+    runtime = tmp_path / 'shared uv runtime'
+    config = replace(config, runtime_home=runtime, gpus=1)
+    command = Slurm(config).container_command(config.spool)
+    assert f'{runtime}:{runtime}:ro' in command
+    assert str(runtime / 'render/bin/python') in command
+    assert 'BLENDER_RENDER_HOME=' + str(runtime / 'blender-render') in command
+    assert '--nv' in command
+    script = Slurm(config).script(config.spool)
+    assert '--cpu-bind=cores' in script and '/usr/bin/srun' in script
+    assert 'APPTAINERENV_CUDA_VISIBLE_DEVICES' in script
+    assert 'uv sync' not in script and 'pip install' not in script
+
+
+def test_reconcile_attaches_the_original_slurm_job_without_resubmitting(store):
+    result = store.submit('alice', request())
+    record = store.owned('alice', result['job_id'])
+    record.pop('slurm_id')
+    record['status'] = 'submission_unknown'
+    store.save(record)
+    store.scheduler.find_submission = lambda identifier, created: '123'
+    assert store.reconcile(result['job_id'])['slurm_id'] == '123'
+    assert len(store.scheduler.submissions) == 1
 
 
 def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):

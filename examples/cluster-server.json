@@ -1,0 +1,25 @@
+{
+  "spool": "/srv/blender-render/jobs",
+  "image": "/srv/blender-render/renderer.sif",
+  "image_sha256": "REPLACE_WITH_SHA256_OF_BUILT_SIF",
+  "tokens_file": "/srv/blender-render/users.json",
+  "apptainer": "/usr/bin/apptainer",
+  "sbatch": "/usr/bin/sbatch",
+  "srun": "/usr/bin/srun",
+  "squeue": "/usr/bin/squeue",
+  "sacct": "/usr/bin/sacct",
+  "scancel": "/usr/bin/scancel",
+  "partition": "",
+  "account": "",
+  "qos": "",
+  "cpus": 8,
+  "memory_mb": 16384,
+  "gpus": 0,
+  "walltime_seconds": 3900,
+  "limits": {
+    "render_timeout": 3600,
+    "max_active_per_user": 4,
+    "max_active_total": 32,
+    "retention_seconds": 86400
+  }
+}

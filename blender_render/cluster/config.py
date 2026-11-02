@@ -17,6 +17,7 @@ class ServerConfig:
     squeue: str = '/usr/bin/squeue'
     sacct: str = '/usr/bin/sacct'
     scancel: str = '/usr/bin/scancel'
+    srun: str = '/usr/bin/srun'
     partition: str = ''
     account: str = ''
     qos: str = ''
@@ -24,6 +25,7 @@ class ServerConfig:
     memory_mb: int = 16384
     gpus: int = 0
     walltime_seconds: int = 3900
+    runtime_home: Path | None = None
     limits: Limits = field(default_factory=Limits)
 
     def __post_init__(self):
@@ -32,9 +34,14 @@ class ServerConfig:
             if not path.is_absolute() or any(c in str(path) for c in '\n\r,:'):
                 raise ValueError(name + ' must be an absolute path without newline, comma or colon')
             object.__setattr__(self, name, path.resolve())
+        if self.runtime_home is not None:
+            path = Path(self.runtime_home).expanduser()
+            if not path.is_absolute() or any(c in str(path) for c in '\n\r,:'):
+                raise ValueError('runtime_home must be an absolute Linux path without comma, colon or newline')
+            object.__setattr__(self, 'runtime_home', path.resolve())
         if not re.fullmatch('[0-9a-f]{64}', self.image_sha256):
             raise ValueError('Pin the SIF image_sha256 before serving')
-        for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel'):
+        for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
             if not Path(getattr(self, name)).is_absolute():
                 raise ValueError(name + ' must be an absolute executable path')
         for name in ('partition', 'account', 'qos'):

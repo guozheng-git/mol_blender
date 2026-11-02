@@ -27,7 +27,9 @@ render submission, retry, remote installation or path-reading tool here.
 
 This is an integration library, not a deployable hosted renderer. The caller
 must review its authentication/ownership implementation before serving it.
-No deployment is included in `main_merged`.
+The separate [cluster service](shared-cluster.md) now supplies optional Slurm
+submission and private downloads. It does not automatically connect this adapter
+to ChatGPT or Claude, and installing either feature does not deploy a service.
 
 The viewer requests model context and Library storage through host APIs.
 An RPC response or uploaded file ID does not prove next-step pixel access or

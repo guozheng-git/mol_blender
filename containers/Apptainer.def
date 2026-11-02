@@ -3,9 +3,12 @@ From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b
 
 # Run from the repository root after scripts/build_release.py --output dist/release.
 # Linux x86_64 only. No Mac environments or caches are copied into the image.
+%arguments
+    RELEASE_DIR=dist/release
+
 %files
-    dist/release/plugin/structure-studio /opt/structure-studio
-    dist/release/release.json /opt/release.json
+    {{ RELEASE_DIR }}/plugin/structure-studio /opt/structure-studio
+    {{ RELEASE_DIR }}/release.json /opt/release.json
 
 %post
     set -eu
@@ -20,6 +23,9 @@ From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b
     export PATH=/opt/uv-tool/bin:$PATH
     export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
     python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup
+    # The same uv-managed render/PyMOL environments serve local CLI and Slurm jobs.
+    # No dependency resolution, installation or environment copy happens at runtime.
+    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check
     rm -rf /var/lib/apt/lists/* /opt/studio-runtime/uv-cache
 
 %environment
@@ -34,3 +40,4 @@ From: debian:bookworm-slim@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b
 %test
     /opt/studio-runtime/render/bin/blender-render --version
     /opt/studio-runtime/pymol/bin/python -c 'import pymol2'
+    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check

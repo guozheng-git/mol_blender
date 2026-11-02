@@ -80,6 +80,14 @@ class Store:
                 return record  # A scheduler outage is not a job failure.
             failed = {'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY', 'NODE_FAIL', 'BOOT_FAIL',
                       'DEADLINE', 'PREEMPTED', 'REVOKED', 'SPECIAL_EXIT'}
+            if state == 'COMPLETED' and record['status'] != 'cancelling':
+                # Shared filesystems may expose the worker receipt after Slurm's
+                # accounting update. Allow metadata propagation before failing.
+                record.setdefault('completion_seen_at', time.time())
+                if time.time() - record['completion_seen_at'] < 60:
+                    record['status'] = 'finalizing'
+                    self.save(record)
+                    return record
             if state in failed or state == 'CANCELLED' or state == 'COMPLETED':
                 status = 'cancelled' if state == 'CANCELLED' or record['status'] == 'cancelling' else 'failed'
                 # Slurm completion without the worker's verified result is not success.
@@ -128,7 +136,8 @@ class Store:
                       'status': 'submitting', 'created_at': time.time(), 'engine_build': self.engine_build}
             self.save(record)  # Persist before sbatch: a crash must never cause duplicate work.
             atomic_json(directory / 'request.json', {'request': document,
-                'limits': vars(limits), 'engine_build': self.engine_build})
+                'limits': vars(limits), 'engine_build': self.engine_build,
+                'execution': {'gpus': self.config.gpus}})
             try:
                 record.update(slurm_id=self.scheduler.submit(directory, identifier), status='queued')
             except SubmissionUnknown:
@@ -213,3 +222,14 @@ class Store:
                 if (record['status'] in TERMINAL - {'expired'} and
                     time.time() - record['finished_at'] > self.config.limits.retention_seconds):
                     self.expire(record)
+
+    def reconcile(self, identifier):
+        with self.locked():
+            record = read_json(self.directory(identifier) / 'job.json', 64 * 1024)
+            if record['status'] not in {'submitting', 'submission_unknown'}:
+                return self.public(self.refresh(record))
+            found = self.scheduler.find_submission(identifier, record['created_at'])
+            if found:
+                record.update(slurm_id=found, status='queued')
+                self.save(record)
+            return self.public(self.refresh(record))

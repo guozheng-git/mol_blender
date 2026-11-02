@@ -58,3 +58,10 @@ apptainer exec --cleanenv --nv --bind "$PWD:/work" renderer.sif \
 real Linux/CUDA rendering must be validated on Linux before release. Mac testing
 does not satisfy that gate. Reuse the same image and pinned sources for CPU/GPU
 tests, and record the exact SIF checksum alongside the release manifest.
+
+The [optional shared cluster service](shared-cluster.md) runs that same image for
+each Slurm job, directly using its existing uv Python. It also supports binding an
+already configured Linux Studio runtime read-only at its original absolute path.
+Neither mode installs dependencies per job. `RELEASE_DIR` can select a freshly
+built artifact directory: `apptainer build --build-arg RELEASE_DIR=dist/cluster-release
+renderer.sif containers/Apptainer.def`.

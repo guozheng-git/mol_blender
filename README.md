@@ -26,7 +26,9 @@ structure, reveal a binding site or play through supplied molecular states.
 
 Optional local MCP tools connect compatible assistants to the renderer. An opt-in
 [completed-image delivery adapter](docs/hosted-adapter.md) can be embedded in an
-authenticated host; this repository does not deploy a hosted rendering service.
+authenticated host. An optional [shared cluster server](docs/shared-cluster.md)
+lets users submit from PyMOL to Slurm and Apptainer using the same renderer and
+uv-managed runtime. Installation does not start or deploy a server.
 
 ## Install and configure
 
@@ -205,7 +207,20 @@ Movie preview replaces PyMOL's current movie timeline when supported; `auto_prev
 keeps the timeline untouched. Headless/unsupported GUI contexts return saved movie
 paths. `blender_movie_export` uses the latest verified frames or an explicit
 `source=/path/to/rock.frames.zip`; FFmpeg must be on PyMOL's PATH.
-Former service/profile/remote arguments are intentionally unsupported.
+For a shared cluster, configure a private client profile once, then explicitly
+select it in PyMOL:
+
+```pymol
+blender_render cluster=lab, rough=1, output_name=cluster-preview.png
+blender_render_status JOB_ID, cluster=lab
+blender_render_fetch JOB_ID, cluster=lab, output_name=cluster-preview.png
+```
+
+Submission returns a job ID; fetching loads the verified image or animation.
+Omitting `cluster` keeps direct local rendering. See the
+[shared cluster guide](docs/shared-cluster.md) for credentials, cancellation,
+Slurm configuration and reuse of the uv runtime inside Apptainer. Legacy
+service/profile/remote arguments are unsupported.
 
 ## Claude Code and Codex
 
