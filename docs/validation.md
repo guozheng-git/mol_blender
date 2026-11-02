@@ -715,3 +715,68 @@ the normal local controller configuration, preserving existing Python and cluste
 profiles. A real warm render through that normal profile passed, and the test
 worker was stopped afterward. Machine-specific paths, job IDs, logs and artifacts
 remain outside version control.
+
+## Blender editing and preset capture (2026-11-02)
+
+Implemented local scene opening and preset extraction in `b507c9e`, followed by
+the authored-camera compatibility diagnostic fix in `888463b`. The wheel and both
+plugin ZIP candidates were built from the exact clean revision
+`888463bd0dcff1cefe7a7636292b39efbd1dc1ec`, retaining `0.4.0rc4` for local validation.
+Their engine identity is
+`264eebd09866695b55608c3718e812468a602cc822d542452b409cb2a547cf36`.
+The later validation documentation commit does not change packaged renderer code.
+
+- Full source suite: **462 passed in 49.83 s**.
+- Wheel installed into a separate uv environment outside the checkout:
+  **462 passed in 48.71 s**, with Python `-I` and installed module-location and
+  exact wheel/source inventory checks. Both suites enabled the real PyMOL and
+  browser tests, reported four existing dependency/fixture warnings, and had
+  no skips. Cluster, fresh-local and warm-worker regression checks passed.
+- Real source and installed-package checks used the public `1sps` example,
+  pinned native Blender 5.0.1, and the configured local GPU. The final installed
+  acceptance ran `scripts/validate_scene_edit.py` from outside the checkout.
+  Unedited saved scenes imported with no changes or unsupported settings.
+- Edited the default material's pigment and roughness, background, light power,
+  size and transform, camera pose/shift/scale, and exposure. Saved and reopened
+  the scene, extracted an authored-camera preset, and rendered it again through
+  the shared renderer. Node renaming and rearrangement did not create false
+  shader edits. Direct edited-scene versus preset-replay pixel RMS was below
+  **0.079** per 8-bit channel.
+- Repeated the workflow for paint texture distance, tint, roughness range and
+  specular response. Pixel RMS was below **0.081** per channel. Paint now shares
+  its shader across generated chain variants while retaining atom colors;
+  the original paint render before and after this change was pixel-identical.
+- Direct saved-scene comparison renders used CPU; preset replays used the local
+  GPU. Both were 192×144 at 8 samples. These small acceptance images were visually
+  inspected; they are not publication-quality previews. The two replay requests
+  reused the same warm Blender process, which was stopped afterward.
+- The real PyMOL bridge imported a saved `.blend` through its configured
+  controller under a foreign `PYTHONEXECUTABLE`, then rendered the newly named
+  preset. The default camera policy reported ignored camera edits. A scene with
+  an added object was refused without creating a preset. Explicit partial-import
+  and preset-revision behavior are covered separately by automated tests.
+- A generated text block marked for automatic execution did not run when the
+  edited scene was inspected. Import left the input `.blend` bytes unchanged.
+  Opening and extraction use disabled embedded-script execution.
+- A separate final-wheel check captured a perspective camera with numeric depth
+  of field. Its direct-versus-preset pixel RMS was below **0.068** per channel.
+  The preserve-input policy correctly refused to discard focus. A four-frame
+  rock from the captured preset produced four distinct frames, a four-frame GIF
+  and a decodable MP4. Its checksummed Blender bundle was restored and reopened;
+  preset metadata remained usable and reported the intentionally omitted movie
+  recipe. This check decoded the movie; it did not add a new interactive playback
+  verification.
+
+`--open-blender` also completed a real render, saved the scene without a separate
+`--save-blend` flag, and launched the configured desktop Blender process on that
+file. The process remained alive after launch. The Mac was locked, so the editor
+window, interactive controls and manual Save As were **not visually verified**.
+The edit/save/reopen checks above used Blender's real Python API. Only the test's
+own editor process was closed during cleanup.
+
+Local candidates and evidence remain in ignored `dist/blender-edit-final/` and
+`.validation/blender-edit/`, including `validation.json`, complete logs, edited
+scenes, extracted presets/reports, comparison PNGs, and restored movie artifacts.
+Temporary installed environments and worker source captures were cleaned up.
+No installer, remote server update, new Slurm allocation, release publication or
+push was performed for this feature.
