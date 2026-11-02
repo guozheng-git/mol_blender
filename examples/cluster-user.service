@@ -1,0 +1,17 @@
+[Unit]
+Description=Blender Render shared Slurm gateway
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=%h/blender-render-cluster
+ExecStart=%h/blender-render-cluster/controller/bin/blender-render cluster serve --config %h/.config/blender-render-cluster/server.json --bind @CLUSTER_ADDRESS@ --port @PORT@ --tls-cert %h/.config/blender-render-cluster/server.crt --tls-key %h/.config/blender-render-cluster/server.key
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=default.target

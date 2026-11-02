@@ -49,7 +49,7 @@ def main():
 
     atomic_json(config_home / 'config.json', {'local_python': sys.executable,
                                              'pymol_python': str(args.pymol.absolute())})
-    config = replace(ServerConfig.load(args.server_config), spool=root / 'jobs',
+    config = replace(ServerConfig.load(args.server_config), spool=root / 'jobs', authentication='token',
                      tokens_file=root / 'users.json')
     scheduler = Slurm(config)
     inspection = root / 'inspection'

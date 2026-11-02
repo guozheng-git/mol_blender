@@ -1,0 +1,34 @@
+Bootstrap: localimage
+From: {{ BASE_IMAGE }}
+
+# Refresh an already validated Linux image when only application source changes.
+# Verify BASE_IMAGE's recorded SHA-256 before building. Changed dependency pins
+# require a full build with Apptainer.def instead. No environment is relocated.
+%arguments
+    BASE_IMAGE=renderer-base.sif
+    RELEASE_DIR=dist/release
+
+%files
+    {{ RELEASE_DIR }}/plugin/structure-studio /opt/structure-studio-next
+    {{ RELEASE_DIR }}/release.json /opt/release-next.json
+
+%post
+    set -eu
+    for component in render pymol; do
+        cmp /opt/structure-studio/skills/structure-studio/references/$component-requirements.txt \
+            /opt/structure-studio-next/skills/structure-studio/references/$component-requirements.txt
+    done
+    rm -rf /opt/structure-studio
+    mv /opt/structure-studio-next /opt/structure-studio
+    mv /opt/release-next.json /opt/release.json
+    export PATH=/opt/uv-tool/bin:$PATH
+    export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
+    export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
+    export UV_OFFLINE=1
+    python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup --only render
+    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check
+
+%test
+    /opt/studio-runtime/render/bin/blender-render --version
+    /opt/studio-runtime/pymol/bin/python -c 'import pymol2'
+    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check

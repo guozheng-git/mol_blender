@@ -129,6 +129,15 @@ image. Jobs never run `uv sync`, pip, installers or dependency resolution.
 The PyMOL and Blender environments remain separate because they have different
 binary dependencies. Nothing copies or relocates a Mac virtual environment.
 
+For an application-only update to an already validated Linux SIF, first verify
+the base image against its recorded SHA-256. Then use
+[`Apptainer-update.def`](../containers/Apptainer-update.def) with `BASE_IMAGE` and
+`RELEASE_DIR` build arguments. It requires identical render/PyMOL requirement
+files and runs the same uv setup offline, keeping the Linux environments at their
+original absolute paths. Changed dependency pins require a full image build.
+Record the new SIF hash and run `cluster doctor` before switching the gateway;
+gateway and image must contain the same wheel.
+
 You can also **reuse an existing Linux Studio uv runtime**. Add this administrator
 setting to the server config:
 
@@ -223,6 +232,62 @@ must enforce the site's CPU, memory and device limits. SIF/runtime directories
 should be read-only to service clients and immutable while jobs are active.
 The isolated renderer retains these compute limits and Apptainer's fixed driver
 library path, while discarding unrelated library paths and credentials.
+
+## Persistent user service and shared clients
+
+[`cluster-user.service`](../examples/cluster-user.service) is a systemd user-unit
+template. Put a uv controller environment at `~/blender-render-cluster/controller`,
+created at that final path using the pinned Linux Python. Export controller
+dependencies from `uv.lock` with `uv export --frozen --no-dev --extra cluster
+--no-emit-project`, install them with `uv pip sync --require-hashes`, and install
+the release wheel with `uv pip install --no-deps`. The service does no installation
+at startup or per job.
+
+Keep `server.json`, `server.crt` and `server.key` under the private
+`~/.config/blender-render-cluster` directory. Keep the spool private and visible
+on compute nodes. Set `authentication` to `none` only for an intentionally shared
+cluster queue. Choose the appropriate Slurm account/partition and bounded active
+job limits; open callers all count toward `max_active_per_user`.
+
+Replace `@CLUSTER_ADDRESS@` and `@PORT@` in the unit with an available cluster
+interface address and free port, and install it as
+`~/.config/systemd/user/blender-render-cluster.service`. Supply a certificate
+whose SANs match the service hostname/IP. For a private CA, share only its public
+certificate as `~/blender-render-cluster/ca.pem`; keep both private keys private.
+Track certificate expiry and renew the leaf before it expires.
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now blender-render-cluster.service
+systemctl --user status blender-render-cluster.service
+journalctl --user -u blender-render-cluster.service
+loginctl show-user "$USER" -p Linger
+```
+
+The unit restarts after failures. `Linger=yes` is needed to keep the user manager
+running after logout and start it at boot; if disabled, the administrator can
+enable it with `loginctl enable-linger USER`. See the upstream
+[service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+and [linger](https://www.freedesktop.org/software/systemd/man/latest/loginctl.html)
+documentation. Check a real restart and a compute-node connection before
+advertising the endpoint. A configured boot policy is not a tested reboot.
+
+For users sharing the Linux filesystem, the controller and its uv-managed Python
+must be readable/executable by those users and writable only by the administrator.
+Copy [`cluster-connect.sh`](../examples/cluster-connect.sh) next to `controller`
+and `ca.pem`, replacing `@SERVICE_URL@` with the HTTPS origin. Each colleague runs
+that script once, optionally passing a profile name (default `lab`). It writes
+their own profile and reports the `run .../pymol_bridge_plugin.py` command to use
+inside PyMOL. It installs nothing into their PyMOL or system Python, and preserves
+their configured local Blender/PyMOL paths. Users on another computer can install
+the release wheel into their own uv environment and use the URL/CA configuration
+shown above.
+
+Stop only this service with `systemctl --user stop blender-render-cluster.service`;
+disable boot startup with `systemctl --user disable blender-render-cluster.service`.
+Stopping the gateway does not cancel already submitted Slurm jobs. For an update,
+finish active jobs, stage a new immutable image/controller with matching identities,
+update the configuration and unit, then restart. Keep the previous release for rollback.
 
 ## Lifecycle and administrator recovery
 
