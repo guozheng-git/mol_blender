@@ -28,9 +28,6 @@ Optional local MCP tools connect compatible assistants to the renderer. An opt-i
 [completed-image delivery adapter](docs/hosted-adapter.md) can be embedded in an
 authenticated host; this repository does not deploy a hosted rendering service.
 
-The previous `main` is preserved on
-[`codex/backup-main-before-minimal-2026-09-29`](https://github.com/magnusbauer/blender_render/tree/codex/backup-main-before-minimal-2026-09-29).
-
 ## Install and configure
 
 Use Python 3.11 (matching Blender's Python ABI):
