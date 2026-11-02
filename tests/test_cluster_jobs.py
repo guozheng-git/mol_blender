@@ -123,6 +123,21 @@ def test_request_rejects_paths_sessions_and_scripts(field, value):
         validate_request(doc, Limits())
 
 
+@pytest.mark.parametrize('identifier', ['/job', '../../outside', 'relative/path'])
+def test_export_run_id_cannot_redirect_worker_temporary_files(identifier):
+    doc = request()
+    doc['payload']['run_id'] = identifier
+    with pytest.raises(ValueError, match='never a path'):
+        validate_request(doc, Limits())
+
+
+def test_view_cannot_reference_server_files():
+    doc = request()
+    doc['payload']['view']['state_coordinates_file'] = '/private/states.json'
+    with pytest.raises(ValueError, match='camera values only'):
+        validate_request(doc, Limits())
+
+
 def test_output_bounds_and_destinations():
     doc = request()
     doc['style']['output'].update(filename='/tmp/arbitrary.png', blend_filename='../bad.blend')
@@ -173,6 +188,25 @@ def test_slurm_removed_queue_entry_still_uses_accounting(config, monkeypatch):
         return SimpleNamespace(stdout='123|CANCELLED by 1000|\n')
     monkeypatch.setattr(scheduler, 'run', run)
     assert scheduler.state('123') == 'CANCELLED'
+
+
+def test_scheduler_polling_is_cached_and_outages_back_off(config, monkeypatch):
+    scheduler = Slurm(config)
+    calls = []
+    def run(command):
+        calls.append(command)
+        return SimpleNamespace(stdout='PENDING\n')
+    monkeypatch.setattr(scheduler, 'run', run)
+    assert scheduler.state('123') == scheduler.state('123') == 'PENDING'
+    assert len(calls) == 1
+    def fail(command):
+        calls.append(command)
+        raise subprocess.TimeoutExpired(command, 30)
+    monkeypatch.setattr(scheduler, 'run', fail)
+    for identifier in ('124', '125', '126'):
+        with pytest.raises(subprocess.TimeoutExpired):
+            scheduler.state(identifier)
+    assert len(calls) == 2
 
 
 def test_reuses_linux_uv_environment_at_its_original_path(config, tmp_path):

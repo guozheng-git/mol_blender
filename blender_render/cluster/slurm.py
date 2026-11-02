@@ -5,6 +5,7 @@ import shlex
 import subprocess
 from datetime import datetime
 import pwd
+import time
 
 
 class SubmissionUnknown(RuntimeError):
@@ -14,6 +15,9 @@ class SubmissionUnknown(RuntimeError):
 class Slurm:
     def __init__(self, config):
         self.config = config
+        self._states = {}
+        self._unavailable_until = 0
+        self._last_error = None
 
     def run(self, command):
         # Do not inherit SBATCH_*, APPTAINER_*, Python paths or service credentials.
@@ -88,6 +92,26 @@ class Slurm:
 
     def state(self, identifier):
         identifier = self.checked_id(identifier)
+        now = time.monotonic()
+        if now < self._unavailable_until:
+            raise self._last_error
+        cached = self._states.get(identifier)
+        if cached and now < cached[0]:
+            return cached[1]
+        try:
+            state = self._state_uncached(identifier)
+        except (OSError, subprocess.SubprocessError) as exc:
+            # One scheduler timeout must not become 32 serial timeouts while
+            # refreshing the spool. Preserve job state and back off briefly.
+            self._last_error = exc
+            self._unavailable_until = time.monotonic() + 10
+            raise
+        self._states[identifier] = (time.monotonic() + 10, state)
+        if len(self._states) > 1024:
+            self._states = {key: item for key, item in self._states.items() if item[0] > now}
+        return state
+
+    def _state_uncached(self, identifier):
         try:
             output = self.run([self.config.squeue, '--noheader', '--jobs=' + identifier,
                                '--format=%T']).stdout.strip()

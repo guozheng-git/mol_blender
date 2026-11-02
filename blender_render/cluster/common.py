@@ -111,6 +111,12 @@ def validate_request(document, limits):
     payload = document['payload']
     if not isinstance(payload, dict) or set(payload) - PAYLOAD_KEYS:
         raise ValueError('Only exported structure data is accepted; no sessions, paths or scripts')
+    if 'run_id' in payload and (not isinstance(payload['run_id'], str) or
+                               not re.fullmatch('[A-Za-z0-9_-]{1,64}', payload['run_id'])):
+        raise ValueError('Export run_id must be a short identifier, never a path')
+    view = payload.get('view')
+    if not isinstance(view, dict) or set(view) - {'pymol_view', 'fov_deg', 'orthoscopic', 'viewport_px'}:
+        raise ValueError('View accepts camera values only, never filenames or paths')
     validate_payload_document(payload)
     resolved = resolve_options({'style_doc': document['style']}, payload)['style_doc']
     output = resolved['output']
