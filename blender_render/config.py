@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-VERSION = "0.4.0rc2"
+VERSION = "0.4.0rc3"
 
 
 def config_root() -> Path:

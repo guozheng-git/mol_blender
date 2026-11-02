@@ -1360,7 +1360,7 @@ crypto = [
 
 [[package]]
 name = "pymol-plugin-bridge"
-version = "0.4.0rc2"
+version = "0.4.0rc3"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },

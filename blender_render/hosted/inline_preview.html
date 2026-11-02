@@ -502,7 +502,7 @@ render(window.openai?.toolResponseMetadata);
 render(window.openai?.toolOutput);
 if ((library.selection || storedImage || savedFiles['render.gif']) && !image.getAttribute('src')) restoreSavedImage();
 if (parent !== window) parent.postMessage({jsonrpc:'2.0',id:'initialize',method:'ui/initialize',params:{
-  appInfo:{name:'Blender Render',version:'0.4.0rc2'},appCapabilities:{},protocolVersion:'2026-01-26'
+  appInfo:{name:'Blender Render',version:'0.4.0rc3'},appCapabilities:{},protocolVersion:'2026-01-26'
 }}, '*');
 setTimeout(() => {
   if (!library.mode && !shown && !image.getAttribute('src')) {
