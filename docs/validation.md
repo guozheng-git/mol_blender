@@ -418,7 +418,7 @@ Final wheel/plugin ZIPs are rebuilt from the committed source using
 against that revision. Execution evidence is stored with the local artifacts in
 `validation.json`, without putting local paths or molecular data into Git.
 
-**Remaining cluster gate:** the authorized Linux machine reported online through
+**Cluster gate at this checkpoint:** the authorized Linux machine reported online through
 Tailscale, but SSH connections through LAN, Tailscale IPv4/IPv6 and the Tailscale
 SSH wrapper timed out. No remote files were changed, Slurm jobs submitted, SIF
 built, Linux runtime reused or CUDA rendering verified there. The reusable uv
@@ -426,3 +426,98 @@ container definition and Slurm launch arguments still need real target-host
 validation before opening the service to other users. The source/wheel tests and
 Mac renders do not satisfy that gate. See [shared cluster setup](shared-cluster.md).
 
+# Real Slurm and Apptainer acceptance, 2026-11-01
+
+SSH access was restored and the Linux cluster gate above was completed. Version
+**0.4.0rc3** contains the fixes discovered during real execution. All work remains
+on the local branch; nothing was pushed or published.
+
+The checks used public **1STP**, four CPU cores, 8 GiB RAM, and zero or one GPU per
+job. Each acceptance run submitted a 192 × 144 still, a four-frame rocking movie
+at four samples, and a cancellation probe through the real PyMOL bridge,
+authenticated loopback HTTP gateway, Slurm, Apptainer and shared renderer.
+No scheduler substitute was used in these runs.
+
+| Gateway package | Worker runtime | Container base | Result and elapsed time |
+| --- | --- | --- | --- |
+| Source | Existing Linux uv runtime, CPU | Debian 12 | Passed, 44.16 s |
+| Source | Image-built uv runtime, CPU | Debian 13 | Passed, 37.25 s |
+| Installed wheel outside checkout | Image-built uv runtime, CUDA | Debian 13 | Passed, 66.57 s |
+| Source | Existing Linux uv runtime, CUDA | Debian 13 | Passed, 83.90 s |
+
+These times include queueing, status polling, downloads and verification; they
+are not renderer benchmarks. Both CUDA cases reported exactly one **NVIDIA L40S**
+in the render manifest. Slurm accounting recorded one allocated GPU and successful
+exit codes for the still and animation jobs. CPU jobs reported CPU execution.
+
+Every successful run verified artifact sizes and SHA-256 hashes, reopened both
+saved Blender scenes, decoded the MP4, checked changing animation frames and a
+four-frame looping GIF, and restored a bundle containing the generated trusted
+PyMOL session, Blender scene, movie, GIF and frame archive. The restored PSE and
+Blender scene reopened. Actual CPU and CUDA movies also played in Chrome with
+advancing playback time; CPU and CUDA stills were visually inspected. These are
+small execution checks, not final-quality figure review or new interactive PyMOL
+GUI acceptance claims.
+
+Authentication, per-user ownership, token revocation, original-request recovery,
+same-request idempotency, conflicting retries and result deletion passed against
+the live gateway. The CUDA image run observed the cancellation probe in Slurm's
+running state, cancelled it, and verified terminal cancellation and cleanup.
+Completed test spools retained only ownership/idempotency tombstones. Temporary
+gateways and the build-download proxy were closed, credentials removed, temporary
+build directories deleted, and the Slurm queue was empty afterward.
+
+The reusable Linux runtime stayed at its original absolute path and was bound
+read-only into Apptainer. Its environment/configuration fingerprints and installed
+engine manifest were unchanged by the jobs. No Mac venv was copied, and no job
+ran an installer or dependency resolver. The image independently built the same
+uv-managed Python **3.11.15**, Blender **5.0.1**, Molecular Nodes **4.5.10**, NumPy
+**1.26.4** and Biotite **1.6.0** environment. A direct local Linux CLI render passed
+in **7.42 s**. The final Mac source also passed real still/movie rendering and
+scene reopen checks in **26.02 s**, using its existing native Blender runtime.
+
+Real execution required these corrections:
+
+- The build's renderer probe needs `BLENDER_RENDER_HOME` set in `%post`; runtime
+  `%environment` settings do not supply it there.
+- Apptainer needs a digest-only OCI reference instead of a tag plus digest.
+- Installed rendering must tolerate an absent Git executable while retaining the
+  complete byte-level source inventory.
+- The target scheduler accepts GPU GRES requests (`--gres=gpu:1`). Rejected
+  submissions now retain bounded diagnostics in private job files.
+- Worker scratch files must live under the private job directory; the contained
+  `/tmp` was too small for the frozen chemical-component database.
+- The NVIDIA libraries supplied by the compute nodes require a newer glibc than
+  the original Debian 12 image. The final pinned Debian 13 base supplies glibc
+  2.41 and passed both CUDA modes. Other clusters still require their own GPU
+  compatibility check.
+
+Final regression checks, all with real PyMOL and Chrome enabled:
+
+- Mac source: **418 passed**, no skips, four warnings, **24.63 s**.
+- Linux source: **418 passed**, no skips, four warnings, **20.54 s**.
+- Isolated Linux installed wheel outside the checkout: **418 passed**, no skips,
+  four warnings, **19.83 s**. The test tree contained no package source.
+
+The warnings are the existing duplicate-ZIP regression case and dependency
+deprecations. `cluster doctor` is also exercised with the built-in CPU/CUDA runtime
+and the existing Linux runtime. Reproduce the hardware checks with
+`scripts/validate_cluster_slurm.py`; add `--cancel-running` for the running-job
+cancellation check. See [shared cluster setup](shared-cluster.md).
+
+Validated renderer identity:
+`8ba17ac9b491c09594fd22acef5277d2d159dd746d971569fb60f88d59ee016b`.
+The final Debian 13 SIF was built using the release artifacts from `fd87c16` and
+has SHA-256
+`ace21645e71c265c12a86f0870b56bbd05f36f3401dfd678d973292a6ff8688c`.
+The final wheel and plugin ZIPs are rebuilt from the clean committed source;
+`release.json` records that exact revision and all hashes. `verify_release.py`
+checks every packaged source byte. The final wheel payload is compared with the
+wheel used for the successful cluster tests, and detailed execution evidence is
+stored alongside the frozen artifacts in `validation.json` without committing
+machine paths or molecular outputs.
+
+This completes the real Slurm/Apptainer validation gate. It does not deploy a
+permanent multi-user service, configure site TLS/identity infrastructure, or
+resolve the separate live hosted-client attachment/save/reopen/image-context
+acceptance gates noted above.
