@@ -17,6 +17,44 @@ and `blender-render render` keep their existing behavior unless a cluster is
 explicitly selected. The optional stdio MCP and hosted image-delivery adapter
 remain separate interfaces.
 
+For a new server, follow [build the image](#build-once-reuse-the-uv-environments),
+[configure the service](#configure-the-service), then
+[install the persistent user service](#persistent-user-service-and-shared-clients).
+The configuration and systemd templates are included in this repository.
+
+## GPU use and warm starts
+
+The gateway stays running between submissions. Each submitted render gets its own
+Slurm job, Apptainer invocation and fresh Blender process. When the job finishes,
+its GPU allocation ends. The image and pinned uv environments are reused on disk;
+Blender and its GPU context are not retained between jobs. Increasing a job's
+walltime does not keep a completed worker running.
+
+| Mode in this branch | Where rendering runs | Blender lifetime |
+| --- | --- | --- |
+| Direct local rendering | The local computer, using its configured Blender runtime and available GPU | A fresh process for each render request |
+| Shared cluster rendering | A Slurm compute node inside Apptainer | A fresh process for each submitted job |
+
+Local GPU rendering remains available without a server. After configuring the
+local runtime as described in the [README](../README.md#install-and-configure),
+omit `cluster` in PyMOL:
+
+```pymol
+blender_render selection=(all), width=384, height=288, samples=8, output_dir=renders, output_name=local-test.png
+```
+
+The default preset requests GPU rendering and detects an available backend.
+Local rendering can fall back to CPU; the artifact directory's `manifest.json`
+records the actual device in `cycles_device`. A style can set
+`renderer.require_gpu` to `true` to require a GPU.
+
+A persistent local worker can keep Blender alive for subsequent requests and
+avoid repeating process startup. The older service architecture has that worker
+mode, with an idle shutdown, but it is **not integrated into this branch**. The
+current local renderer deliberately uses a fresh source snapshot and Blender
+process for each request. Keeping the HTTP gateway or stdio MCP running does not
+change that lifetime. Reusing the uv environment alone is not a warm start.
+
 ## Use from PyMOL
 
 Install the base package in a local uv environment and run `blender-render setup`
@@ -196,20 +234,29 @@ administrator-controlled location and adapt:
   animation memory/archive limits also apply. Individual downloads are capped at
   1 GiB. The spool-byte setting is an admission check, not a filesystem quota.
 
-Create the spool and private credential directory, then issue credentials:
+Create the private spool and configuration directory. For an open service on a
+trusted cluster network, set `"authentication": "none"` and omit `tokens_file`;
+no `user-add` step is needed. For individual authentication, keep
+`"authentication": "token"`, configure the private credential database, and issue
+credentials before starting the service:
 
 ```sh
 blender-render cluster user-add --config /srv/blender-render/server.json \
   --user alice --url https://render.example.org \
   --credential-output /private/alice.json
-blender-render cluster doctor --config /srv/blender-render/server.json
-blender-render cluster serve --config /srv/blender-render/server.json
 ```
 
 `user-add` writes a random token to the private transfer file; the service stores
 only its SHA-256 digest. Deliver the file privately to its owner. Use
 `user-revoke --config ... --user alice` to revoke access immediately, then issue a
 new credential if needed. Revocation does not cancel already submitted jobs.
+
+For either access mode, check the configuration and start the gateway:
+
+```sh
+blender-render cluster doctor --config /srv/blender-render/server.json
+blender-render cluster serve --config /srv/blender-render/server.json
+```
 
 The service defaults to `127.0.0.1:8765`. Put an HTTPS reverse proxy in front, or
 use SSH forwarding to that loopback address. Direct TLS is available with

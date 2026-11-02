@@ -65,3 +65,10 @@ already configured Linux Studio runtime read-only at its original absolute path.
 Neither mode installs dependencies per job. `RELEASE_DIR` can select a freshly
 built artifact directory: `apptainer build --build-arg RELEASE_DIR=dist/cluster-release
 renderer.sif containers/Apptainer.def`.
+
+Environment reuse is separate from a warm Blender process. Both direct local
+renders and Slurm jobs currently start a fresh Blender process for each request.
+The cluster gateway stays up, but each completed Slurm job releases its GPU
+allocation. A persistent local GPU worker existed in the older service
+architecture and is not integrated into this branch. See
+[GPU use and warm starts](shared-cluster.md#gpu-use-and-warm-starts).

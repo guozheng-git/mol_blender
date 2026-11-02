@@ -227,8 +227,12 @@ Submission returns a job ID; fetching loads the verified image or animation.
 Omitting `cluster` keeps direct local rendering. See the
 [shared cluster guide](docs/shared-cluster.md) for open or authenticated access,
 cancellation, persistent service setup, Slurm configuration and reuse of the uv
-runtime inside Apptainer. Legacy
-service/profile/remote arguments are unsupported.
+runtime inside Apptainer. The gateway stays running; each Slurm job releases its
+GPU allocation when it finishes. Direct local rendering can use your local GPU,
+but starts a fresh Blender process for each request. The older persistent local
+worker mode is not integrated into this branch; see
+[GPU use and warm starts](docs/shared-cluster.md#gpu-use-and-warm-starts).
+Legacy service/profile/remote arguments are unsupported.
 
 ## Claude Code and Codex
 
