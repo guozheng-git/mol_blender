@@ -105,7 +105,6 @@ See [preset details](docs/reference-presets.md) and the
 | Preset | Appearance | Preview |
 | --- | --- | --- |
 | [mint_sky_assembly](blender_render/style_preset_mint_sky_assembly.json) | **Default.** Mint and sky protein assembly with purple and pink nucleic acids. | [<img src="examples/presets/mint_sky_assembly.png" alt="mint_sky_assembly preview" width="220">](examples/presets/mint_sky_assembly.png) |
-| [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 | [powder_blue_rounded](blender_render/style_preset_powder_blue_rounded.json) | Powder blue rounded protein with pink nucleic acid on black. | [<img src="examples/presets/powder_blue_rounded.png" alt="powder_blue_rounded preview" width="220">](examples/presets/powder_blue_rounded.png) |
 | [cyan_mint_cutaway](blender_render/style_preset_cyan_mint_cutaway.json) | Cyan and mint surfaces with clean pocket cuts and intact interior ribbons. | [<img src="examples/presets/cyan_mint_cutaway.png" alt="cyan_mint_cutaway preview" width="220">](examples/presets/cyan_mint_cutaway.png) |
 | [pastel_duplex_rounded](blender_render/style_preset_pastel_duplex_rounded.json) | Rounded green and blue proteins with pink DNA on black. | [<img src="examples/presets/pastel_duplex_rounded.png" alt="pastel_duplex_rounded preview" width="220">](examples/presets/pastel_duplex_rounded.png) |
@@ -113,6 +112,7 @@ See [preset details](docs/reference-presets.md) and the
 | [vivid_binding_site](blender_render/style_preset_vivid_binding_site.json) | Macro ligand view with vivid element colors and teal cartoon context. | [<img src="examples/presets/vivid_binding_site.png" alt="vivid_binding_site preview" width="220">](examples/presets/vivid_binding_site.png) |
 | [ivory_lime_frosted](blender_render/style_preset_ivory_lime_frosted.json) | Ivory frosted grid shell, lime core and cyan nucleic acids. | [<img src="examples/presets/ivory_lime_frosted.png" alt="ivory_lime_frosted preview" width="220">](examples/presets/ivory_lime_frosted.png) |
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
+| [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 
 ```sh
 blender-render render structure.pse --preset pastel_duplex_rounded -o renders/duplex.png
