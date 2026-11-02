@@ -207,8 +207,15 @@ Movie preview replaces PyMOL's current movie timeline when supported; `auto_prev
 keeps the timeline untouched. Headless/unsupported GUI contexts return saved movie
 paths. `blender_movie_export` uses the latest verified frames or an explicit
 `source=/path/to/rock.frames.zip`; FFmpeg must be on PyMOL's PATH.
-For a shared cluster, configure a private client profile once, then explicitly
-select it in PyMOL:
+For a shared cluster with open access, configure its URL once:
+
+```sh
+blender-render cluster configure --profile lab --url https://render.cluster.example:8772
+```
+
+Use `--ca-file` if your administrator provides a private CA certificate. Services
+with individual authentication use `--credential-file` instead of `--url`.
+Then explicitly select the profile in PyMOL:
 
 ```pymol
 blender_render cluster=lab, rough=1, output_name=cluster-preview.png
@@ -218,8 +225,9 @@ blender_render_fetch JOB_ID, cluster=lab, output_name=cluster-preview.png
 
 Submission returns a job ID; fetching loads the verified image or animation.
 Omitting `cluster` keeps direct local rendering. See the
-[shared cluster guide](docs/shared-cluster.md) for credentials, cancellation,
-Slurm configuration and reuse of the uv runtime inside Apptainer. Legacy
+[shared cluster guide](docs/shared-cluster.md) for open or authenticated access,
+cancellation, persistent service setup, Slurm configuration and reuse of the uv
+runtime inside Apptainer. Legacy
 service/profile/remote arguments are unsupported.
 
 ## Claude Code and Codex
