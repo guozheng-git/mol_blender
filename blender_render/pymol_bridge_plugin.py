@@ -27,9 +27,11 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                   width="", height="", samples="", transparent_background="",
                   _self=None, overrides_json="", preserve_view="", timeout=600,
                   animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1,
-                  cluster="", wait=0, warm=0):
+                  cluster="", wait=0, warm=0, open_blender=0, gui_blender=""):
     if _normalize_cli_string(cluster) and _parse_bool(warm):
         raise ValueError('warm=1 selects the local worker; omit cluster or use warm=0 for Slurm')
+    if _normalize_cli_string(cluster) and (_parse_bool(open_blender) or _normalize_cli_string(gui_blender)):
+        raise ValueError('open_blender selects local desktop editing; fetch a Slurm scene with save_blend=1 and open it locally')
     if _self is None:
         from pymol import cmd
     else:
@@ -71,7 +73,10 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
             return result
     else:
         result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
-                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm))
+                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm),
+                       open_blender=_parse_bool(open_blender), gui_blender=text(gui_blender))
+    if result and result.get('editor'):
+        print(json.dumps({'editor': result['editor']}, indent=2))
     return _present_result(cmd, result, output, auto_preview)
 
 
@@ -123,6 +128,18 @@ def bridge_movie_export(filename, source="", _self=None):
     return movie_export(_normalize_cli_string(filename), _normalize_cli_string(source), _self=_self)
 
 
+def bridge_preset_from_blend(filename, preset, description="", camera_policy="preserve_input",
+                             replace=0, allow_partial=0, report="", _self=None):
+    """Save supported edits from a local .blend as user/name; never modifies the scene."""
+    from blender_render.local_bridge import preset_from_blend
+    text = _normalize_cli_string
+    result = preset_from_blend(text(filename), text(preset), description=text(description),
+                               camera_policy=text(camera_policy), replace=_parse_bool(replace),
+                               allow_partial=_parse_bool(allow_partial), report=text(report))
+    print(json.dumps(result, indent=2))
+    return result
+
+
 blender_render = bridge_render
 
 def register_plugin(cmd_obj=None):
@@ -133,6 +150,7 @@ def register_plugin(cmd_obj=None):
     cmd_obj.extend("blender_render_status", bridge_cluster_status)
     cmd_obj.extend("blender_render_fetch", bridge_cluster_fetch)
     cmd_obj.extend("blender_render_cancel", bridge_cluster_cancel)
+    cmd_obj.extend("blender_preset_from_blend", bridge_preset_from_blend)
 
 try:
     from pymol import cmd

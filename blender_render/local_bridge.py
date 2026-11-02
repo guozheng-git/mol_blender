@@ -21,7 +21,8 @@ def controller_environment():
     return env
 
 
-def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False, warm=False):
+def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False, warm=False,
+                   open_blender=False, gui_blender=''):
     python = load_config().get('local_python', sys.executable)
     with tempfile.TemporaryDirectory(prefix='pymol-blender-') as temporary:
         root = Path(temporary)
@@ -48,7 +49,28 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
             command.append('--keep-temp')
         if warm:
             command.append('--warm')
+        if open_blender:
+            command.append('--open-blender')
+        if gui_blender:
+            command.extend(['--gui-blender', gui_blender])
         result = subprocess.run(command, env=controller_environment(), capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError('Local render failed. Run blender-render setup in the render environment.\n' + result.stderr[-4000:])
         return json.loads(result.stdout)
+
+
+def preset_from_blend(filename, preset, *, description='', camera_policy='preserve_input',
+                      replace=False, allow_partial=False, report=''):
+    command = [load_config().get('local_python', sys.executable), '-m', 'blender_render.cli',
+               'dev', 'from-blend', str(Path(filename).expanduser()), '--preset', preset,
+               '--description', description, '--camera-policy', camera_policy]
+    if replace:
+        command.append('--replace')
+    if allow_partial:
+        command.append('--allow-partial')
+    if report:
+        command.extend(['--report', str(Path(report).expanduser())])
+    result = subprocess.run(command, env=controller_environment(), capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr[-4000:])
+    return json.loads(result.stdout)

@@ -28,6 +28,7 @@ def parser():
     stop.add_argument('--force', action='store_true', help='Also interrupt an active render')
     setup = commands.add_parser('setup', help='Configure the local Blender and PyMOL runtimes')
     setup.add_argument('--blender')
+    setup.add_argument('--gui-blender', help='Optional desktop Blender executable when the render runtime is headless')
     setup.add_argument('--pymol-python')
     setup.add_argument('--runtime-path', action='append')
     setup.add_argument('--runtime-wheels')
@@ -35,6 +36,9 @@ def parser():
     setup.add_argument('--install-runtime', action='store_true')
     commands.add_parser('doctor', help='Inspect local runtime configuration')
     commands.add_parser('presets', help='List built-in and saved local presets')
+    editor = commands.add_parser('open', help='Open a saved local .blend for editing (embedded scripts disabled)')
+    editor.add_argument('scene')
+    editor.add_argument('--blender', default='', help='Desktop Blender executable')
     commands.add_parser('mcp', help='Serve local tools over stdio for Claude/Codex')
     export = commands.add_parser('export', help='Export a trusted PSE/CIF/PDB to a StructureBundle')
     export.add_argument('input')
@@ -58,6 +62,8 @@ def parser():
     render.add_argument('--ccd', default='')
     render.add_argument('--keep-temp', action='store_true')
     render.add_argument('--warm', action='store_true', help='Explicitly start/reuse the optional local Blender worker')
+    render.add_argument('--open-blender', action='store_true', help='Save the scene and open desktop Blender after rendering')
+    render.add_argument('--gui-blender', default='', help='Optional desktop Blender executable')
     for name in ('width', 'height', 'samples'):
         render.add_argument('--'+name, type=int)
     for name in ('rough', 'transparent', 'color-follow', 'save-blend'):
@@ -76,6 +82,9 @@ def parser():
 
 def execute(args):
     from .config import config_root
+    if args.command == 'open':
+        from .scene_edit import open_scene
+        return open_scene(args.scene, blender=args.blender)
     if args.command == 'worker':
         from . import warm_worker
         if args.action == 'status':
@@ -89,7 +98,7 @@ def execute(args):
     if args.command == 'setup':
         config = load_config()
         config['local_python'] = sys.executable
-        for name in ('blender', 'pymol_python', 'runtime_wheels', 'ccd'):
+        for name in ('blender', 'gui_blender', 'pymol_python', 'runtime_wheels', 'ccd'):
             value = getattr(args, name)
             if value:
                 path = Path(value).expanduser()
@@ -142,7 +151,8 @@ def execute(args):
         return render_file(args.input, output=args.output, options=options, selection=args.selection,
             pymol_python=args.pymol_python, blender=args.blender, runtime_paths=args.runtime_path,
             runtime_wheels=args.runtime_wheels, ccd=args.ccd, timeout=args.timeout,
-            keep_temp=args.keep_temp, catalog_dir=args.catalog_dir, warm=args.warm)
+            keep_temp=args.keep_temp, catalog_dir=args.catalog_dir, warm=args.warm,
+            open_blender=args.open_blender, gui_blender=args.gui_blender)
 
 
 def main(argv=None):

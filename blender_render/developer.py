@@ -278,6 +278,16 @@ def parser() -> argparse.ArgumentParser:
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("catalog")
     commands.add_parser("schema")
+    edited = commands.add_parser('from-blend', help='Save a local preset from an edited Blender Render scene')
+    edited.add_argument('scene', type=Path)
+    edited.add_argument('--preset', required=True, help='New user/name or project/name preset')
+    edited.add_argument('--description', default='')
+    edited.add_argument('--blender', default='')
+    edited.add_argument('--camera-policy', choices=('preserve_input', 'authored'), default='preserve_input')
+    edited.add_argument('--replace', action='store_true')
+    edited.add_argument('--allow-partial', action='store_true', help='Explicitly accept reported unsupported edits being omitted')
+    edited.add_argument('--report', type=Path, help='New JSON file for the extracted style and unsupported-change report')
+    edited.add_argument('--timeout', type=float, default=120)
     inspect = commands.add_parser("inspect")
     inspect.add_argument("preset")
     validate = commands.add_parser("validate")
@@ -317,6 +327,11 @@ def parser() -> argparse.ArgumentParser:
 
 def execute(args):
     from blender_render import authoring, core
+    if args.action == 'from-blend':
+        from blender_render.scene_edit import save_from_blend
+        return save_from_blend(args.scene, args.preset, description=args.description, catalog_dir=args.catalog_dir,
+                               blender=args.blender, camera_policy=args.camera_policy, replace=args.replace,
+                               allow_partial=args.allow_partial, report=args.report, timeout=args.timeout)
     if args.action == "catalog":
         return authoring.list_presets(args.catalog_dir)
     if args.action == "schema":

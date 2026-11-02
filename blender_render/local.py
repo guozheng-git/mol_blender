@@ -25,12 +25,17 @@ def runtime_settings(*, blender='', runtime_paths=None, ccd='', runtime_wheels='
 
 
 def render_payload(payload, *, output, options=None, blender='', runtime_paths=None,
-                   ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False):
+                   ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False,
+                   open_blender=False, gui_blender=''):
     from .core import validate_payload_document
     from .authoring import resolve_authored
     from .developer import preview
     payload = validate_payload_document(payload)
     options = dict(options or {})
+    if open_blender:
+        from .scene_edit import blender_executable
+        editor = blender_executable(gui_blender or load_config().get('gui_blender') or blender, gui=True)
+        options['save_blend'] = True
     catalog_dir = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
     # Reject invalid presets before allocating any Blender work.
     resolved = resolve_authored(options, payload, catalog_dir)
@@ -78,9 +83,16 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
             outputs[name] = str(destinations[name])
     if (artifacts / 'render.blend').is_file():
         outputs['render.blend'] = str(artifacts / 'render.blend')
-    return {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),
+    result = {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),
             'source_sha256': result['sha256'], 'png_sha256': result['png_sha256'],
             **({'worker': result['worker']} if 'worker' in result else {})}
+    if open_blender:
+        from .scene_edit import open_scene
+        try:
+            result['editor'] = open_scene(outputs['render.blend'], blender=editor)
+        except OSError as exc:
+            result['editor'] = {'status': 'launch_failed', 'error': str(exc), 'scene': outputs['render.blend']}
+    return result
 
 
 def render_file(path, *, pymol_python='', selection='(all)', **kwargs):

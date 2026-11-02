@@ -22,7 +22,7 @@ from typing import Any
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -995,6 +995,7 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
     out = nt.nodes.new("ShaderNodeOutputWorld")
     out.location = (480, 0)
     bg = nt.nodes.new("ShaderNodeBackground")
+    bg.name = "Background color"
     bg.location = (280, 0)
     nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
     bg.inputs["Strength"].default_value = float(world_cfg.get("strength", 1.0))
@@ -1009,6 +1010,7 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
         separate = nt.nodes.new("ShaderNodeSeparateXYZ")
         separate.location = (-320, 0)
         ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.name = "Background gradient"
         ramp.location = (-80, 0)
 
         ramp.color_ramp.elements[0].position = 0.0
@@ -1111,6 +1113,7 @@ def _add_lights(
         light_name = str(cfg.get("name", f"BridgeLight_{idx + 1}"))
         light_data = bpy.data.lights.new(name=light_name, type=light_type)
         light_obj = bpy.data.objects.new(light_name, light_data)
+        light_obj['blender_render_light_index'] = idx
         scene.collection.objects.link(light_obj)
 
         light_data.energy = float(cfg.get("energy", 1000.0))
@@ -1206,6 +1209,7 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
     )
     if use_clay:
         ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+        ao.name = "Clay AO"
         ao.location = (-500, -140)
         if ao.inputs.get("Distance") is not None:
             ao.inputs["Distance"].default_value = float(cfg.get("ao_distance", 0.95))
@@ -1217,6 +1221,7 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         nt.links.new(ao.outputs["AO"], one_minus_ao.inputs[1])
 
         ao_mul = nt.nodes.new("ShaderNodeMath")
+        ao_mul.name = "Clay AO strength"
         ao_mul.location = (-140, -140)
         ao_mul.operation = "MULTIPLY"
         ao_mul.inputs[1].default_value = ao_strength
@@ -1231,6 +1236,7 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         nt.links.new(ao_mul.outputs["Value"], mix_shadow.inputs["Fac"])
 
         layer_weight = nt.nodes.new("ShaderNodeLayerWeight")
+        layer_weight.name = "Clay rim blend"
         layer_weight.location = (-500, 120)
         if layer_weight.inputs.get("Blend") is not None:
             layer_weight.inputs["Blend"].default_value = float(cfg.get("rim_blend", 0.25))
@@ -1242,18 +1248,21 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
         nt.links.new(layer_weight.outputs["Facing"], inv_facing.inputs[1])
 
         rim_pow = nt.nodes.new("ShaderNodeMath")
+        rim_pow.name = "Clay rim power"
         rim_pow.location = (-140, 120)
         rim_pow.operation = "POWER"
         rim_pow.inputs[1].default_value = float(cfg.get("rim_power", 2.8))
         nt.links.new(inv_facing.outputs["Value"], rim_pow.inputs[0])
 
         rim_mul = nt.nodes.new("ShaderNodeMath")
+        rim_mul.name = "Clay rim strength"
         rim_mul.location = (20, 120)
         rim_mul.operation = "MULTIPLY"
         rim_mul.inputs[1].default_value = rim_strength
         nt.links.new(rim_pow.outputs["Value"], rim_mul.inputs[0])
 
         mix_rim = nt.nodes.new("ShaderNodeMixRGB")
+        mix_rim.name = "Clay highlight"
         mix_rim.location = (180, 20)
         mix_rim.blend_type = "MIX"
         mix_rim.inputs["Color2"].default_value = _hex_to_rgba(highlight_color)
@@ -1289,8 +1298,18 @@ def _create_material(name: str, cfg: dict[str, Any]) -> bpy.types.Material:
     return material
 
 
-def _build_materials(materials_cfg: dict[str, dict[str, Any]]) -> dict[str, bpy.types.Material]:
-    return {name: _create_material(name, cfg) for name, cfg in materials_cfg.items()}
+def _build_materials(materials_cfg: dict[str, dict[str, Any]], authored_names=None) -> dict[str, bpy.types.Material]:
+    materials = {}
+    for name, cfg in materials_cfg.items():
+        base = name.split('__chain_', 1)[0]
+        # Paint reads atom colors, so generated chain variants use the same
+        # shader. Sharing it also makes editing the paint a single operation.
+        if (authored_names is not None and name not in authored_names and base in materials
+                and cfg.get('paint') and cfg['paint'] == materials_cfg[base].get('paint')):
+            materials[name] = materials[base]
+        else:
+            materials[name] = _create_material(name, cfg)
+    return materials
 
 
 def _apply_material_fallback(obj: bpy.types.Object, material: bpy.types.Material) -> None:
@@ -3375,6 +3394,8 @@ def _apply_surface_wireframe(obj: bpy.types.Object, width_angstrom: float,
 
 def _override_camera_rotation(camera: bpy.types.Object, camera_cfg: dict[str, Any]) -> Matrix:
     """Resolve orientation once for both camera-relative geometry and the camera."""
+    if camera_cfg.get('relative_pose'):
+        return Euler(tuple(math.radians(x) for x in camera_cfg['relative_pose']['rotation_deg']), 'XYZ').to_matrix()
     direction_source = str(camera_cfg.get("direction_source", "preset")).strip().lower()
 
     up_hint: Vector | None = None
@@ -3423,6 +3444,26 @@ def _apply_override_camera(
     style_centers_by_name: dict[str, Vector] | None = None,
 ) -> None:
     center, radius = _scene_bounds(objects)
+    pose = camera_cfg.get('relative_pose')
+    if pose:
+        # Authored in Blender, normalized to the molecular bounds so the look
+        # can be reused on a different-sized structure without absolute paths.
+        rotation = Euler(tuple(math.radians(x) for x in pose['rotation_deg']), 'XYZ').to_matrix()
+        camera.matrix_world = Matrix.Translation(center + Vector(pose['position']) * radius) @ rotation.to_4x4()
+        data = camera.data
+        data.type = camera_cfg['projection']
+        data.ortho_scale = pose['ortho_scale'] * radius
+        if 'clip_start' in pose:
+            data.clip_start = pose['clip_start'] * radius
+        if 'clip_end' in pose:
+            data.clip_end = pose['clip_end'] * radius
+        for key, field in (('lens_mm', 'lens'), ('sensor_fit', 'sensor_fit'),
+                           ('sensor_width_mm', 'sensor_width'), ('sensor_height_mm', 'sensor_height'),
+                           ('shift_x', 'shift_x'), ('shift_y', 'shift_y'),
+                           ('clip_start', 'clip_start'), ('clip_end', 'clip_end')):
+            if key in camera_cfg:
+                setattr(data, field, camera_cfg[key])
+        return
     focus_style = str(camera_cfg.get("focus_style", "")).strip()
     if focus_style and style_objects_by_name:
         focus_objects = [
@@ -3728,7 +3769,7 @@ def _render(args: argparse.Namespace) -> None:
         materials_cfg=material_config,
         protein_chain_ids=protein_chain_ids,
     )
-    materials = _build_materials(material_config)
+    materials = _build_materials(material_config, authored_names=set(style_doc['materials']))
     if style_doc.get("color_follow", {}).get("enabled") and view_doc.get("color_hints", {}).get("atoms"):
         for name, material in materials.items():
             if material_config.get(name, {}).get("paint"):
@@ -4323,6 +4364,8 @@ def _render(args: argparse.Namespace) -> None:
                      "Source and build instructions: https://github.com/magnusbauer/blender_render\n"
                      "Upstream Molecular Nodes: https://github.com/BradyAJohnston/MolecularNodes\n\n")
         notice.write(resource_bytes(Path(__file__).with_name("GPL-3.0-or-later.txt")).decode())
+        from blender_render.scene_capture import capture
+        capture(scene, style_doc, materials, light_target, light_radius)
         bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), copy=True)
         print(f"Custom blend saved: {blend_output}")
     run_manifest_raw = str(getattr(args, "run_manifest", "") or "").strip()

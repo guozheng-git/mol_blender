@@ -26,6 +26,9 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   for reference-image-to-preset requests.
 - Write manifests and resolved styles; clean temporary source snapshots unless
   debugging retention was requested. Never commit research data or local paths.
+- Saved Blender scenes carry data-only preset editing metadata. Disable embedded
+  script execution when opening/importing them, report unmapped edits, and keep
+  camera capture explicit. Desktop editing stays outside local/Slurm workers.
 - Run `python -m pytest` for relevant changes. Check a built wheel outside the
   checkout for packaging changes. Record actual runtime and visual checks in
   `docs/validation.md`; mocks do not establish Blender or host integration.

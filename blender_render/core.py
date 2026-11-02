@@ -301,6 +301,20 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"{prefix}.ligand_cutout_frame_axes is required when ligand_cutout_frame_mode is preset")
     camera = style_doc.get("camera", {})
     if isinstance(camera, dict):
+        if 'relative_pose' in camera:
+            if camera.get('mode') != 'override' or camera.get('projection') not in ('ORTHO', 'PERSP'):
+                errors.append('camera.relative_pose requires mode=override and an explicit projection')
+            incompatible = {'direction_source', 'yaw_deg', 'pitch_deg', 'roll_deg', 'yaw_offset_deg',
+                            'pitch_offset_deg', 'fit', 'fit_margin', 'focus_style', 'distance_scale',
+                            'ortho_scale_angstrom', 'preserve_framing'} & camera.keys()
+            if incompatible:
+                errors.append('camera.relative_pose cannot be combined with ' + ', '.join(sorted(incompatible)))
+            pose = camera['relative_pose']
+            if isinstance(pose, dict) and all(type(pose.get(key)) in (int, float) for key in ('clip_start', 'clip_end')):
+                if pose['clip_end'] <= pose['clip_start']:
+                    errors.append('camera.relative_pose.clip_end must exceed clip_start')
+        elif {'sensor_fit', 'sensor_width_mm', 'sensor_height_mm'} & camera.keys():
+            errors.append('camera sensor settings require relative_pose')
         if {"yaw_deg", "pitch_deg"} & camera.keys() and (
                 camera.get("mode") != "override" or camera.get("direction_source", "preset") != "preset"):
             errors.append("camera.yaw_deg/pitch_deg require mode=override and direction_source=preset; use yaw_offset_deg/pitch_offset_deg for PyMOL-relative rotation")

@@ -306,6 +306,70 @@
             "ORTHO",
             "PERSP"
           ]
+        },
+        "relative_pose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "position",
+            "rotation_deg",
+            "ortho_scale"
+          ],
+          "description": "Authored Blender pose relative to the center and bounding radius of the rendered molecular geometry. Requires mode=override and an explicit projection.",
+          "properties": {
+            "position": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "number",
+                "minimum": -10000,
+                "maximum": 10000
+              }
+            },
+            "rotation_deg": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "number",
+                "minimum": -360,
+                "maximum": 360
+              }
+            },
+            "ortho_scale": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 10000
+            },
+            "clip_start": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            },
+            "clip_end": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        "sensor_fit": {
+          "enum": [
+            "AUTO",
+            "HORIZONTAL",
+            "VERTICAL"
+          ]
+        },
+        "sensor_width_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
+        "sensor_height_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
         }
       }
     },

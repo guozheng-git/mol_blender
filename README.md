@@ -281,6 +281,28 @@ locations follow [Codex skills](https://developers.openai.com/codex/skills/) and
 
 ## Preset authoring
 
+You can also make a preset by editing in Blender. Start from a look you like:
+
+```pml
+blender_render preset=mint_sky_assembly, open_blender=1, output_name=edit.png
+```
+
+After changing materials, lights or the background, use **File → Save As** in
+Blender, then save the supported changes as a reusable preset from PyMOL:
+
+```pml
+blender_preset_from_blend /path/to/edited.blend, user/my-look
+blender_render preset=user/my-look, output_name=my-look.png
+```
+
+The terminal equivalents are `render --open-blender` and
+`dev from-blend edited.blend --preset user/my-look`. Camera capture is optional;
+unsupported geometry or shader edits are reported before a preset is saved.
+See [editing in Blender](docs/blender-editing.md) for supported controls, camera
+choices, saved preset revisions, and use with local or Slurm rendering.
+
+For JSON and reference-image authoring:
+
 ```sh
 blender-render dev catalog
 blender-render dev inspect pastel
@@ -296,7 +318,7 @@ blender-render render structure.pse --preset user/my-reference -o renders/saved.
 `dev reference` records agent-supplied observations; it is not an automatic image
 recognizer. `--style-output` emits a complete style document and refuses to overwrite
 an existing file. A saved catalog preset is a metadata envelope; use its ID with
-`--preset`, or extract its `style` for `--style-json`. Save defaults to
+`--preset`, or extract its `style_doc` for `--style-json`. Save defaults to
 `--camera-policy preserve_input`; choose `authored` deliberately for a reusable
 camera composition. `dev preview --help` exposes explicit runtime paths and source
 snapshots for renderer development. Built-ins cannot be overwritten.
