@@ -74,7 +74,7 @@ class Slurm:
             if getattr(c, key):
                 command.append('--' + key + '=' + getattr(c, key))
         if c.gpus:
-            command.append('--gpus=1')
+            command.append('--gres=gpu:1')
         try:
             result = self.run(command + [str(path)])
         except subprocess.TimeoutExpired as exc:

@@ -142,7 +142,11 @@ class Store:
                 record.update(slurm_id=self.scheduler.submit(directory, identifier), status='queued')
             except SubmissionUnknown:
                 record['status'] = 'submission_unknown'
-            except (OSError, subprocess.SubprocessError):
+            except (OSError, subprocess.SubprocessError) as exc:
+                atomic_json(directory / 'submission-error.json', {
+                    'type': type(exc).__name__, 'message': str(exc)[-4000:],
+                    'stdout': str(getattr(exc, 'stdout', '') or '')[-4000:],
+                    'stderr': str(getattr(exc, 'stderr', '') or '')[-4000:]})
                 record.update(status='failed', finished_at=time.time())
             self.save(record)
             return self.public(record)

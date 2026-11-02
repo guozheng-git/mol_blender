@@ -115,6 +115,20 @@ def test_scheduler_outage_preserves_pending_job(store):
     assert store.status('alice', job)['status'] == 'queued'
 
 
+def test_rejected_submission_keeps_private_scheduler_diagnostics(store):
+    def reject(*args):
+        raise subprocess.CalledProcessError(1, ['sbatch'], stderr='allocation failure: Access/permission denied')
+    store.scheduler.submit = reject
+    result = store.submit('alice', request())
+    assert result['status'] == 'failed' and 'slurm_id' not in result
+    import json
+    diagnostic = json.loads((store.directory(result['job_id']) / 'submission-error.json').read_text())
+    assert 'Access/permission denied' in diagnostic['stderr']
+    assert 'Access/permission denied' not in json.dumps(result)
+    with pytest.raises(NotFound):
+        store.open_artifact('alice', result['job_id'], 'submission-error.json')
+
+
 @pytest.mark.parametrize('field,value', [('input_path', '/etc/passwd'), ('pse', 'pickle'), ('script', 'code')])
 def test_request_rejects_paths_sessions_and_scripts(field, value):
     doc = request()
@@ -149,7 +163,10 @@ def test_output_bounds_and_destinations():
         validate_request(request(samples=513), Limits())
 
 
-def test_slurm_uses_admin_arguments_and_private_single_job_bind(config, monkeypatch):
+@pytest.mark.parametrize('gpus', [0, 1])
+def test_slurm_uses_admin_arguments_and_private_single_job_bind(config, monkeypatch, gpus):
+    from dataclasses import replace
+    config = replace(config, gpus=gpus)
     scheduler = Slurm(config)
     config.spool.mkdir()
     directory = config.spool / ('a' * 32)
@@ -158,6 +175,7 @@ def test_slurm_uses_admin_arguments_and_private_single_job_bind(config, monkeypa
     monkeypatch.setattr(scheduler, 'run', lambda cmd: seen.append(cmd) or SimpleNamespace(stdout='123;cluster\n'))
     assert scheduler.submit(directory, 'a' * 32) == '123'
     assert '--export=NIL' in seen[0]
+    assert ('--gres=gpu:1' in seen[0]) == bool(gpus)
     script = (directory / 'job.sh').read_text()
     assert '--cleanenv --containall --no-home' in script
     assert '--no-mount hostfs,bind-paths,cwd' in script
