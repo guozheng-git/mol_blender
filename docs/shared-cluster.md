@@ -257,6 +257,8 @@ idempotency, revocation and deletion. Failures retain private diagnostic logs an
 request cancellation of any outstanding test allocations. `evidence.json` records
 whether the run passed. Repeat with a GPU configuration if GPU service is enabled,
 and with `runtime_home` set to validate reuse of an existing Linux uv runtime.
+Add `--cancel-running` to exercise cancellation after Slurm starts the probe;
+this requests a longer animation and cancels it as soon as running is observed.
 
 The launcher follows the documented behavior of
 [Slurm sbatch](https://slurm.schedmd.com/sbatch.html) (`--parsable`, `--export=NIL`),

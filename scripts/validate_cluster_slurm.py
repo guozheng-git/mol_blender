@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--skill', type=Path, required=True, help='Staged Structure Studio skill')
     parser.add_argument('--output', type=Path, required=True, help='New directory on shared storage')
     parser.add_argument('--timeout', type=int, default=900, help='Queue plus render deadline per job')
+    parser.add_argument('--cancel-running', action='store_true', help='Wait for the cancellation probe to start')
     args = parser.parse_args()
     os.umask(0o077)
     root = args.output.absolute()
@@ -210,8 +211,11 @@ with pymol2.PyMOL() as p:
         # Retry the exact same request, recover it, reject a conflicting retry,
         # then cancel the original real allocation. No retry can launch job #2.
         payload = json.loads((root / 'payload.json').read_text())
+        options = {'width': 192, 'height': 144, 'samples': 4}
+        if args.cancel_running:
+            options.update(animation='rock', duration=12, fps=12)
         document = {'protocol': 1, 'request_id': uuid.uuid4().hex, 'payload': payload,
-                    'style': resolve_options({'width': 192, 'height': 144, 'samples': 4}, payload)['style_doc']}
+                    'style': resolve_options(options, payload)['style_doc']}
         first = client.api('POST', '/v1/jobs', document)
         second = client.api('POST', '/v1/jobs', document)
         assert first['job_id'] == second['job_id'] and first['slurm_id'] == second['slurm_id']
@@ -220,6 +224,17 @@ with pymol2.PyMOL() as p:
         document['style']['output']['samples'] = 5
         denied(lambda: client.api('POST', '/v1/jobs', document), 409)
         denied(lambda: other.api('POST', '/v1/jobs/' + identifier + '/cancel'), 404)
+        if args.cancel_running:
+            deadline = time.monotonic() + args.timeout
+            while True:
+                status = client.status(identifier)
+                if status['status'] == 'running':
+                    break
+                assert status['status'] not in TERMINAL, status
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Cancellation probe did not start before its deadline')
+                time.sleep(3)
+            evidence['cancel_observed_running'] = True
         client.api('POST', '/v1/jobs/' + identifier + '/cancel')
         assert wait(client, identifier, 120)['status'] == 'cancelled'
         assert scheduler.find_submission(identifier, first['created_at']) == first['slurm_id']
