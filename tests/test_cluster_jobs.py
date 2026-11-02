@@ -254,6 +254,8 @@ def test_reconcile_attaches_the_original_slurm_job_without_resubmitting(store):
 
 
 def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):
+    import tempfile
+    import os
     from blender_render import local, engine
     from blender_render.cluster import worker
     root = config.spool
@@ -262,8 +264,15 @@ def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):
     envelope = {'request': request(), 'limits': vars(config.limits), 'engine_build': build}
     atomic_json(root / 'request.json', envelope)
     calls = []
+    previous = tempfile.gettempdir(), os.environ.get('TMPDIR')
     def render(data, **kwargs):
         assert data == payload()
+        scratch = Path(tempfile.gettempdir())
+        assert scratch.is_relative_to(root)
+        assert os.environ['TMPDIR'] == str(scratch)
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            assert Path(handle.name).is_relative_to(scratch)
+            handle.write(b'private temporary input')
         calls.append(kwargs)
         path = kwargs['output']
         path.parent.mkdir()
@@ -274,6 +283,8 @@ def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):
     assert worker.run(root) == 0
     assert len(calls) == 1
     assert not (root / 'request.json').exists()
+    assert not list(root.glob('scratch-*'))
+    assert (tempfile.gettempdir(), os.environ.get('TMPDIR')) == previous
 
 
 def test_worker_rejects_changed_environment_before_render(config, monkeypatch):

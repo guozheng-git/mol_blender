@@ -7,8 +7,28 @@ import time
 import traceback
 import json
 import platform
+from contextlib import contextmanager
+import tempfile
 
 from .common import ARTIFACTS, Limits, atomic_json, digest_file, read_json, validate_request
+
+
+@contextmanager
+def job_scratch(directory):
+    # Apptainer's contained /tmp can be much smaller than the CCD snapshot.
+    # Keep all temporary input/source copies on this job's private filesystem.
+    with tempfile.TemporaryDirectory(prefix='scratch-', dir=directory) as scratch:
+        previous, previous_env = tempfile.tempdir, os.environ.get('TMPDIR')
+        tempfile.tempdir = scratch
+        os.environ['TMPDIR'] = scratch
+        try:
+            yield
+        finally:
+            tempfile.tempdir = previous
+            if previous_env is None:
+                os.environ.pop('TMPDIR', None)
+            else:
+                os.environ['TMPDIR'] = previous_env
 
 
 def run(directory):
@@ -35,8 +55,9 @@ def run(directory):
             if (directory / 'started.json').exists():
                 raise RuntimeError('Previous execution was interrupted; no automatic rerender')
             atomic_json(directory / 'started.json', {'started_at': time.time(), 'engine_build': identity})
-            result = render_payload(request['payload'], output=directory / 'out/render.png',
-                                    options={'style_doc': request['style']}, timeout=limits.render_timeout)
+            with job_scratch(directory):
+                result = render_payload(request['payload'], output=directory / 'out/render.png',
+                                        options={'style_doc': request['style']}, timeout=limits.render_timeout)
             artifacts = {}
             for name, filename in result['outputs'].items():
                 path = Path(filename).resolve()
