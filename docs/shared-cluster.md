@@ -1,6 +1,6 @@
 # Optional shared cluster rendering
 
-The same renderer can run locally or behind an authenticated cluster service:
+The same renderer can run locally or through a shared cluster service:
 
 ```text
 PyMOL / CLI → HTTPS gateway → Slurm → Apptainer → existing local renderer
@@ -9,8 +9,10 @@ PyMOL / CLI → HTTPS gateway → Slurm → Apptainer → existing local rendere
 ```
 
 The gateway runs on a cluster service host with Slurm client tools. It accepts
-exported structure data and validated styles, submits one job, and serves each
-user's own results. It never renders in the web process. Local `blender_render`
+exported structure data and validated styles, submits one job, and serves the
+results. Token authentication gives each user a private queue. An administrator
+can explicitly select open access for a trusted cluster network, with one shared
+queue and no credentials. It never renders in the web process. Local `blender_render`
 and `blender-render render` keep their existing behavior unless a cluster is
 explicitly selected. The optional stdio MCP and hosted image-delivery adapter
 remain separate interfaces.
@@ -20,7 +22,20 @@ remain separate interfaces.
 Install the base package in a local uv environment and run `blender-render setup`
 there to record its Python interpreter. A local Blender installation is not
 required for remote submission from an already running PyMOL. The administrator
-provides a private credential JSON file. Import it once:
+provides either an open service URL or a private credential JSON file. For an
+open cluster, configure the URL once:
+
+```sh
+blender-render cluster configure --profile lab --url https://render.cluster.example:8772
+blender-render cluster info --profile lab
+```
+
+Add `--ca-file /shared/render-ca.pem` if the service uses a private CA. There is
+no token or login in open mode. Everyone who can reach the endpoint can list,
+fetch, cancel and delete jobs in its shared queue. The per-user active-job limit
+therefore applies to the whole shared queue, alongside the total service limit.
+
+For a service using individual credentials, import the provided file instead:
 
 ```sh
 blender-render cluster configure --profile lab --credential-file /private/alice.json
@@ -34,6 +49,13 @@ arguments or normal output. Use `--ca-file` with `configure` for a private CA;
 certificate verification cannot be disabled. HTTPS is required except for a
 loopback URL reached through an SSH tunnel. The client refuses redirects and
 does not use environment-configured HTTP proxies.
+
+On the server, open access requires `"authentication": "none"` in its configuration;
+`tokens_file` can then be omitted. The default is `"authentication": "token"` and
+requires a private credential database. Keep an open service bound to the cluster
+network address. TLS, input validation, resource limits and Slurm isolation apply
+in both modes. All jobs use the gateway's Unix identity and configured Slurm
+account, including jobs submitted by other cluster users.
 
 Load `blender_render/pymol_bridge_plugin.py` as described in the README, then:
 

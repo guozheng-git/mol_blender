@@ -34,13 +34,18 @@ def profile_path(name):
     return config_root() / 'clusters' / (name + '.json')
 
 
-def configure(name, credential_file, ca_file=None):
-    doc = read_json(private_file(credential_file), 64 * 1024)
-    if set(doc) != {'url', 'token'}:
-        raise ValueError('Credential must contain url and token only')
-    validate_url(doc['url'])
-    if not isinstance(doc['token'], str) or not 32 <= len(doc['token']) <= 256:
-        raise ValueError('Invalid credential')
+def configure(name, credential_file=None, ca_file=None, *, url=None):
+    if (credential_file is None) == (url is None):
+        raise ValueError('Supply either a credential file or an open service URL')
+    if url is not None:
+        doc = {'url': validate_url(url), 'authentication': 'none'}
+    else:
+        doc = read_json(private_file(credential_file), 64 * 1024)
+        if set(doc) != {'url', 'token'}:
+            raise ValueError('Credential must contain url and token only')
+        validate_url(doc['url'])
+        if not isinstance(doc['token'], str) or not 32 <= len(doc['token']) <= 256:
+            raise ValueError('Invalid credential')
     if ca_file:
         doc['ca_file'] = str(Path(ca_file).expanduser().resolve(strict=True))
     target = profile_path(name)
@@ -55,19 +60,26 @@ class Client:
     def __init__(self, profile='default'):
         self.profile = profile
         config = read_json(private_file(profile_path(profile)), 64 * 1024)
-        if set(config) - {'url', 'token', 'ca_file'} or not {'url', 'token'} <= set(config):
+        if set(config) - {'url', 'token', 'ca_file', 'authentication'} or 'url' not in config:
             raise ValueError('Invalid cluster profile')
         self.url = validate_url(config['url'])
-        self.token = config['token']
-        if not isinstance(self.token, str) or not 32 <= len(self.token) <= 256:
+        mode = config.get('authentication', 'token')
+        self.token = config.get('token')
+        if mode == 'none':
+            if 'token' in config:
+                raise ValueError('Open cluster profiles must not contain a token')
+        elif mode != 'token' or not isinstance(self.token, str) or not 32 <= len(self.token) <= 256:
             raise ValueError('Invalid cluster credential')
         context = ssl.create_default_context(cafile=config.get('ca_file'))
         # Proxy credentials and redirects must not receive the service token.
         self.opener = build_opener(ProxyHandler({}), HTTPSHandler(context=context), NoRedirect())
 
     def open(self, method, path, data=None):
+        headers = {'Content-Type': 'application/json'}
+        if self.token is not None:
+            headers['Authorization'] = 'Bearer ' + self.token
         request = Request(self.url + path, data=None if data is None else json_bytes(data), method=method,
-                          headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'})
+                          headers=headers)
         try:
             return self.opener.open(request, timeout=60)
         except HTTPError as exc:

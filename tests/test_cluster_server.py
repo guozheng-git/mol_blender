@@ -1,5 +1,6 @@
 import hashlib
 import time
+from dataclasses import replace
 
 import pytest
 from starlette.testclient import TestClient
@@ -115,3 +116,43 @@ def test_artifact_paths_cannot_escape_the_job(service, tmp_path):
         'render.png': {'path': 'out/render.png', 'bytes': 6, 'sha256': '0' * 64}}})
     with TestClient(app) as client:
         assert client.get(f'/v1/jobs/{job}/artifacts/render.png', headers=headers['alice']).status_code == 404
+
+
+def test_open_mode_has_one_shared_queue_and_preserves_limits(config):
+    config = replace(config, authentication='none', tokens_file=None,
+                     limits=replace(config.limits, max_active_per_user=1))
+    app = create_app(config, scheduler=Scheduler())
+    with TestClient(app) as client:
+        assert client.get('/v1/info').json()['authentication'] == 'none'
+        document = request()
+        result = client.post('/v1/jobs', json=document)
+        assert result.status_code == 202
+        identifier = result.json()['job_id']
+        # Headers do not partition the queue or let callers choose another owner.
+        headers = {'Authorization': 'Bearer ignored'}
+        assert client.post('/v1/jobs', json=document, headers=headers).json()['job_id'] == identifier
+        assert len(app.state.store.scheduler.submissions) == 1
+        assert client.get('/v1/jobs', headers=headers).json()[0]['job_id'] == identifier
+        assert client.get('/v1/requests/' + document['request_id']).json()['job_id'] == identifier
+        assert client.post('/v1/jobs', json=request('2' * 32)).status_code == 429
+        invalid = request('3' * 32)
+        invalid['payload']['pse'] = 'executable input'
+        assert client.post('/v1/jobs', json=invalid).status_code == 400
+        url = '/v1/jobs/' + identifier
+        assert client.post(url + '/cancel').json()['status'] == 'cancelling'
+        app.state.store.scheduler.state_value = 'CANCELLED'
+        assert client.delete(url, headers=headers).json()['status'] == 'expired'
+        # Switching modes must not expose jobs from an earlier token user.
+        private = app.state.store.submit('alice', request('4' * 32))
+        assert client.get('/v1/jobs/' + private['job_id']).status_code == 404
+
+
+def test_open_authentication_requires_an_explicit_valid_setting(config):
+    with pytest.raises(ValueError, match='tokens_file'):
+        replace(config, tokens_file=None)
+    for mode in ('anonymous', '', False, None):
+        with pytest.raises(ValueError, match='authentication'):
+            replace(config, authentication=mode)
+    # A missing credential database in default mode must fail closed at startup.
+    with pytest.raises(ValueError, match='Credential'):
+        create_app(config)

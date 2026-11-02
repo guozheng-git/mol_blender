@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 import socket
 import threading
@@ -16,11 +17,13 @@ from blender_render.cluster.server import create_app
 from test_cluster_jobs import Scheduler, config, payload
 
 
-@pytest.fixture
-def live_service(config, tmp_path, monkeypatch):
+@pytest.fixture(params=['token', 'none'])
+def live_service(config, tmp_path, monkeypatch, request):
     monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'client-config'))
+    config = replace(config, authentication=request.param)
     token = 'test-credential-' + 'a' * 32
-    atomic_json(config.tokens_file, {'users': {'alice': hashlib.sha256(token.encode()).hexdigest()}})
+    if config.authentication == 'token':
+        atomic_json(config.tokens_file, {'users': {'alice': hashlib.sha256(token.encode()).hexdigest()}})
     app = create_app(config, scheduler=Scheduler())
     sock = socket.socket()
     sock.bind(('127.0.0.1', 0))
@@ -32,9 +35,12 @@ def live_service(config, tmp_path, monkeypatch):
     while not server.started and time.monotonic() < deadline:
         time.sleep(.01)
     assert server.started
-    credential = tmp_path / 'credential.json'
-    atomic_json(credential, {'url': url, 'token': token})
-    configure('lab', credential)
+    if config.authentication == 'token':
+        credential = tmp_path / 'credential.json'
+        atomic_json(credential, {'url': url, 'token': token})
+        configure('lab', credential)
+    else:
+        configure('lab', url=url)
     try:
         yield Client('lab'), app.state.store
     finally:
@@ -170,3 +176,24 @@ def test_local_imports_do_not_load_cluster_server_dependencies():
         "assert not {'starlette', 'uvicorn', 'blender_render.cluster.server'} & sys.modules.keys()"],
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_open_profiles_are_explicit_and_send_no_credentials(tmp_path, monkeypatch):
+    from blender_render.cluster.cli import execute, parser
+    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    args = parser().parse_args(['configure', '--profile', 'open', '--url', 'https://cluster.example'])
+    execute(args)
+    client = Client('open')
+    seen = []
+    monkeypatch.setattr(client.opener, 'open', lambda request, **kw: seen.append(request))
+    client.open('GET', '/v1/info')
+    assert not seen[0].has_header('Authorization')
+    assert read_json(profile_path('open')) == {'url': 'https://cluster.example', 'authentication': 'none'}
+    # Missing credentials must never silently turn an old/private profile into open mode.
+    for invalid in ({'url': client.url}, {'url': client.url, 'authentication': 'unknown'},
+                    {'url': client.url, 'authentication': 'none', 'token': 'a' * 43}):
+        atomic_json(profile_path('invalid'), invalid)
+        with pytest.raises(ValueError):
+            Client('invalid')
+    with pytest.raises(ValueError, match='either'):
+        configure('ambiguous', tmp_path / 'credential.json', url=client.url)

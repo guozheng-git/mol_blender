@@ -10,8 +10,9 @@ from .common import Limits, read_json
 class ServerConfig:
     spool: Path
     image: Path
-    tokens_file: Path
     image_sha256: str
+    tokens_file: Path | None = None
+    authentication: str = 'token'
     apptainer: str = '/usr/bin/apptainer'
     sbatch: str = '/usr/bin/sbatch'
     squeue: str = '/usr/bin/squeue'
@@ -29,7 +30,13 @@ class ServerConfig:
     limits: Limits = field(default_factory=Limits)
 
     def __post_init__(self):
+        if self.authentication not in ('token', 'none'):
+            raise ValueError('authentication must be token or none')
+        if self.authentication == 'token' and self.tokens_file is None:
+            raise ValueError('Token authentication requires tokens_file')
         for name in ('spool', 'image', 'tokens_file'):
+            if name == 'tokens_file' and self.tokens_file is None:
+                continue
             path = Path(getattr(self, name)).expanduser()
             if not path.is_absolute() or any(c in str(path) for c in '\n\r,:'):
                 raise ValueError(name + ' must be an absolute path without newline, comma or colon')

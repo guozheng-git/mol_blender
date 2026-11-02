@@ -12,7 +12,7 @@ from .common import read_json
 def parser():
     root = argparse.ArgumentParser(prog='blender-render cluster', description=__doc__)
     commands = root.add_subparsers(dest='command', required=True)
-    serve = commands.add_parser('serve', help='Start the optional authenticated gateway')
+    serve = commands.add_parser('serve', help='Start the optional cluster gateway')
     serve.add_argument('--config', required=True)
     serve.add_argument('--bind', default='127.0.0.1')
     serve.add_argument('--port', type=int, default=8765)
@@ -32,9 +32,11 @@ def parser():
     reconcile = commands.add_parser('reconcile', help='Recover an ambiguous submission without launching another job')
     reconcile.add_argument('--config', required=True)
     reconcile.add_argument('job')
-    configure = commands.add_parser('configure', help='Import a private credential file into a client profile')
+    configure = commands.add_parser('configure', help='Configure credentials or an open cluster URL')
     configure.add_argument('--profile', default='default')
-    configure.add_argument('--credential-file', required=True)
+    access = configure.add_mutually_exclusive_group(required=True)
+    access.add_argument('--credential-file')
+    access.add_argument('--url', help='Open cluster service URL; no authentication')
     configure.add_argument('--ca-file')
     for name in ('info', 'list', 'status', 'cancel', 'delete', 'fetch', 'wait'):
         item = commands.add_parser(name)
@@ -71,10 +73,12 @@ def parser():
 def execute(args):
     from .client import Client, configure
     if args.command == 'configure':
-        return configure(args.profile, args.credential_file, args.ca_file)
+        return configure(args.profile, args.credential_file, args.ca_file, url=args.url)
     if args.command in ('serve', 'user-add', 'user-revoke', 'doctor', 'reconcile'):
         from .config import ServerConfig
         config = ServerConfig.load(args.config)
+        if args.command in ('user-add', 'user-revoke') and config.authentication != 'token':
+            raise ValueError('User credentials are disabled in open cluster mode')
         if args.command in ('doctor', 'reconcile'):
             from .slurm import Slurm
             from ..engine import generate_manifest

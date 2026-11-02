@@ -1,4 +1,4 @@
-"""Optional authenticated HTTP gateway. No rendering occurs in the web process."""
+"""Optional cluster HTTP gateway. No rendering occurs in the web process."""
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +24,8 @@ def create_app(config, *, scheduler=None):
 
     if digest_file(config.image) != config.image_sha256:
         raise ValueError('SIF checksum mismatch; refuse to start with a different environment')
-    users(config.tokens_file)
+    if config.authentication == 'token':
+        users(config.tokens_file)
     identity = generate_manifest(Path(__file__).resolve().parents[1])['engine_build']
     store = Store(config, scheduler or Slurm(config), identity)
 
@@ -51,8 +52,10 @@ def create_app(config, *, scheduler=None):
     def guarded(endpoint):
         async def call(request):
             try:
-                owner = await run_in_threadpool(authenticate, config.tokens_file,
-                                                request.headers.get('authorization', ''))
+                # Reserved identity cannot collide with a provisioned token user.
+                # Open mode deliberately gives every caller the same shared queue.
+                owner = '@shared' if config.authentication == 'none' else await run_in_threadpool(
+                    authenticate, config.tokens_file, request.headers.get('authorization', ''))
                 if owner is None:
                     return JSONResponse({'error': 'Authentication required'}, status_code=401,
                                         headers={'WWW-Authenticate': 'Bearer', 'Cache-Control': 'no-store'})
@@ -74,6 +77,7 @@ def create_app(config, *, scheduler=None):
 
     async def info(request, owner):
         return JSONResponse({'protocol': PROTOCOL, 'version': VERSION, 'engine_build': identity,
+                             'authentication': config.authentication,
                              'limits': vars(config.limits)})
 
     async def submit(request, owner):
