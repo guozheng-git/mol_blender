@@ -98,10 +98,10 @@ from blender_render.pymol_bridge_plugin import bridge_render
 with pymol2.PyMOL() as p:
     p.cmd.load(sys.argv[2], 'molecule')
     p.cmd.remove('solvent'); p.cmd.dss('all'); p.cmd.orient('all'); p.cmd.viewport(192,144)
+    motion = dict(animation='rock', duration=1, fps=4, gif=1) if sys.argv[4]=='rock' else {}
     result = bridge_render(cluster='acceptance', preset='mint_sky_assembly',
         output_dir=sys.argv[3], output_name=sys.argv[4]+'.png', width=192, height=144,
-        samples=4, save_blend=1, animation='rock' if sys.argv[4]=='rock' else '',
-        duration=1, fps=4, gif=sys.argv[4]=='rock', auto_preview=0, _self=p.cmd)
+        samples=4, save_blend=1, auto_preview=0, _self=p.cmd, **motion)
     Path(sys.argv[3], sys.argv[4]+'.submitted.json').write_text(json.dumps(result))
 ''')
     try:
