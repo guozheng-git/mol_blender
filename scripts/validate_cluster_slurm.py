@@ -213,7 +213,7 @@ with pymol2.PyMOL() as p:
         payload = json.loads((root / 'payload.json').read_text())
         options = {'width': 192, 'height': 144, 'samples': 4}
         if args.cancel_running:
-            options.update(animation='rock', duration=12, fps=12)
+            options.update(animation='rock', duration=30, fps=12)
         document = {'protocol': 1, 'request_id': uuid.uuid4().hex, 'payload': payload,
                     'style': resolve_options(options, payload)['style_doc']}
         first = client.api('POST', '/v1/jobs', document)
