@@ -1,8 +1,9 @@
 Bootstrap: docker
-From: debian@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae988e
+From: debian@sha256:1e1a22175fbf1b32157ddaf0219e1db4e5401fab2b94ed285add64d18587cd2d
 
 # Run from the repository root after scripts/build_release.py --output dist/release.
 # Linux x86_64 only. No Mac environments or caches are copied into the image.
+# Debian 13 (trixie-slim): glibc 2.41 supports the target cluster's NVIDIA libraries.
 %arguments
     RELEASE_DIR=dist/release
     BUILD_PROXY=
@@ -23,7 +24,7 @@ From: debian@sha256:a3bba7dc7dbcc1f37c2856c51fc9a7fac96608f50cb87b1b4e4d8b8c85ae
         libxrender1 libxxf86vm1 libxfixes3 libxi6 libxkbcommon0 libsm6 libice6 \
         libgl1 libegl1 libglu1-mesa libgomp1 libx11-6 libxext6 libxinerama1 \
         libxcursor1 libxrandr2 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
-        libdecor-0-0 libfreetype6 libpng16-16 libglut3.12 libxml2 libopengl0 libglx0 libglib2.0-0
+        libdecor-0-0 libfreetype6 libpng16-16t64 libglut3.12 libxml2 libopengl0 libglx0 libglib2.0-0t64
     python3 -m venv /opt/uv-tool
     /opt/uv-tool/bin/pip install uv==0.11.32
     export PATH=/opt/uv-tool/bin:$PATH

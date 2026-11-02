@@ -127,7 +127,10 @@ apply. A compatible existing Linux environment is reusable locally and through
 the container without installing anything per job.
 
 The SIF supplies Linux libraries and FFmpeg in either mode. Host GPU drivers are
-exposed with `--nv`. The base-image digest and Python dependencies are pinned;
+exposed with `--nv`. The pinned Debian 13 base supplies glibc 2.41; the original
+Debian 12 base could not load the target compute nodes' newer graphics libraries.
+Other clusters still need their own real CUDA check because `--nv` binds host
+libraries into the image. The base-image digest and Python dependencies are pinned;
 Debian repository packages are not snapshot-pinned, so byte-identical OS builds
 are not claimed. See [runtime environments](runtime-environments.md).
 
