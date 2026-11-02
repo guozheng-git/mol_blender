@@ -51,6 +51,9 @@ def main():
     config = replace(ServerConfig.load(args.server_config), spool=root / 'jobs',
                      tokens_file=root / 'users.json')
     scheduler = Slurm(config)
+    inspection = root / 'inspection'
+    inspection.mkdir(mode=0o700)
+    inspector = Slurm(replace(config, gpus=0))
     evidence = {'passed': False, 'execution': 'real Slurm and Apptainer',
                 'engine_build': engine.engine_identity()['engine_build'],
                 'package': str(Path(engine.__file__).resolve()),
@@ -89,7 +92,7 @@ def main():
 
     # Explicit preflight before opening a listener or submitting an allocation.
     assert digest_file(config.image) == config.image_sha256
-    probe = json.loads(run('container-check', scheduler.container_command(root) + ['--check']))
+    probe = json.loads(run('container-check', inspector.container_command(inspection) + ['--check']))
     assert probe['engine_build'] == evidence['engine_build']
     assert probe['platform'] == 'Linux' and probe['python'] == '3.11.15'
     evidence['container_check'] = probe
@@ -130,12 +133,22 @@ with pymol2.PyMOL() as p:
         samples=4, save_blend=1, auto_preview=0, _self=p.cmd, **motion)
     (root / (sys.argv[4]+'.submitted.json')).write_text(json.dumps(result))
 ''')
-    reopen = root / 'reopen_blend.py'
+    reopen = inspection / 'reopen_blend.py'
     reopen.write_text("import bpy, sys\nbpy.ops.wm.open_mainfile(filepath=sys.argv[-1], load_ui=False, use_scripts=False)\n"
                       "assert bpy.context.scene.camera\nassert len(bpy.data.objects)>1\nprint('REOPEN_OK')\n")
     # Use the same fixed container/runtime, replacing only the worker entrypoint
     # with this administrator-authored read-only inspection script.
-    inspect_command = scheduler.container_command(root)[:-2] + ['/job/reopen_blend.py']
+    inspect_command = inspector.container_command(inspection)[:-2] + ['/job/reopen_blend.py']
+
+    def check_scene(name, blend):
+        # Expose only the generated scene and inspection script, never gateway
+        # credentials or other jobs. Opening a scene does not need a GPU.
+        scene = inspection / 'scene.blend'
+        os.link(blend, scene)
+        try:
+            assert 'REOPEN_OK' in run(name, inspect_command + ['/job/scene.blend'])
+        finally:
+            scene.unlink()
     try:
         assert server.started
         unauthorized = Client('other')
@@ -167,7 +180,7 @@ with pymol2.PyMOL() as p:
                 assert png.size == (192, 144)
                 assert png.convert('RGB').getcolors(50) is None
             blend = Path(fetched['outputs']['render.blend'])
-            assert 'REOPEN_OK' in run(name + '-reopen', inspect_command + ['/job/' + str(blend.relative_to(root))])
+            check_scene(name + '-reopen', blend)
             if name == 'rock':
                 with unpack(fetched['outputs']['frames.zip']) as (frames, metadata):
                     hashes = [digest_file(p) for p in sorted(frames.glob('*.png'))]
@@ -184,7 +197,7 @@ with pymol2.PyMOL() as p:
                 restored = artifact_files.restore(bundle['parts'], str(root / 'restored'))
                 assert {p['sha256'] for p in restored} == {p['sha256'] for p in bundle['files']}
                 restored_blend = Path(next(p['path'] for p in restored if p['role'] == 'blend'))
-                assert 'REOPEN_OK' in run('restored-reopen', inspect_command + ['/job/' + str(restored_blend.relative_to(root))])
+                check_scene('restored-reopen', restored_blend)
                 pse = next(p['path'] for p in restored if p['role'] == 'pse')
                 run('pse-reopen', [args.pymol.absolute(), '-c',
                     "import pymol2,sys\nwith pymol2.PyMOL() as p:\n p.cmd.load(sys.argv[1]); assert p.cmd.count_atoms('all') > 100", pse])
