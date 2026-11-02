@@ -1,4 +1,4 @@
-"""Local PyMOL-to-Blender CLI. No remote profiles or background services."""
+"""Local molecular rendering, with explicit optional cluster and MCP adapters."""
 from __future__ import annotations
 import argparse
 import json
@@ -14,6 +14,7 @@ def parser():
     p.add_argument('--version', action='version', version=VERSION)
     commands = p.add_subparsers(dest='command', required=True)
     commands.add_parser('dev', help='Preset authoring and isolated source previews (dev --help)')
+    commands.add_parser('cluster', help='Optional shared Slurm service and client (cluster --help)')
     setup = commands.add_parser('setup', help='Configure the local Blender and PyMOL runtimes')
     setup.add_argument('--blender')
     setup.add_argument('--pymol-python')
@@ -128,6 +129,9 @@ def main(argv=None):
         from .developer import main as developer_main
         return developer_main(argv[1:])
     try:
+        if argv and argv[0] == 'cluster':
+            from .cluster.cli import main as cluster_main
+            return cluster_main(argv[1:])
         result = execute(parser().parse_args(argv))
         if result is not None:
             print(json.dumps(result, indent=2))

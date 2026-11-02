@@ -101,6 +101,12 @@ def create_app(config, *, scheduler=None):
     async def status(request, owner):
         return JSONResponse(await run_in_threadpool(store.status, owner, request.path_params['identifier']))
 
+    async def recover(request, owner):
+        import hashlib
+        from .common import job_id
+        identifier = hashlib.sha256((owner + '\0' + job_id(request.path_params['request_id'])).encode()).hexdigest()[:32]
+        return JSONResponse(await run_in_threadpool(store.status, owner, identifier))
+
     async def cancel(request, owner):
         return JSONResponse(await run_in_threadpool(store.cancel, owner, request.path_params['identifier']))
 
@@ -122,6 +128,7 @@ def create_app(config, *, scheduler=None):
 
     app = Starlette(routes=[
         Route('/v1/info', guarded(info)),
+        Route('/v1/requests/{request_id}', guarded(recover)),
         Route('/v1/jobs', guarded(submit), methods=['POST']),
         Route('/v1/jobs', guarded(listing), methods=['GET']),
         Route('/v1/jobs/{identifier}', guarded(status), methods=['GET']),

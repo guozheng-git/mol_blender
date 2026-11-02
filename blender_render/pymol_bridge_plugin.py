@@ -26,7 +26,8 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                   save_blend="", state=-1, blender_exe="", keep_temp=0,
                   width="", height="", samples="", transparent_background="",
                   _self=None, overrides_json="", preserve_view="", timeout=600,
-                  animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1):
+                  animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1,
+                  cluster="", wait=0):
     if _self is None:
         from pymol import cmd
     else:
@@ -57,8 +58,22 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
         if str(value).strip():
             options[key] = convert(value)
     output = (Path(text(output_dir) or ".").expanduser() / (text(output_name) or "render.png")).with_suffix(".png").resolve()
-    result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
-                   timeout=float(timeout), keep_temp=_parse_bool(keep_temp))
+    if text(cluster):
+        if text(blender_exe) or _parse_bool(keep_temp):
+            raise ValueError('Cluster jobs use administrator-configured runtime and retention')
+        from blender_render.cluster_bridge import submit
+        result = submit(payload, output=output, options=options, profile=text(cluster),
+                        wait=_parse_bool(wait), timeout=float(timeout))
+        if 'outputs' not in result:
+            print(json.dumps(result, indent=2))
+            return result
+    else:
+        result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
+                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp))
+    return _present_result(cmd, result, output, auto_preview)
+
+
+def _present_result(cmd, result, output, auto_preview):
     if result and 'frames.zip' in result.get('outputs', {}):
         from blender_render.pymol_movie import remember, load_movie
         archive = result['outputs']['frames.zip']
@@ -75,6 +90,32 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
     print(str(output))
     return str(output)
 
+
+def bridge_cluster_status(job, cluster="default", _self=None):
+    from blender_render.cluster_bridge import command
+    result = command(['status', _normalize_cli_string(job), '--profile', _normalize_cli_string(cluster)])
+    print(json.dumps(result, indent=2))
+    return result
+
+
+def bridge_cluster_cancel(job, cluster="default", _self=None):
+    from blender_render.cluster_bridge import command
+    result = command(['cancel', _normalize_cli_string(job), '--profile', _normalize_cli_string(cluster)])
+    print(json.dumps(result, indent=2))
+    return result
+
+
+def bridge_cluster_fetch(job, cluster="default", output_dir=".", output_name="render.png", auto_preview=1, _self=None):
+    from blender_render.cluster_bridge import command
+    if _self is None:
+        from pymol import cmd
+    else:
+        cmd = _self
+    text = _normalize_cli_string
+    output = (Path(text(output_dir)).expanduser() / text(output_name)).with_suffix('.png').resolve()
+    result = command(['fetch', text(job), '--profile', text(cluster), '--output', str(output)])
+    return _present_result(cmd, result, output, auto_preview)
+
 def bridge_movie_export(filename, source="", _self=None):
     from blender_render.pymol_movie import movie_export
     return movie_export(_normalize_cli_string(filename), _normalize_cli_string(source), _self=_self)
@@ -87,6 +128,9 @@ def register_plugin(cmd_obj=None):
         from pymol import cmd as cmd_obj
     cmd_obj.extend("blender_render", bridge_render)
     cmd_obj.extend("blender_movie_export", bridge_movie_export)
+    cmd_obj.extend("blender_render_status", bridge_cluster_status)
+    cmd_obj.extend("blender_render_fetch", bridge_cluster_fetch)
+    cmd_obj.extend("blender_render_cancel", bridge_cluster_cancel)
 
 try:
     from pymol import cmd
