@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -65,6 +66,22 @@ def isolated_environment(root: Path) -> dict[str, str]:
     # Do not inherit tokens, hosted configuration, developer PYTHONPATH, or a
     # production worker socket. Runtime import locations are explicit inputs.
     env = {key: os.environ[key] for key in ("PATH", "SystemRoot", "SYSTEMROOT", "LANG") if key in os.environ}
+    # Keep resource restrictions through the isolated subprocess. Dropping CUDA
+    # visibility would let a Slurm render enumerate GPUs outside its allocation.
+    for key in ('CUDA_VISIBLE_DEVICES', 'OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS'):
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        pattern = r'[A-Za-z0-9_,./-]{0,256}' if key == 'CUDA_VISIBLE_DEVICES' else r'[1-9][0-9]{0,3}'
+        if not re.fullmatch(pattern, value):
+            raise ValueError('Invalid compute resource setting: ' + key)
+        env[key] = value
+    # Apptainer --nv places host driver libraries here. Preserve only this fixed
+    # container path, never arbitrary caller LD_LIBRARY_PATH entries.
+    driver_path = '/.singularity.d/libs'
+    if (os.environ.get('APPTAINER_CONTAINER') and Path(driver_path).is_dir() and
+            driver_path in os.environ.get('LD_LIBRARY_PATH', '').split(os.pathsep)):
+        env['LD_LIBRARY_PATH'] = driver_path
     for folder in ("home", "tmp", "config", "sessions", "runs", "cache", "blender-config", "blender-resources"):
         (root / folder).mkdir(parents=True, exist_ok=True)
     env.update(HOME=str(root / "home"), TMPDIR=str(root / "tmp"),

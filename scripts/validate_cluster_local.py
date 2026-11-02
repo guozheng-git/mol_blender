@@ -4,14 +4,12 @@ This does not validate Slurm, Apptainer or Linux. Run with source or an isolated
 installed wheel and an already configured local runtime. Uses only a public CIF.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 
@@ -119,7 +117,7 @@ with pymol2.PyMOL() as p:
             fetched = client.fetch(status['job_id'], root / (name + '.png'))
             with Image.open(fetched['outputs']['render.png']) as png:
                 assert png.size == (192, 144)
-                assert len(set(png.convert('RGB').getdata())) > 50
+                assert png.convert('RGB').getcolors(50) is None
             blend = fetched['outputs']['render.blend']
             reopened = subprocess.run([runtime['blender'], '--background', blend, '--python-expr',
                 'import bpy; assert bpy.context.scene.camera; assert len(bpy.data.objects)>1; print("REOPEN_OK")'],
@@ -128,9 +126,8 @@ with pymol2.PyMOL() as p:
             assert reopened.returncode == 0 and 'REOPEN_OK' in reopened.stdout
             if name == 'rock':
                 from blender_render.animation import unpack
-                frames = root / 'unpacked'
-                unpack(fetched['outputs']['frames.zip'], frames)
-                assert len(list(frames.glob('*.png'))) == 4
+                with unpack(fetched['outputs']['frames.zip']) as (frames, metadata):
+                    assert len(list(frames.glob('*.png'))) == metadata['frames'] == 4
                 subprocess.run(['ffmpeg', '-v', 'error', '-i', fetched['outputs']['render.mp4'],
                                 '-f', 'null', '-'], check=True, capture_output=True, timeout=60)
             evidence['renders'][name] = {'job_id': status['job_id'], 'outputs': fetched['outputs'],

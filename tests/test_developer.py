@@ -113,6 +113,21 @@ def test_isolated_state_does_not_inherit_service_or_credentials(tmp_path, monkey
     assert env["BLENDER_USER_RESOURCES"] == str(tmp_path / "blender-resources")
 
 
+def test_isolated_state_preserves_compute_allocation_without_library_injection(tmp_path, monkeypatch):
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', 'GPU-12345678')
+    monkeypatch.setenv('OMP_NUM_THREADS', '8')
+    monkeypatch.setenv('OPENBLAS_NUM_THREADS', '8')
+    monkeypatch.setenv('APPTAINER_CONTAINER', '/trusted/runtime.sif')
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/unrelated/library:/.singularity.d/libs')
+    original = Path.is_dir
+    monkeypatch.setattr(Path, 'is_dir', lambda p: True if str(p) == '/.singularity.d/libs' else original(p))
+    env = developer.isolated_environment(tmp_path)
+    assert env['CUDA_VISIBLE_DEVICES'] == 'GPU-12345678'
+    assert env['OMP_NUM_THREADS'] == env['OPENBLAS_NUM_THREADS'] == '8'
+    assert env['LD_LIBRARY_PATH'] == '/.singularity.d/libs'
+    assert 'APPTAINER_CONTAINER' not in env
+
+
 def test_save_restart_reuse_and_revision(style, tmp_path):
     saved = authoring.save_preset("user/macro", style, tmp_path, camera_policy="authored", description="Local macro focus")
     command = [sys.executable, "-B", "-m", "blender_render.cli", "dev", "--catalog-dir", str(tmp_path),
