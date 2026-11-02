@@ -7,8 +7,11 @@ look you like.
 Blender Render turns your protein, DNA or RNA structure into polished images and
 animations using Blender and Molecular Nodes. The molecular geometry comes from
 your structure file, while you choose the colors, materials, lighting and camera.
-You can make an attractive figure without relying on an AI image generator to
-invent what a protein looks like.
+Use the render as a finished figure, or bring it into the AI image generator of
+your choice to make an illustration you love, starting from your actual protein
+structure. To preserve the protein's geometry, keep the rendered protein intact
+and let AI build the scene around it. If the generator redraws the protein, check
+it against the original render.
 
 Start with one of the 14 [built-in presets](#preset-gallery), from soft pastel
 ribbons to frosted surfaces and vivid binding-site views. If you have a PNG with a
