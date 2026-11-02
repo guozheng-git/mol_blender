@@ -12,7 +12,12 @@ inside that job. Status checks and downloads do not submit additional jobs.
 ## From PyMOL
 
 Configure the local runtime and load the bridge as described in the
-[README](../README.md#pymol-bridge), then explicitly choose `warm=1`:
+[README](../README.md#pymol-bridge).
+
+If PyMOL had the bridge loaded before this update, restart PyMOL and load the
+updated bridge so its imported Python helpers recognize the new option.
+
+Explicitly choose `warm=1`:
 
 ```pymol
 blender_render warm=1, width=640, height=480, samples=32, output_dir=renders, output_name=first.png
@@ -60,6 +65,10 @@ configuration root is selected. The CLI start command also accepts `--blender`,
 `--runtime-path`, `--runtime-wheels` and `--ccd` for an explicitly configured
 runtime. Later renders must select the same runtime. The stdio MCP
 `render_structure` tool accepts `warm=true` as the same opt-in.
+
+On a shared filesystem, use a separate `BLENDER_RENDER_HOME` for each computer or
+container session. The worker's socket and process state belong to that local
+session; the pinned Linux runtime itself can still be shared read-only.
 
 ## Runtime reuse and verification
 
