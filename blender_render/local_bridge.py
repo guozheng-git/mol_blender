@@ -9,6 +9,18 @@ from .presets import DEFAULT_PRESET
 from .config import load_config
 
 
+def controller_environment():
+    """Launch the configured Python independently of PyMOL's embedded runtime."""
+    env = os.environ.copy()
+    # macOS PyMOL/Conda launchers set PYTHONEXECUTABLE. CPython uses it to
+    # locate its environment even when we invoke an explicit venv interpreter.
+    # Keep PyMOL's own settings intact; sanitize only the child process.
+    for name in ('PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'):
+        env.pop(name, None)
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
+    return env
+
+
 def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False):
     python = load_config().get('local_python', sys.executable)
     with tempfile.TemporaryDirectory(prefix='pymol-blender-') as temporary:
@@ -34,9 +46,7 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
             command.extend(['--blender', blender])
         if keep_temp:
             command.append('--keep-temp')
-        env = os.environ.copy()
-        env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
-        result = subprocess.run(command, env=env, capture_output=True, text=True)
+        result = subprocess.run(command, env=controller_environment(), capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError('Local render failed. Run blender-render setup in the render environment.\n' + result.stderr[-4000:])
         return json.loads(result.stdout)

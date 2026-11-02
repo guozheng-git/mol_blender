@@ -80,6 +80,8 @@ def test_cli_style_and_camera_options_reach_local_renderer(monkeypatch, tmp_path
 
 def test_bridge_uses_configured_python_and_current_package(local_runtime, monkeypatch):
     save_config({'local_python':'/test/python'})
+    for name in ('PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'):
+        monkeypatch.setenv(name, '/pymol/embedded-python')
     calls=[]
     def run(command, **kwargs):
         assert json.loads(Path(command[4]).read_text()) == bundle()
@@ -92,6 +94,31 @@ def test_bridge_uses_configured_python_and_current_package(local_runtime, monkey
     assert command[0]=='/test/python'
     assert '--no-preserve-view' in command and '--save-blend' in command
     assert kw['env']['PYTHONPATH'] == str(Path(local_bridge.__file__).resolve().parent.parent)
+    assert not {'PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'} & kw['env'].keys()
+
+
+@pytest.mark.parametrize('variable', ['PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'])
+def test_controller_starts_in_its_own_environment(variable, monkeypatch, tmp_path):
+    import os, subprocess, sys
+    foreign = str(tmp_path / 'embedded' / 'bin' / 'python')
+    monkeypatch.setenv(variable, foreign)
+    monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'foreign-packages'))
+    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'client-config'))
+    monkeypatch.setenv('CUDA_VISIBLE_DEVICES', '2')
+    probe = """import json, sys, jsonschema, blender_render, os
+print(json.dumps({'prefix': sys.prefix, 'package': blender_render.__file__,
+                  'config': os.environ['BLENDER_RENDER_HOME'],
+                  'gpu': os.environ['CUDA_VISIBLE_DEVICES']}))
+"""
+    # This executes a real interpreter/import, not a subprocess substitute.
+    result = subprocess.run([sys.executable, '-c', probe],
+                            env=local_bridge.controller_environment(), capture_output=True, text=True, check=True)
+    observed = json.loads(result.stdout)
+    assert observed['prefix'] == sys.prefix
+    assert Path(observed['package']).parent == Path(local_bridge.__file__).parent
+    assert observed['config'] == str(tmp_path / 'client-config')
+    assert observed['gpu'] == '2'
+    assert os.environ[variable] == foreign  # The running PyMOL keeps its own runtime.
 
 
 def test_pymol_preserves_context_and_loads_generated_png(monkeypatch,tmp_path):

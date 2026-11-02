@@ -118,6 +118,23 @@ def test_network_failure_keeps_a_recoverable_receipt(live_service, tmp_path, mon
     assert len(store.scheduler.submissions) == 1
 
 
+def test_pymol_bridge_submits_with_foreign_python_startup_settings(live_service, tmp_path, monkeypatch):
+    import sys
+    from blender_render import cluster_bridge
+    from blender_render.config import save_config
+    client, store = live_service
+    save_config({'local_python': sys.executable})
+    for name in ('PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'):
+        monkeypatch.setenv(name, str(tmp_path / 'embedded-pymol' / 'bin' / 'python'))
+    # The real child must import jsonschema/authoring and use the real HTTP API.
+    # /v1/info alone would not exercise the import that failed in embedded PyMOL.
+    result = cluster_bridge.submit(payload(), options={'width':32,'height':24,'samples':1},
+                                   output=tmp_path / 'bridge.png', profile='lab')
+    assert result['status'] == 'queued'
+    assert client.recover(result['receipt'])['job_id'] == result['job_id']
+    assert len(store.scheduler.submissions) == 1
+
+
 def test_plaintext_remote_origins_and_redirects_are_rejected():
     for url in ('http://cluster.example', 'https://user:password@cluster.example',
                 'https://cluster.example/path', 'https://cluster.example?token=bad'):

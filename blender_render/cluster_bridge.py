@@ -1,20 +1,18 @@
 """Stdlib-only PyMOL adapter to the optional cluster client in controller Python."""
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 
 from .config import load_config
+from .local_bridge import controller_environment
 
 
 def command(arguments):
     python = load_config().get('local_python', sys.executable)
-    env = os.environ.copy()
-    env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
     result = subprocess.run([python, '-m', 'blender_render.cli', 'cluster', *arguments],
-                            env=env, capture_output=True, text=True)
+                            env=controller_environment(), capture_output=True, text=True)
     if result.returncode:
         raise RuntimeError(result.stderr[-4000:])
     return json.loads(result.stdout)
