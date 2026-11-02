@@ -131,6 +131,15 @@ exposed with `--nv`. The base-image digest and Python dependencies are pinned;
 Debian repository packages are not snapshot-pinned, so byte-identical OS builds
 are not claimed. See [runtime environments](runtime-environments.md).
 
+On hosts without subordinate UID/GID mappings, Apptainer may bind the host's
+`fakeroot` into the build. A newer host glibc can make that fail inside the pinned
+Debian image. Use an administrator-supported build method, such as an authorized
+`sudo apptainer build` on local scratch storage; root-squashed NFS directories may
+be unreadable to that build. This does not require running render jobs as root.
+See [Apptainer's fakeroot compatibility guidance](https://apptainer.org/docs/user/latest/fakeroot.html).
+An optional `--build-arg BUILD_PROXY=http://127.0.0.1:PORT` supplies a dependency
+proxy during the build only. It does not configure a proxy for render jobs.
+
 ## Configure the service
 
 Use a dedicated, unprivileged cluster account. Install the gateway from the same
@@ -222,6 +231,29 @@ Before opening a service to other users, exercise a real Slurm allocation, GPU
 selection if enabled, cancellation, image/movie download and cleanup on the target
 cluster. Local HTTP tests do not establish Slurm or Apptainer integration. The
 current executed checks and outstanding gates are in [validation](validation.md).
+
+For reproducible real acceptance, run this on the Linux gateway with the installed
+wheel or the source environment. The output directory must be new and visible on
+compute nodes at the same absolute path:
+
+```sh
+python scripts/validate_cluster_slurm.py \
+  --server-config /private/acceptance-server.json \
+  --pymol /shared/blender-runtime/pymol/bin/python \
+  --fixture examples/1stp.cif \
+  --skill dist/cluster-release/plugin/structure-studio/skills/structure-studio \
+  --output /shared/acceptance/cpu
+```
+
+The script uses the configured image and resource policy, but creates its own
+spool, loopback gateway and short-lived credentials. It submits two small renders
+and one cancellation probe. Checks include PyMOL submission, original-request
+recovery, actual CPU/CUDA selection, checksummed downloads, saved-scene reopening,
+movie decoding, frame and session bundle restoration, per-user ownership,
+idempotency, revocation and deletion. Failures retain private diagnostic logs and
+request cancellation of any outstanding test allocations. `evidence.json` records
+whether the run passed. Repeat with a GPU configuration if GPU service is enabled,
+and with `runtime_home` set to validate reuse of an existing Linux uv runtime.
 
 The launcher follows the documented behavior of
 [Slurm sbatch](https://slurm.schedmd.com/sbatch.html) (`--parsable`, `--export=NIL`),
