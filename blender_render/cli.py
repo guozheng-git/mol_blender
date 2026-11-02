@@ -15,6 +15,17 @@ def parser():
     commands = p.add_subparsers(dest='command', required=True)
     commands.add_parser('dev', help='Preset authoring and isolated source previews (dev --help)')
     commands.add_parser('cluster', help='Optional shared Slurm service and client (cluster --help)')
+    worker = commands.add_parser('worker', help='Optional warm local Blender worker')
+    actions = worker.add_subparsers(dest='action', required=True)
+    start = actions.add_parser('start', help='Start or reuse a worker for the configured local runtime')
+    start.add_argument('--idle-timeout', type=float, default=900, help='Idle seconds before shutdown; 0 keeps it running')
+    start.add_argument('--blender', default='')
+    start.add_argument('--runtime-path', action='append')
+    start.add_argument('--runtime-wheels', default='')
+    start.add_argument('--ccd', default='')
+    actions.add_parser('status', help='Show worker process identity and completed render count')
+    stop = actions.add_parser('stop', help='Release Blender and remove its temporary source snapshot')
+    stop.add_argument('--force', action='store_true', help='Also interrupt an active render')
     setup = commands.add_parser('setup', help='Configure the local Blender and PyMOL runtimes')
     setup.add_argument('--blender')
     setup.add_argument('--pymol-python')
@@ -46,6 +57,7 @@ def parser():
     render.add_argument('--runtime-wheels', default='')
     render.add_argument('--ccd', default='')
     render.add_argument('--keep-temp', action='store_true')
+    render.add_argument('--warm', action='store_true', help='Explicitly start/reuse the optional local Blender worker')
     for name in ('width', 'height', 'samples'):
         render.add_argument('--'+name, type=int)
     for name in ('rough', 'transparent', 'color-follow', 'save-blend'):
@@ -64,6 +76,16 @@ def parser():
 
 def execute(args):
     from .config import config_root
+    if args.command == 'worker':
+        from . import warm_worker
+        if args.action == 'status':
+            return warm_worker.status()
+        if args.action == 'stop':
+            return warm_worker.stop(force=args.force)
+        from .local import runtime_settings
+        settings = runtime_settings(blender=args.blender, runtime_paths=args.runtime_path,
+                                    runtime_wheels=args.runtime_wheels, ccd=args.ccd)
+        return warm_worker.start(idle_timeout=args.idle_timeout, settings=settings)
     if args.command == 'setup':
         config = load_config()
         config['local_python'] = sys.executable
@@ -120,7 +142,7 @@ def execute(args):
         return render_file(args.input, output=args.output, options=options, selection=args.selection,
             pymol_python=args.pymol_python, blender=args.blender, runtime_paths=args.runtime_path,
             runtime_wheels=args.runtime_wheels, ccd=args.ccd, timeout=args.timeout,
-            keep_temp=args.keep_temp, catalog_dir=args.catalog_dir)
+            keep_temp=args.keep_temp, catalog_dir=args.catalog_dir, warm=args.warm)
 
 
 def main(argv=None):

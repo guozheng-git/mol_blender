@@ -21,7 +21,7 @@ def controller_environment():
     return env
 
 
-def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False):
+def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False, warm=False):
     python = load_config().get('local_python', sys.executable)
     with tempfile.TemporaryDirectory(prefix='pymol-blender-') as temporary:
         root = Path(temporary)
@@ -46,6 +46,8 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
             command.extend(['--blender', blender])
         if keep_temp:
             command.append('--keep-temp')
+        if warm:
+            command.append('--warm')
         result = subprocess.run(command, env=controller_environment(), capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError('Local render failed. Run blender-render setup in the render environment.\n' + result.stderr[-4000:])

@@ -33,6 +33,7 @@ walltime does not keep a completed worker running.
 | Mode in this branch | Where rendering runs | Blender lifetime |
 | --- | --- | --- |
 | Direct local rendering | The local computer, using its configured Blender runtime and available GPU | A fresh process for each render request |
+| Optional warm local rendering | The same local computer and configured runtime | One process reused until stopped or its idle limit expires |
 | Shared cluster rendering | A Slurm compute node inside Apptainer | A fresh process for each submitted job |
 
 Local GPU rendering remains available without a server. After configuring the
@@ -48,12 +49,16 @@ Local rendering can fall back to CPU; the artifact directory's `manifest.json`
 records the actual device in `cycles_device`. A style can set
 `renderer.require_gpu` to `true` to require a GPU.
 
-A persistent local worker can keep Blender alive for subsequent requests and
-avoid repeating process startup. The older service architecture has that worker
-mode, with an idle shutdown, but it is **not integrated into this branch**. The
-current local renderer deliberately uses a fresh source snapshot and Blender
-process for each request. Keeping the HTTP gateway or stdio MCP running does not
-change that lifetime. Reusing the uv environment alone is not a warm start.
+For repeated local renders, explicitly add `warm=1` in PyMOL or `--warm` in the
+CLI. This keeps a private local Blender worker alive between requests, with a
+15-minute idle shutdown by default. See [the warm local worker guide](local-worker.md)
+for start/status/stop commands, source checks and Apptainer usage. The cluster
+profile continues to select Slurm, and cannot be combined with `warm=1`.
+
+Each Slurm render submission creates one job. An animation renders all its frames
+inside that job; status polling and fetching results do not create jobs. The
+gateway has no persistent GPU allocation. Reusing the uv environment alone is
+not a warm Blender process.
 
 ## Use from PyMOL
 

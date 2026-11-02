@@ -25,7 +25,7 @@ def runtime_settings(*, blender='', runtime_paths=None, ccd='', runtime_wheels='
 
 
 def render_payload(payload, *, output, options=None, blender='', runtime_paths=None,
-                   ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None):
+                   ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False):
     from .core import validate_payload_document
     from .authoring import resolve_authored
     from .developer import preview
@@ -53,12 +53,18 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     if artifacts.exists() or any(destinations[name].exists() for name in names if name in destinations):
         raise ValueError(f'Output already exists; choose a new filename: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
+    runner_options = {}
+    if warm:
+        from .warm_protocol import seconds
+        seconds(timeout, minimum=30)
+        from .warm_worker import start
+        runner_options['warm_worker'] = start(settings=settings)
     with tempfile.TemporaryDirectory(prefix='blender-local-input-') as temporary:
         bundle = Path(temporary) / 'bundle.json'
         bundle.write_text(json.dumps(payload, allow_nan=False))
         result = preview(checkout=Path(__file__).resolve().parent.parent,
                          bundle=bundle, options=options, catalog_dir=catalog_dir,
-                         output=artifacts, timeout=timeout, keep_source=keep_temp, **settings)
+                         output=artifacts, timeout=timeout, keep_source=keep_temp, **settings, **runner_options)
     for name in names:
         if not (artifacts / name).is_file():
             raise RuntimeError('Render artifact missing: ' + name)
@@ -73,7 +79,8 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     if (artifacts / 'render.blend').is_file():
         outputs['render.blend'] = str(artifacts / 'render.blend')
     return {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),
-            'source_sha256': result['sha256'], 'png_sha256': result['png_sha256']}
+            'source_sha256': result['sha256'], 'png_sha256': result['png_sha256'],
+            **({'worker': result['worker']} if 'worker' in result else {})}
 
 
 def render_file(path, *, pymol_python='', selection='(all)', **kwargs):

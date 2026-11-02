@@ -28,13 +28,14 @@ def create_stdio():
                          duration: float | None = None, fps: int | None = None,
                          rock_angle: float | None = None, gif: bool | None = None,
                          width: int | None = None, height: int | None = None,
-                         samples: int | None = None, timeout: float = 600) -> dict:
+                         samples: int | None = None, timeout: float = 600, warm: bool = False) -> dict:
         """Render a trusted local PSE/CIF/PDB/bundle with configured local Blender.
 
         animation: rock or 360; gif=True adds a looping GIF alongside MP4 and saved frames.
         rock_angle is the one-sided swing in degrees. output_path must be new.
         Returns PNG, manifest and requested movie paths after completion.
         Use read_render on the returned PNG to inspect its pixels.
+        warm=True explicitly starts/reuses a local Blender worker (15 minute idle shutdown).
         """
         import json
         options = {'style_doc': json.loads(Path(style_json).expanduser().read_text())} if style_json else {'preset': preset}
@@ -44,7 +45,7 @@ def create_stdio():
                            ('height', height), ('samples', samples)]:
             if value is not None:
                 options[key] = value
-        return render_file(input_path, output=output_path, options=options, timeout=timeout)
+        return render_file(input_path, output=output_path, options=options, timeout=timeout, warm=warm)
 
     @mcp.tool()
     def read_render(path: str) -> Image:

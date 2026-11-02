@@ -11,6 +11,10 @@ spool and Slurm/Apptainer submission. Workers call the same `local.py` renderer.
 Keep local rendering the default; never accept executable session uploads or
 client-supplied paths/commands on the cluster API. Reuse uv runtimes built from
 the shared pins; Linux environments must stay at their original absolute paths.
+The explicit local `--warm`/`warm=1` option may reuse an identical, privately
+captured Blender process through `warm_worker`. Keep source/runtime identity
+checks, bounded local IPC and idle shutdown. Fresh local rendering remains the
+default; Slurm jobs keep one independent Blender process per submitted request.
 
 - Export CIF first and assign secondary structure in PyMOL before export.
 - Preserve enabled selections, transforms, colors and the saved camera by default.

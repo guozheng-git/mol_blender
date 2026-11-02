@@ -229,9 +229,20 @@ Omitting `cluster` keeps direct local rendering. See the
 cancellation, persistent service setup, Slurm configuration and reuse of the uv
 runtime inside Apptainer. The gateway stays running; each Slurm job releases its
 GPU allocation when it finishes. Direct local rendering can use your local GPU,
-but starts a fresh Blender process for each request. The older persistent local
-worker mode is not integrated into this branch; see
-[GPU use and warm starts](docs/shared-cluster.md#gpu-use-and-warm-starts).
+and starts a fresh Blender process by default. For repeated local renders, add
+`warm=1` to reuse Blender between requests:
+
+```pymol
+blender_render warm=1, width=640, height=480, samples=32, output_name=local-first.png
+blender_render warm=1, preset=dried_paint_green, output_name=local-paint.png
+```
+
+The worker shuts down after 15 idle minutes. Use `blender-render worker status`
+and `blender-render worker stop` from the configured terminal environment to
+inspect or stop it. CLI rendering accepts `--warm`; see the
+[warm local worker guide](docs/local-worker.md) for configuration, lifecycle and
+Apptainer usage. Each Slurm render request still gets a separate job; an animation
+keeps its frames within that job. Choose either `warm=1` or `cluster=lab`.
 Legacy service/profile/remote arguments are unsupported.
 
 ## Claude Code and Codex

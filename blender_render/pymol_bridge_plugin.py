@@ -27,7 +27,9 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                   width="", height="", samples="", transparent_background="",
                   _self=None, overrides_json="", preserve_view="", timeout=600,
                   animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1,
-                  cluster="", wait=0):
+                  cluster="", wait=0, warm=0):
+    if _normalize_cli_string(cluster) and _parse_bool(warm):
+        raise ValueError('warm=1 selects the local worker; omit cluster or use warm=0 for Slurm')
     if _self is None:
         from pymol import cmd
     else:
@@ -69,7 +71,7 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
             return result
     else:
         result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
-                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp))
+                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm))
     return _present_result(cmd, result, output, auto_preview)
 
 

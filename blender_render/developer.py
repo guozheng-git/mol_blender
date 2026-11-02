@@ -128,8 +128,9 @@ def capture_preset(identifier: str, catalog_dir: Path, destination: Path) -> dic
 
 def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
             output: Path, blender: Path, runtime_paths: list[Path], ccd: Path,
-            timeout: float = 600, keep_source: bool = False, runtime_wheels: Path | None = None) -> dict:
-    """Snapshot, then resolve AND render using the snapshot in fresh processes."""
+            timeout: float = 600, keep_source: bool = False, runtime_wheels: Path | None = None,
+            warm_worker: dict | None = None) -> dict:
+    """Snapshot and resolve in fresh Python; optionally use an identical warm Blender."""
     if timeout < 30:
         raise ValueError("Preview timeout must be at least 30 seconds")
     for path in (bundle, blender, ccd):
@@ -141,6 +142,8 @@ def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
     run = Path(tempfile.mkdtemp(prefix="blender-render-dev-"))
     try:
         identity = snapshot_source(checkout.resolve(), run / "source")
+        if warm_worker and warm_worker['source_sha256'] != identity['sha256']:
+            raise RuntimeError('Warm worker source changed; stop the worker and retry')
         paths = [str(path.resolve()) for path in runtime_paths]
         if runtime_wheels:
             identity["runtime_wheels"] = stage_runtime_wheels(runtime_wheels, run / "runtime")
@@ -161,6 +164,8 @@ def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
                   "runtime_source_paths": [str(path.resolve()) for path in runtime_paths],
                   "ccd": str(run / "components.bcif"), "ccd_source": str(ccd.resolve()),
                   "ccd_sha256": digest_file(run / "components.bcif"), "timeout": timeout}
+        if warm_worker:
+            config['warm_worker'] = warm_worker
         config_path = run / "preview.json"
         config_path.write_text(json.dumps(config, indent=2, allow_nan=False))
         with (output / "preview.log").open("w") as log:
@@ -243,8 +248,12 @@ def _run(config_path: Path) -> None:
             return {"pid": process.pid, "runtime_seconds": time.monotonic() - started,
                     "command": command, "fresh_process": True}
 
+    worker = FreshBlender()
+    if cfg.get('warm_worker'):
+        from blender_render.warm_worker import RemoteBlender
+        worker = RemoteBlender(cfg['warm_worker'])
     result = _process_render_request(request_id=root.name, request_doc={"payload": payload, **resolved},
-                                    state=RenderState(FreshBlender(), cfg["timeout"]))
+                                    state=RenderState(worker, cfg["timeout"]))
     (output / "render.png").write_bytes(base64.b64decode(result.pop("png_base64")))
     if "blend_base64" in result:
         (output / "render.blend").write_bytes(base64.b64decode(result.pop("blend_base64")))
