@@ -769,10 +769,26 @@ The later validation documentation commit does not change packaged renderer code
 
 `--open-blender` also completed a real render, saved the scene without a separate
 `--save-blend` flag, and launched the configured desktop Blender process on that
-file. The process remained alive after launch. The Mac was locked, so the editor
-window, interactive controls and manual Save As were **not visually verified**.
-The edit/save/reopen checks above used Blender's real Python API. Only the test's
-own editor process was closed during cleanup.
+file. The process remained alive after launch. The Mac was initially locked, so
+that first check could not inspect the editor window. The edit/save/reopen checks
+above used Blender's real Python API. Only the test's own editor process was
+closed during that cleanup.
+
+After the desktop was unlocked on 2026-11-02, repeated `render --open-blender`
+with `mint_sky_assembly` and the public `1sps` example at 256×192, 8 samples.
+Visually confirmed the saved scene's window, protein geometry, camera and lights.
+Through Blender's normal UI controls, changed the Key light's Power from about
+6.872 to 12, used **Save As** to create a new `.blend`, and verified its new window
+title and saved power value. Imported that file with `dev from-blend` into a
+private validation catalog: exactly `lights.0` changed, with no unsupported or
+ignored edits. A fresh local render using the named preset recreated Power 12
+exactly. Independent background reopening confirmed both saved files' values.
+The GUI-edited scene rendered on CPU versus the preset replay on the local GPU
+had pixel RMS below **0.051** per 8-bit channel; both PNGs were visually inspected.
+The starting render and both brighter edited outputs retained the same protein pose.
+This closes the desktop open/edit/Save As validation gap. The edited test scene
+was left open for inspection; its artifacts and `evidence.json` are retained in
+ignored `.validation/blender-edit/gui-check/`.
 
 Local candidates and evidence remain in ignored `dist/blender-edit-final/` and
 `.validation/blender-edit/`, including `validation.json`, complete logs, edited
