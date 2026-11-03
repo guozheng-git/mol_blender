@@ -964,3 +964,12 @@ pixel-identical output. The four-lobed assembly silhouette and uniform mesh
 remain different from the reference; this is an illustrative cutaway, not an
 exact reconstruction. Source and saved-preset manifests are retained in ignored
 local outputs. No renderer code or desktop Blender scene was modified.
+
+The same local draft was refined with brighter cyan, stronger specular/coat
+response and softened area lights. Two real CPU renders were inspected; the
+first had overly sharp highlights. The final 840×650, 96-sample render used
+`#00AAFF` shell pigment and roughness 0.21. Fresh-process catalog reload matched
+the saved style exactly; camera and geometry selections matched the earlier
+draft. The final manifest/resolved style confirmed those settings. Gloss and
+brightness improved, while uniform mesh coverage and the example's composition
+remain visibly different from the reference. No desktop scene was changed.
