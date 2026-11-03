@@ -33,6 +33,14 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   revision-checked desktop scene over private local IPC. Keep bpy on the main
   thread, use captured copies for previews, and never expose code execution or
   desktop commands through the cluster API. Disconnect leaves the editor open.
+- Reuse the selected Blender editor session for all scene edits. Never launch
+  another desktop Blender instance unless explicitly requested. Preserve unsaved
+  edits. If an operation is unsupported, add a bounded bridge control or explain
+  the limitation; do not create and open a replacement scene.
+- Discover existing windows with `editor_sessions`, retain the selected
+  `session_id`, and reconnect that session when needed. `editor_open` is only for
+  an explicit request for another window. Background preview renders may run
+  separately without opening desktop windows.
 - Run `python -m pytest` for relevant changes. Check a built wheel outside the
   checkout for packaging changes. Record actual runtime and visual checks in
   `docs/validation.md`; mocks do not establish Blender or host integration.

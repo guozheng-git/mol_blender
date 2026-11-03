@@ -127,6 +127,63 @@ def test_attach_script_is_opt_in_and_does_not_overwrite(tmp_path, monkeypatch):
         shutil.rmtree(cfg['root'])
 
 
+def test_reconnect_keeps_session_and_never_opens_desktop(monkeypatch):
+    sid = 'a' * 32
+    monkeypatch.setattr(editor, 'open_editor', lambda *a, **kw: pytest.fail('Must not open Blender'))
+    monkeypatch.setattr(editor.subprocess, 'Popen', lambda *a, **kw: pytest.fail('Must not launch a process'))
+    monkeypatch.setattr(editor, 'inspect', lambda selected: {'file': 'unsaved.blend', 'dirty': True,
+                                                           'revision': 'same'} if selected == sid else pytest.fail('Wrong session'))
+    assert editor.reconnect(sid) == {'session_id': sid, 'status': 'connected', 'new_window_opened': False,
+                                    'file': 'unsaved.blend', 'dirty': True, 'revision': 'same'}
+    def unavailable(_):
+        raise ConnectionError('Socket unavailable')
+    monkeypatch.setattr(editor, 'inspect', unavailable)
+    result = editor.reconnect(sid)
+    assert result['status'] == 'unavailable' and not result['new_window_opened']
+    assert 'Socket unavailable' in result['error'] and sid in result['recovery']
+
+
+def test_prepare_reconnect_does_not_replace_live_registry(tmp_path, monkeypatch):
+    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    old = editor.prepare()
+    captures = []
+    prepare = editor.prepare
+    def record(**kwargs):
+        result = prepare(**kwargs); captures.append(result)
+        return result
+    monkeypatch.setattr(editor, 'prepare', record)
+    try:
+        path = tmp_path / 'reattach.py'
+        result = editor.attach_script(path, reconnect_session=old['id'])
+        assert result['session_id'] == old['id']
+        assert editor.session(old['id'])['root'] == old['root']
+        assert captures[0]['root'] != old['root']
+        assert Path(captures[0]['root'], 'session.json').is_file()
+        compile(path.read_text(), str(path), 'exec')
+        with pytest.raises(ValueError): editor.attach_script(path, reconnect_session=old['id'])
+        assert editor.session(old['id'])['root'] == old['root']
+    finally:
+        import shutil
+        for cfg in [old, *captures]: shutil.rmtree(cfg['root'], ignore_errors=True)
+
+
+def test_mcp_open_requires_explicit_new_window(monkeypatch):
+    pytest.importorskip('fastmcp')
+    import asyncio
+    from fastmcp import Client
+    from blender_render.mcp_server import create_stdio
+    calls = []
+    monkeypatch.setattr(editor, 'open_editor', lambda *a, **kw: calls.append((a, kw)) or {'session_id': 'selected'})
+    async def check():
+        async with Client(create_stdio(editor_enabled=True)) as client:
+            result = await client.call_tool('editor_open', {'scene_path': 'existing.blend'}, raise_on_error=False)
+            assert result.is_error and not calls
+            result = await client.call_tool('editor_open', {'scene_path': 'existing.blend', 'new_window': True})
+            assert result.structured_content['session_id'] == 'selected'
+    asyncio.run(check())
+    assert len(calls) == 1
+
+
 def test_cli_and_pymol_opt_in_routes(monkeypatch):
     from blender_render import cli, local, local_bridge, pymol_bridge_plugin as plugin
     calls = []

@@ -8,17 +8,35 @@ def register(mcp):
 
     @mcp.tool()
     def editor_sessions() -> list[dict]:
-        """List explicitly enabled local Blender editor sessions. Never choose an ambiguous session silently."""
+        """Start here: find the existing Blender session, select it, and retain its session_id for all edits.
+
+        Never choose an ambiguous session silently. Preserve unsaved edits. An unsupported operation or
+        connection failure is not permission to call editor_open or create a replacement scene.
+        """
         return editor.sessions()
 
     @mcp.tool()
-    def editor_open(scene_path: str, idle_timeout: float = 3600) -> dict:
-        """Open a trusted saved Blender Render .blend in a new desktop with chat editing enabled.
+    def editor_open(scene_path: str, idle_timeout: float = 3600, new_window: bool = False) -> dict:
+        """Launch another Blender window ONLY when the user explicitly requests a new window.
 
-        Does not attach to another existing window. For that use the CLI editor attach-script workflow.
-        Embedded scripts stay disabled. Keep the returned session_id; inspect before editing.
+        Requires new_window=True for that explicit request. For ordinary edits use editor_sessions,
+        keep the selected session_id, and inspect/edit it. For connection failures use editor_reconnect.
+        Never use this tool to recover a connection or work around an unsupported edit.
+        Embedded scripts stay disabled. This always launches a desktop; it never reuses one.
         """
+        if new_window is not True:
+            raise ValueError('Use editor_sessions and reuse the selected session_id. '
+                             'editor_open requires an explicit request for another window and new_window=True.')
         return editor.open_editor(scene_path, idle_timeout=idle_timeout)
+
+    @mcp.tool()
+    def editor_reconnect(session_id: str) -> dict:
+        """Reconnect the selected existing session without launching Blender or loading any file.
+
+        Retain the same session_id. Reports the connection problem and in-place recovery instructions
+        if it cannot connect. Never fall back to editor_open; preserve the original unsaved scene.
+        """
+        return editor.reconnect(session_id)
 
     @mcp.tool()
     def editor_inspect(session_id: str) -> dict:

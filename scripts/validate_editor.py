@@ -56,7 +56,7 @@ async def validate(args):
             return status
 
         try:
-            opened = await tool('editor_open', scene_path=starting['outputs']['render.blend'])
+            opened = await tool('editor_open', scene_path=starting['outputs']['render.blend'], new_window=True)
             session_id, pid = opened['session_id'], opened['pid']
             print(json.dumps({'stage': 'editor_open', 'session_id': session_id}), flush=True)
             state = await tool('editor_pause', session_id=session_id)

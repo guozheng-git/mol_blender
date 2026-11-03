@@ -194,6 +194,8 @@ class Bridge:
             bpy.app.timers.unregister(self.tick)
         if self.before_load in bpy.app.handlers.load_pre:
             bpy.app.handlers.load_pre.remove(self.before_load)
+        if bpy.app.driver_namespace.get('blender_render_editor_bridge') is self:
+            bpy.app.driver_namespace.pop('blender_render_editor_bridge')
         Path(self.cfg['registry_file']).unlink(missing_ok=True)
         shutil.rmtree(self.cfg['root'], ignore_errors=True)
 
@@ -213,6 +215,7 @@ def start(config_path):
         raise ValueError('The editor bridge requires a desktop Blender session')
     controls.metadata()
     _ACTIVE = Bridge(cfg)
+    bpy.app.driver_namespace['blender_render_editor_bridge'] = _ACTIVE
     thread = threading.Thread(target=_ACTIVE.transport, daemon=True, name='Blender Render editor transport')
     thread.start()
     bpy.app.timers.register(_ACTIVE.tick, first_interval=.1)

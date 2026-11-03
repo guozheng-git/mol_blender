@@ -13,7 +13,8 @@ def parser():
     opening.add_argument('--idle-timeout', type=float, default=3600)
     attach = commands.add_parser('attach-script', help='Prepare a trusted script for an already-open Blender')
     attach.add_argument('--output', required=True); attach.add_argument('--idle-timeout', type=float, default=3600)
-    for action in ('inspect', 'pause', 'disconnect', 'forget'):
+    attach.add_argument('--reconnect', help='Replace the bridge in this selected session without reopening Blender')
+    for action in ('inspect', 'reconnect', 'pause', 'disconnect', 'forget'):
         command = commands.add_parser(action)
         command.add_argument('session')
     for action in ('edit', 'undo', 'save', 'save-preset', 'render'):
@@ -45,8 +46,9 @@ def execute(args):
     action = args.action
     if action == 'sessions': return editor.sessions()
     if action == 'open': return editor.open_editor(args.scene, blender=args.blender, idle_timeout=args.idle_timeout)
-    if action == 'attach-script': return editor.attach_script(args.output, idle_timeout=args.idle_timeout)
+    if action == 'attach-script': return editor.attach_script(args.output, idle_timeout=args.idle_timeout, reconnect_session=args.reconnect)
     if action == 'inspect': return editor.inspect(args.session)
+    if action == 'reconnect': return editor.reconnect(args.session)
     if action == 'forget': return editor.forget(args.session)
     if action in ('pause', 'disconnect'): return editor.call(args.session, action)
     if action == 'edit': return editor.edit(args.session, args.revision, json.loads(Path(args.changes_json).expanduser().read_text()))

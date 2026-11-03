@@ -5,6 +5,13 @@ show a preview, and save the result when you like it. You can keep editing in th
 same Blender window between requests. The bridge reads the current scene,
 including unsaved changes.
 
+Chat first calls `editor_sessions`, selects the existing window, and retains its
+`session_id` for every subsequent edit, preview, save and playback action. It must
+not create a replacement scene for an unsupported edit or a connection failure.
+`editor_open` always launches another desktop and requires `new_window=True`; use
+it only when you explicitly request another window. Background previews still
+run separately without opening desktop windows.
+
 This is an optional **local** connection for macOS or Linux with a desktop Blender.
 It uses the configured, pinned Blender runtime and installs nothing. Ordinary
 local rendering, the warm render worker, and Slurm remain available independently.
@@ -157,7 +164,21 @@ This runs the trusted bridge you generated locally. It is not code from a struct
 or downloaded scene. No script needs to be embedded in the `.blend`, no add-on is
 installed, and automatic script execution should stay disabled. The current scene
 must have Blender Render editing metadata. The script captures the package revision;
-restart Blender before attaching a different bridge source in that process.
+use the in-place reconnect procedure below after updating that package.
+
+For a dropped connection, call `editor_reconnect` with the selected `session_id`
+(CLI: `blender-render editor reconnect SESSION_ID`). This only reconnects to the
+existing window and reports any failure; it never starts Blender. After a bridge
+timeout or a package update, replace the bridge in place:
+
+```sh
+blender-render editor attach-script --reconnect SESSION_ID --output /absolute/path/to/reconnect-blender-chat.py
+```
+
+Run that generated trusted external script in the **same** window's Python
+Console. It checks the selected session, retains its ID, replaces only the bridge
+code, and preserves the entire unsaved scene. Preparing the script does not
+disconnect the active bridge. Do not open another window to recover a connection.
 
 ## Disconnect and command-line access
 
@@ -172,7 +193,7 @@ unsaved work open. Closing Blender, opening another file, or one hour without
 bridge activity also stops the connection. The idle interval can be set from 30
 seconds to 24 hours with `editor open --idle-timeout SECONDS` or `attach-script`.
 There are at most eight queued operations and 512 retained operations per session;
-open/attach a new bridge after reaching the operation limit. Preview job records
+reattach the bridge in the same window after reaching the operation limit. Preview job records
 and requested output artifacts are retained for recovery.
 
 For a crash or an unused prepared attachment, `editor forget SESSION_ID` removes

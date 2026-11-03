@@ -30,7 +30,8 @@ def session(session_id, *, check_source=True):
     if cfg['id'] != session_id or Path(cfg['socket']) != root / 'editor.sock' or not root.name.startswith('br-edit-'):
         raise ValueError('Invalid editor session paths')
     if check_source and cfg['source_sha256'] != source_digest(source_files(Path(__file__).resolve().parent)):
-        raise ValueError('Editor/controller source changed. Disconnect and open a new bridge session.')
+        raise ValueError('Editor/controller source changed. Reattach the selected session in the same window '
+                         'with editor attach-script --reconnect SESSION_ID; preserve unsaved edits. Do not open another window.')
     return cfg
 
 
@@ -74,19 +75,22 @@ def forget(session_id):
     return {'status': 'removed', 'session_id': session_id}
 
 
-def prepare(*, idle_timeout=3600):
+def prepare(*, idle_timeout=3600, session_id=None, publish=True):
     number(idle_timeout, 30, 86400)
+    if session_id is not None:
+        identifier(session_id)
     # Short, private Unix socket paths also work on macOS.
     root = Path(tempfile.mkdtemp(prefix='br-edit-', dir='/tmp')).resolve()
     try:
         identity = snapshot_source(Path(__file__).resolve().parent.parent, root / 'source')
-        key = uuid.uuid4().hex
+        key = session_id or uuid.uuid4().hex
         cfg = {'id': key, 'token': uuid.uuid4().hex, 'root': str(root),
                'socket': str(root / 'editor.sock'), 'registry_file': str(registry() / (key + '.json')),
                'source_sha256': identity['sha256'], 'source_files': identity['files'],
                'idle_timeout': idle_timeout, 'status': 'prepared', 'log': str(root / 'editor.log')}
         write_json(root / 'session.json', cfg)
-        write_json(Path(cfg['registry_file']), cfg)
+        if publish:
+            write_json(Path(cfg['registry_file']), cfg)
         return cfg
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
@@ -129,16 +133,28 @@ def open_editor(path, *, blender='', idle_timeout=3600):
         raise
 
 
-def attach_script(output, *, idle_timeout=3600):
+def attach_script(output, *, idle_timeout=3600, reconnect_session=None):
     """Prepare an external, explicitly run bootstrap for an already-open desktop."""
     output = Path(output).expanduser().absolute()
     if output.suffix != '.py' or output.exists() or output.is_symlink():
         raise ValueError('Choose a new .py filename for the trusted attachment script')
-    cfg = prepare(idle_timeout=idle_timeout)
+    if reconnect_session is not None:
+        identifier(reconnect_session)
+    # Keep a live registry entry intact until the same desktop executes the
+    # replacement bootstrap. Preparing a reconnect never changes that desktop.
+    cfg = prepare(idle_timeout=idle_timeout, session_id=reconnect_session,
+                  publish=reconnect_session is None)
     root = Path(cfg['root'])
-    code = ('import sys\nfrom pathlib import Path\n'
+    if reconnect_session:
+        code = ('import sys\nfrom pathlib import Path\n'
+                f'sys.path.insert(0, {str(root / "source")!r})\n'
+                'import runpy\n'
+                f'runpy.run_path({str(root / "source/blender_render/editor_reattach.py")!r}, '
+                f'init_globals={{"CONFIG_PATH": {str(root / "session.json")!r}}}, run_name="__main__")\n')
+    else:
+        code = ('import sys\nfrom pathlib import Path\n'
             "if 'blender_render.editor_blender' in sys.modules:\n"
-            "    raise RuntimeError('Restart Blender before attaching a different bridge source')\n"
+            "    raise RuntimeError('Use attach-script --reconnect SESSION_ID in this same window')\n"
             f'sys.path.insert(0, {str(root / "source")!r})\n'
             'from blender_render.editor_blender import start\n'
             f'start({str(root / "session.json")!r})\n')
@@ -148,11 +164,13 @@ def attach_script(output, *, idle_timeout=3600):
             handle.write(code)
         output.chmod(0o600)
     except BaseException:
-        Path(cfg['registry_file']).unlink(missing_ok=True)
+        if reconnect_session is None:
+            Path(cfg['registry_file']).unlink(missing_ok=True)
         shutil.rmtree(root, ignore_errors=True)
         raise
     return {'session_id': cfg['id'], 'script': str(output), 'status': 'prepared',
-            'instruction': 'Run this trusted external script once in the existing Blender session; do not enable auto-run scripts.'}
+            'instruction': 'Run this trusted external script once in the selected existing Blender window; '
+                           'it preserves unsaved edits. Do not enable auto-run scripts or open another window.'}
 
 
 def operation(session_id, operation_id):
@@ -179,6 +197,20 @@ def call(session_id, action, *, timeout=30, **fields):
 
 def inspect(session_id):
     return call(session_id, 'inspect')
+
+
+def reconnect(session_id):
+    """Reconnect only the selected IPC session. Never launch, load or replace a scene."""
+    identifier(session_id)
+    try:
+        state = inspect(session_id)
+    except (OSError, ValueError, RuntimeError) as exc:
+        return {'session_id': session_id, 'status': 'unavailable', 'new_window_opened': False,
+                'error': str(exc), 'recovery': 'Keep the selected Blender window and its unsaved edits. '
+                'Retry editor_reconnect for a transient connection failure. If its bridge expired or '
+                'the package changed, generate editor attach-script --reconnect ' + session_id +
+                ' --output NEW_SCRIPT.py and run that trusted script in the same window.'}
+    return {'session_id': session_id, 'status': 'connected', 'new_window_opened': False, **state}
 
 
 def edit(session_id, revision, changes):
