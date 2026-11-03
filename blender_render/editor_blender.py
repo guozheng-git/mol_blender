@@ -132,8 +132,8 @@ class Bridge:
             _, before = self.undo[-1]
             result = controls.restore(scene, before)
             self.undo.pop()
-            if self.undo:
-                self.undo[-1] = (result['revision'], self.undo[-1][1])
+            # Keep the preceding edit's actual revision. Re-labelling it here
+            # would allow a second undo to cross an intervening manual edit.
             return result
         if action == 'save':
             value = command.get('path')

@@ -209,3 +209,36 @@ def test_failed_attach_script_cleans_source(tmp_path, monkeypatch):
     assert not Path(captures[0]['root']).exists()
     assert not Path(captures[0]['registry_file']).exists()
     assert blocked.read_text() == 'keep'
+
+
+@pytest.mark.parametrize('manual_between', [False, True])
+def test_repeated_chat_undo_cannot_cross_a_manual_edit(monkeypatch, manual_between):
+    import importlib.util, sys
+    import blender_render
+    scene = object()
+    state = {'revision': 'second-chat-edit'}
+    restored = []
+    def restore(scene, before):
+        restored.append(before)
+        state['revision'] = before
+        return dict(state)
+    controls = SimpleNamespace(metadata=lambda: {}, revision=lambda *a: state['revision'], restore=restore)
+    bpy = SimpleNamespace(context=SimpleNamespace(scene=scene, mode='OBJECT',
+        window_manager=SimpleNamespace(windows=[])), app=SimpleNamespace(is_job_running=lambda _: False))
+    monkeypatch.setitem(sys.modules, 'bpy', bpy)
+    monkeypatch.setattr(blender_render, 'editor_controls', controls, raising=False)
+    monkeypatch.setattr(blender_render, 'scene_capture', SimpleNamespace(), raising=False)
+    spec = importlib.util.spec_from_file_location('blender_render._undo_test', Path(editor.__file__).with_name('editor_blender.py'))
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    bridge = module.Bridge.__new__(module.Bridge)
+    bridge.scene = scene
+    previous = 'manual-edit' if manual_between else 'first-chat-edit'
+    bridge.undo = [('first-chat-edit', 'original'), ('second-chat-edit', previous)]
+    bridge.dispatch({'action': 'undo', 'revision': state['revision']})
+    if manual_between:
+        with pytest.raises(ValueError, match='manual changes are preserved'):
+            bridge.dispatch({'action': 'undo', 'revision': state['revision']})
+        assert state['revision'] == 'manual-edit' and restored == ['manual-edit']
+    else:
+        bridge.dispatch({'action': 'undo', 'revision': state['revision']})
+        assert state['revision'] == 'original'
