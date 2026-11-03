@@ -28,12 +28,14 @@ _ACTIVE = None
 class Bridge:
     def __init__(self, cfg):
         self.cfg = cfg
+        self.scene = bpy.context.scene
         self.stopped = threading.Event()
         self.pending = queue.Queue(maxsize=8)
         self.jobs = {}
         self.lock = threading.Lock()
         self.last_used = time.monotonic()
         self.undo = []
+        self.closing = False
         self.listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.listener.bind(cfg['socket'])
         os.chmod(cfg['socket'], 0o600)
@@ -69,6 +71,8 @@ class Bridge:
                                 if self.jobs[op]['signature'] != signature:
                                     raise ValueError('Operation ID already has a different command')
                             else:
+                                if self.closing:
+                                    raise ValueError('Editor bridge is disconnecting; no operation was queued')
                                 if len(self.jobs) >= MAX_OPERATIONS:
                                     raise ValueError('Editor operation limit reached; disconnect and reattach')
                                 if self.pending.full():
@@ -96,7 +100,10 @@ class Bridge:
         if action not in allowed or set(command) - allowed[action]:
             raise ValueError('Unknown editor action or fields')
         if action == 'disconnect':
+            self.closing = True
             return {'status': 'disconnected', 'editor_left_open': True}
+        if bpy.context.scene != self.scene:
+            raise ValueError('Active Blender scene changed; reattach to select the new scene')
         if action == 'pause':
             for window in bpy.context.window_manager.windows:
                 if window.screen.is_animation_playing:
@@ -122,11 +129,9 @@ class Bridge:
         if action == 'undo':
             if not self.undo or self.undo[-1][0] != current_revision:
                 raise ValueError('No chat edit can be undone at this revision; manual changes are preserved')
-            _, before = self.undo.pop()
-            for control, value in reversed(before):
-                control.set_raw(value)
-            bpy.context.view_layer.update()
-            result = controls.inspect(scene)
+            _, before = self.undo[-1]
+            result = controls.restore(scene, before)
+            self.undo.pop()
             if self.undo:
                 self.undo[-1] = (result['revision'], self.undo[-1][1])
             return result

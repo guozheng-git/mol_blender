@@ -30,15 +30,24 @@ def revision(scene, data):
 
 
 def schema_for(path):
-    schema = json.loads(Path(__file__).with_name('style.schema.json').read_text())
+    document = json.loads(Path(__file__).with_name('style.schema.json').read_text())
+    schema = document
+    def resolve(value):
+        if '$ref' in value:
+            keys = value['$ref'].removeprefix('#/').split('/')
+            value = document
+            for key in keys:
+                value = value[key]
+        return value
     for key in path:
+        schema = resolve(schema)
         if isinstance(key, int):
             schema = schema.get('items', {})
         else:
             schema = schema.get('properties', {}).get(key, schema.get('additionalProperties', {}))
         if not isinstance(schema, dict):
             return {}
-    return schema
+    return resolve(schema)
 
 
 class Control:
@@ -139,7 +148,9 @@ def controls(scene, data):
         prefix = 'light/' + capture.ident(obj) + '/'
         for field, attr in [('power', 'energy'), ('size', 'size'), ('color', 'color')]:
             if hasattr(obj.data, attr):
-                add(prefix + field, obj.data, attr, kind='hex' if field == 'color' else 'value', label=obj.name + ': ' + field)
+                add(prefix + field, obj.data, attr, kind='hex' if field == 'color' else 'value',
+                    spec={'type': 'number', 'minimum': 0, 'maximum': 1000000} if field != 'color' else None,
+                    label=obj.name + ': ' + field)
         add(prefix + 'location', obj, 'location', label=obj.name + ': location (Blender units)')
         add(prefix + 'rotation_deg', obj, 'rotation_euler', kind='degrees', spec={'type': 'vector', 'length': 3, 'minimum': -360, 'maximum': 360})
     camera = scene.camera
@@ -204,4 +215,21 @@ def edit(scene, changes):
         bpy.context.view_layer.update()
         raise
     return ({**result, 'applied': [{'control': c.name, 'value': value} for c, value, _ in pending]},
-            [(control, old) for control, _, old in pending])
+            [{'control': c.name, 'index': available[c.name].index(c), 'value': old} for c, _, old in pending])
+
+
+def restore(scene, before):
+    # Resolve fresh datablocks: a manual Blender undo/redo may replace RNA objects.
+    available = controls(scene, metadata())
+    pending = [(available[item['control']][item['index']], item['value']) for item in before]
+    rollback = [(control, control.raw()) for control, _ in pending]
+    try:
+        for control, value in pending:
+            control.set_raw(value)
+        bpy.context.view_layer.update()
+        return inspect(scene)
+    except BaseException:
+        for control, value in reversed(rollback):
+            control.set_raw(value)
+        bpy.context.view_layer.update()
+        raise

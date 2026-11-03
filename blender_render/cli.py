@@ -14,6 +14,7 @@ def parser():
     p.add_argument('--version', action='version', version=VERSION)
     commands = p.add_subparsers(dest='command', required=True)
     commands.add_parser('dev', help='Preset authoring and isolated source previews (dev --help)')
+    commands.add_parser('editor', help='Optional desktop chat bridge (editor --help)')
     commands.add_parser('cluster', help='Optional shared Slurm service and client (cluster --help)')
     worker = commands.add_parser('worker', help='Optional warm local Blender worker')
     actions = worker.add_subparsers(dest='action', required=True)
@@ -39,7 +40,9 @@ def parser():
     editor = commands.add_parser('open', help='Open a saved local .blend for editing (embedded scripts disabled)')
     editor.add_argument('scene')
     editor.add_argument('--blender', default='', help='Desktop Blender executable')
-    commands.add_parser('mcp', help='Serve local tools over stdio for Claude/Codex')
+    editor.add_argument('--edit-bridge', action='store_true', help='Enable optional local chat editing for this desktop')
+    mcp = commands.add_parser('mcp', help='Serve local tools over stdio for Claude/Codex')
+    mcp.add_argument('--editor', action='store_true', help='Also expose opt-in desktop scene editing tools')
     export = commands.add_parser('export', help='Export a trusted PSE/CIF/PDB to a StructureBundle')
     export.add_argument('input')
     export.add_argument('-o', '--output', required=True)
@@ -63,6 +66,7 @@ def parser():
     render.add_argument('--keep-temp', action='store_true')
     render.add_argument('--warm', action='store_true', help='Explicitly start/reuse the optional local Blender worker')
     render.add_argument('--open-blender', action='store_true', help='Save the scene and open desktop Blender after rendering')
+    render.add_argument('--edit-bridge', action='store_true', help='Save and open desktop Blender with chat editing enabled')
     render.add_argument('--gui-blender', default='', help='Optional desktop Blender executable')
     for name in ('width', 'height', 'samples'):
         render.add_argument('--'+name, type=int)
@@ -84,7 +88,7 @@ def execute(args):
     from .config import config_root
     if args.command == 'open':
         from .scene_edit import open_scene
-        return open_scene(args.scene, blender=args.blender)
+        return open_scene(args.scene, blender=args.blender, **({'edit_bridge': True} if args.edit_bridge else {}))
     if args.command == 'worker':
         from . import warm_worker
         if args.action == 'status':
@@ -122,7 +126,7 @@ def execute(args):
         return list_presets(config_root() / 'presets')
     if args.command == 'mcp':
         from .mcp_server import create_stdio
-        create_stdio().run(transport='stdio', show_banner=False)
+        create_stdio(editor_enabled=args.editor).run(transport='stdio', show_banner=False)
         return
     if args.command == 'export':
         from .runtime import export_file
@@ -152,7 +156,7 @@ def execute(args):
             pymol_python=args.pymol_python, blender=args.blender, runtime_paths=args.runtime_path,
             runtime_wheels=args.runtime_wheels, ccd=args.ccd, timeout=args.timeout,
             keep_temp=args.keep_temp, catalog_dir=args.catalog_dir, warm=args.warm,
-            open_blender=args.open_blender, gui_blender=args.gui_blender)
+            open_blender=args.open_blender, gui_blender=args.gui_blender, edit_bridge=args.edit_bridge)
 
 
 def main(argv=None):
@@ -161,6 +165,9 @@ def main(argv=None):
         from .developer import main as developer_main
         return developer_main(argv[1:])
     try:
+        if argv and argv[0] == 'editor':
+            from .editor_cli import main as editor_main
+            return editor_main(argv[1:])
         if argv and argv[0] == 'cluster':
             from .cluster.cli import main as cluster_main
             return cluster_main(argv[1:])

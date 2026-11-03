@@ -26,12 +26,13 @@ def runtime_settings(*, blender='', runtime_paths=None, ccd='', runtime_wheels='
 
 def render_payload(payload, *, output, options=None, blender='', runtime_paths=None,
                    ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False,
-                   open_blender=False, gui_blender=''):
+                   open_blender=False, gui_blender='', edit_bridge=False):
     from .core import validate_payload_document
     from .authoring import resolve_authored
     from .developer import preview
     payload = validate_payload_document(payload)
     options = dict(options or {})
+    open_blender = open_blender or edit_bridge
     if open_blender:
         from .scene_edit import blender_executable
         editor = blender_executable(gui_blender or load_config().get('gui_blender') or blender, gui=True)
@@ -89,8 +90,8 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     if open_blender:
         from .scene_edit import open_scene
         try:
-            result['editor'] = open_scene(outputs['render.blend'], blender=editor)
-        except OSError as exc:
+            result['editor'] = open_scene(outputs['render.blend'], blender=editor, **({'edit_bridge': True} if edit_bridge else {}))
+        except (OSError, ValueError, RuntimeError) as exc:
             result['editor'] = {'status': 'launch_failed', 'error': str(exc), 'scene': outputs['render.blend']}
     return result
 

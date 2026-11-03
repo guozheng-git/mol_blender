@@ -29,6 +29,10 @@ default; Slurm jobs keep one independent Blender process per submitted request.
 - Saved Blender scenes carry data-only preset editing metadata. Disable embedded
   script execution when opening/importing them, report unmapped edits, and keep
   camera capture explicit. Desktop editing stays outside local/Slurm workers.
+- The optional `editor` bridge accepts bounded, typed control changes on a
+  revision-checked desktop scene over private local IPC. Keep bpy on the main
+  thread, use captured copies for previews, and never expose code execution or
+  desktop commands through the cluster API. Disconnect leaves the editor open.
 - Run `python -m pytest` for relevant changes. Check a built wheel outside the
   checkout for packaging changes. Record actual runtime and visual checks in
   `docs/validation.md`; mocks do not establish Blender or host integration.

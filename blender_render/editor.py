@@ -55,6 +55,25 @@ def sessions():
     return results
 
 
+def forget(session_id):
+    """Remove only a prepared/abandoned capture, never a running desktop."""
+    cfg = session(session_id, check_source=False)
+    launcher = Path(cfg['root']) / 'launcher.json'
+    pid = cfg.get('pid') or (json.loads(launcher.read_text())['pid'] if launcher.exists() else None)
+    if pid:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            raise ValueError('Desktop is still running; use disconnect instead')
+    elif Path(cfg['socket']).exists():
+        raise ValueError('Attachment may be starting; use disconnect once it is ready')
+    Path(cfg['registry_file']).unlink(missing_ok=True)
+    shutil.rmtree(cfg['root'])
+    return {'status': 'removed', 'session_id': session_id}
+
+
 def prepare(*, idle_timeout=3600):
     number(idle_timeout, 30, 86400)
     # Short, private Unix socket paths also work on macOS.
@@ -90,6 +109,8 @@ def open_editor(path, *, blender='', idle_timeout=3600):
             process = subprocess.Popen([str(executable), '--factory-startup', '--disable-autoexec', str(path),
                 '--python', str(root / 'source/blender_render/editor_blender.py'), '--', str(root / 'session.json')],
                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        # Separate from the ready registry to avoid racing the desktop's update.
+        write_json(root / 'launcher.json', {'pid': process.pid})
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             current = json.loads(Path(cfg['registry_file']).read_text())
@@ -121,10 +142,15 @@ def attach_script(output, *, idle_timeout=3600):
             f'sys.path.insert(0, {str(root / "source")!r})\n'
             'from blender_render.editor_blender import start\n'
             f'start({str(root / "session.json")!r})\n')
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open('x') as handle:
-        handle.write(code)
-    output.chmod(0o600)
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open('x') as handle:
+            handle.write(code)
+        output.chmod(0o600)
+    except BaseException:
+        Path(cfg['registry_file']).unlink(missing_ok=True)
+        shutil.rmtree(root, ignore_errors=True)
+        raise
     return {'session_id': cfg['id'], 'script': str(output), 'status': 'prepared',
             'instruction': 'Run this trusted external script once in the existing Blender session; do not enable auto-run scripts.'}
 

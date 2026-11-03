@@ -4,6 +4,11 @@ Start with a preset you like, open the resulting scene in Blender, and adjust it
 look with Blender's normal controls. Save the edited `.blend`, then give that look
 a name you can use on another structure.
 
+You can also make these changes, request previews, save scenes/presets and trigger
+renders through the optional [local chat bridge](chat-editing.md). Start with
+`edit_bridge=1` instead of `open_blender=1` and enable `mcp --editor` in the local
+chat connection. Ordinary manual editing needs no chat bridge.
+
 ## From PyMOL
 
 Reload the updated bridge in a fresh PyMOL session, then run:

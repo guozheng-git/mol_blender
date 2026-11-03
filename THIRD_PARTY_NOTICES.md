@@ -5,8 +5,11 @@ and plugin code. The Blender Python API scripts listed below are
 GPL-3.0-or-later, as marked in their file headers. The wheel contains both
 components and declares `MIT AND GPL-3.0-or-later`.
 
-GPL scripts: `blender_custom_render.py`, `geometry.py`, `paint.py`,
-`reference_effects.py`, `animation_blender.py`, `developer_blender.py`, `runtime_initialize.py`, and `runtime_probe.py`, all under `blender_render/`.
+GPL scripts: `blender_custom_render.py`, `blender_runtime.py`, `geometry.py`,
+`paint.py`, `reference_effects.py`, `animation_blender.py`, `developer_blender.py`,
+`runtime_initialize.py`, `runtime_probe.py`, `warm_blender.py`, `cycles_device.py`,
+`scene_capture.py`, `editor_controls.py`, `editor_blender.py`, and `editor_render.py`,
+all under `blender_render/`.
 The full GPL text is in `LICENSES/GPL-3.0-or-later.txt`. This separation follows
 [Blender's published guidance for Python scripts](https://www.blender.org/support/faq/).
 It does not relicense upstream dependencies, bundled node assets, or their

@@ -279,6 +279,13 @@ by installing this package. These commands follow the official
 locations follow [Codex skills](https://developers.openai.com/codex/skills/) and
 [Claude Code skills](https://code.claude.com/docs/en/skills).
 
+To edit an open Blender scene through chat, use the optional `mcp --editor`
+tools and start the scene with `edit_bridge=1` in PyMOL or `--edit-bridge` on the
+CLI. You can ask for material, light and camera changes, see previews, save the
+complete `.blend` or a reusable preset, and trigger a final render. Manual edits
+are detected before chat applies changes. See [chat editing](docs/chat-editing.md)
+for setup, attaching an existing window, and example conversations.
+
 ## Preset authoring
 
 You can also make a preset by editing in Blender. Start from a look you like:

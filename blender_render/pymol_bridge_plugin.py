@@ -27,10 +27,10 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                   width="", height="", samples="", transparent_background="",
                   _self=None, overrides_json="", preserve_view="", timeout=600,
                   animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1,
-                  cluster="", wait=0, warm=0, open_blender=0, gui_blender=""):
+                  cluster="", wait=0, warm=0, open_blender=0, gui_blender="", edit_bridge=0):
     if _normalize_cli_string(cluster) and _parse_bool(warm):
         raise ValueError('warm=1 selects the local worker; omit cluster or use warm=0 for Slurm')
-    if _normalize_cli_string(cluster) and (_parse_bool(open_blender) or _normalize_cli_string(gui_blender)):
+    if _normalize_cli_string(cluster) and (_parse_bool(open_blender) or _parse_bool(edit_bridge) or _normalize_cli_string(gui_blender)):
         raise ValueError('open_blender selects local desktop editing; fetch a Slurm scene with save_blend=1 and open it locally')
     if _self is None:
         from pymol import cmd
@@ -74,7 +74,7 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
     else:
         result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
                        timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm),
-                       open_blender=_parse_bool(open_blender), gui_blender=text(gui_blender))
+                       open_blender=_parse_bool(open_blender), gui_blender=text(gui_blender), edit_bridge=_parse_bool(edit_bridge))
     if result and result.get('editor'):
         print(json.dumps({'editor': result['editor']}, indent=2))
     return _present_result(cmd, result, output, auto_preview)

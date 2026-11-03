@@ -124,8 +124,11 @@ def blender_executable(blender='', *, gui=False):
     return path
 
 
-def open_scene(path, *, blender=''):
+def open_scene(path, *, blender='', edit_bridge=False):
     """Launch a separate desktop process; no code embedded in the scene runs."""
+    if edit_bridge:
+        from .editor import open_editor
+        return open_editor(path, blender=blender)
     path = Path(path).expanduser().resolve()
     if path.suffix.lower() != '.blend' or not path.is_file():
         raise ValueError('Expected an existing local .blend scene')

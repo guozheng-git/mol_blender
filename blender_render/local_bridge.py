@@ -22,7 +22,7 @@ def controller_environment():
 
 
 def render_payload(payload, *, output, options, blender='', timeout=600, keep_temp=False, warm=False,
-                   open_blender=False, gui_blender=''):
+                   open_blender=False, gui_blender='', edit_bridge=False):
     python = load_config().get('local_python', sys.executable)
     with tempfile.TemporaryDirectory(prefix='pymol-blender-') as temporary:
         root = Path(temporary)
@@ -49,6 +49,8 @@ def render_payload(payload, *, output, options, blender='', timeout=600, keep_te
             command.append('--keep-temp')
         if warm:
             command.append('--warm')
+        if edit_bridge:
+            command.append('--edit-bridge')
         if open_blender:
             command.append('--open-blender')
         if gui_blender:

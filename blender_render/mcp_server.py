@@ -4,7 +4,7 @@ from .presets import DEFAULT_PRESET
 from .config import config_root
 
 
-def create_stdio():
+def create_stdio(*, editor_enabled=False):
     from fastmcp import FastMCP
     from fastmcp.utilities.types import Image
     from .authoring import list_presets, inspect_preset
@@ -29,7 +29,7 @@ def create_stdio():
                          rock_angle: float | None = None, gif: bool | None = None,
                          width: int | None = None, height: int | None = None,
                          samples: int | None = None, timeout: float = 600, warm: bool = False,
-                         open_blender: bool = False) -> dict:
+                         open_blender: bool = False, edit_bridge: bool = False) -> dict:
         """Render a trusted local PSE/CIF/PDB/bundle with configured local Blender.
 
         animation: rock or 360; gif=True adds a looping GIF alongside MP4 and saved frames.
@@ -38,6 +38,7 @@ def create_stdio():
         Use read_render on the returned PNG to inspect its pixels.
         warm=True explicitly starts/reuses a local Blender worker (15 minute idle shutdown).
         open_blender=True saves the scene and launches desktop Blender for local editing.
+        edit_bridge=True also enables local chat editing; use mcp --editor for the editor tools.
         """
         import json
         options = {'style_doc': json.loads(Path(style_json).expanduser().read_text())} if style_json else {'preset': preset}
@@ -48,7 +49,7 @@ def create_stdio():
             if value is not None:
                 options[key] = value
         return render_file(input_path, output=output_path, options=options, timeout=timeout,
-                           warm=warm, open_blender=open_blender)
+                           warm=warm, open_blender=open_blender, edit_bridge=edit_bridge)
 
     @mcp.tool()
     def read_render(path: str) -> Image:
@@ -61,4 +62,7 @@ def create_stdio():
             png.verify()
         return Image(data=path.read_bytes(), format='png')
 
+    if editor_enabled:
+        from .editor_mcp import register
+        register(mcp)
     return mcp

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Render a captured editor scene in an isolated background Blender process."""
 from __future__ import annotations
 import hashlib
@@ -28,12 +29,16 @@ def blender_main(request):
         raise ValueError('Scene rendering requires Blender ' + lock['blender'])
     bpy.ops.wm.open_mainfile(filepath=request['scene'], load_ui=False, use_scripts=False)
     scene = bpy.context.scene
+    if scene.render.engine != 'CYCLES':
+        raise ValueError('Editor scene rendering currently requires Cycles')
     data = metadata()
     extracted = capture.extract(scene, data, capture.snapshot(scene), 'authored')
     # Record both replayable style and any edits retained only by this .blend.
     artifacts = Path(request['artifacts'])
-    (artifacts / 'resolved-style.json').write_text(json.dumps(extracted['style'], indent=2))
     (artifacts / 'capture-report.json').write_text(json.dumps(extracted, indent=2))
+    percentage = scene.render.resolution_percentage / 100
+    scene.render.resolution_x = max(1, int(scene.render.resolution_x * percentage))
+    scene.render.resolution_y = max(1, int(scene.render.resolution_y * percentage))
     if request['preview']:
         scale = min(1.0, 640 / max(scene.render.resolution_x, scene.render.resolution_y))
         scene.render.resolution_x = max(1, int(scene.render.resolution_x * scale))
@@ -49,13 +54,17 @@ def blender_main(request):
     scene.render.filepath = request['output']
     scene.cycles.device = request['device']
     _configure_cycles_gpu_for_custom(scene, {'compute_device_type': 'AUTO', 'require_gpu': request['device'] == 'GPU'})
+    extracted['style']['output'].update(width=scene.render.resolution_x, height=scene.render.resolution_y,
+                                        samples=scene.cycles.samples)
+    extracted['style']['renderer']['device'] = scene.cycles.device
+    (artifacts / 'resolved-style.json').write_text(json.dumps(extracted['style'], indent=2))
     bpy.ops.render.render(write_still=True)
     output = Path(request['output'])
     manifest = {'job_id': request['job_id'], 'status': 'completed', 'scene_revision': request['revision'],
                 'source_sha256': request['source_sha256'], 'blend_sha256': request['blend_sha256'],
                 'png_sha256': hashlib.sha256(output.read_bytes()).hexdigest(),
                 'width': scene.render.resolution_x, 'height': scene.render.resolution_y,
-                'samples': scene.cycles.samples, 'preview': request['preview'],
+                'samples': scene.cycles.samples, 'preview': request['preview'], 'frame': scene.frame_current,
                 'cycles_device': json.loads(scene['bridge_device_info']),
                 'output': str(output), 'unsupported_preset_edits': extracted['unsupported']}
     (artifacts / 'manifest.json').write_text(json.dumps(manifest, indent=2))
