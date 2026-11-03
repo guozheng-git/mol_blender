@@ -950,3 +950,17 @@ other structures. An earlier camera-policy mismatch was observed; the saved
 draft now explicitly retains authored framing. No desktop scene was changed.
 Reference pixels, preset JSON, comparison notes and render manifests remain in
 ignored local outputs; no reference image or molecular data was committed.
+
+### Cyan reference refinement (2026-11-03)
+
+Used public 2R28 biological assembly 1: calmodulin chains A/B and peptide
+chains C/D. Surface-only cutaways omit protein residues within 10 A of the
+peptides, relabeled X/Y for selection. Exact atomic coordinate multisets match
+the original assembly after solvent removal. No atoms were repositioned.
+Cyan shell roughness is 0.12 with coat 0.5; mesh width/spacing are 0.009/0.55 A.
+Real CPU renders at 840x650 and 64 samples were visually inspected against the
+separate reference. Fresh catalog reload preserved the complete JSON and produced
+pixel-identical output. The four-lobed assembly silhouette and uniform mesh
+remain different from the reference; this is an illustrative cutaway, not an
+exact reconstruction. Source and saved-preset manifests are retained in ignored
+local outputs. No renderer code or desktop Blender scene was modified.
