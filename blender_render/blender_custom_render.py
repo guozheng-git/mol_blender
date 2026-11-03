@@ -796,49 +796,7 @@ def _apply_auth_chain_override(load_result: Any, structure_path: Path) -> None:
         print("Bridge Custom: patched molecule chain_id from CIF auth_asym_id")
 
 
-def _cycles_compute_options(cycles_prefs) -> list[str]:
-    try:
-        prop = cycles_prefs.bl_rna.properties.get("compute_device_type")
-        if prop is None:
-            return []
-        return [str(item.identifier).upper() for item in prop.enum_items]
-    except Exception:
-        return []
-
-
-def _configure_cycles_gpu_for_custom(scene: bpy.types.Scene, renderer: dict[str, Any]) -> None:
-    requested = str(renderer.get("compute_device_type", "AUTO")).upper()
-    want_gpu = scene.cycles.device == "GPU"
-    addon = bpy.context.preferences.addons.get("cycles")
-    candidates = ["METAL", "CUDA", "OPTIX", "HIP", "ONEAPI"] if requested == "AUTO" else [requested]
-    selected, devices = None, []
-    if addon and want_gpu:
-        prefs = addon.preferences
-        for candidate in candidates:
-            try:
-                prefs.compute_device_type = candidate
-                prefs.get_devices()
-                available = [d for d in prefs.devices if d.type == candidate]
-                if not available:
-                    continue
-                for device in prefs.devices:
-                    device.use = device.type == candidate
-                selected = candidate
-                devices = [{"name":d.name,"type":d.type} for d in available]
-                break
-            except (TypeError, RuntimeError):
-                continue
-    if want_gpu and not devices:
-        if bool(renderer.get("require_gpu", _env_bool("PRESS_REQUIRE_GPU", False))):
-            raise RuntimeError("No usable GPU found for the requested Cycles backend")
-        scene.cycles.device = "CPU"
-    info = {"device":scene.cycles.device,"compute_type":selected,"devices":devices}
-    scene["bridge_device_info"] = json.dumps(info)
-    print("Cycles device: " + json.dumps(info), flush=True)
-
-
-
-
+from blender_render.cycles_device import _configure_cycles_gpu_for_custom
 
 
 def _ensure_biotite_ccd_database(*, before_execution: bool = False) -> None:
