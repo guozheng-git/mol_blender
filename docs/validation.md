@@ -936,3 +936,17 @@ frames totaling 2,000 ms. Representative frames were visually checked. The
 selected session retained its process, filename, controls, unsaved state, and
 active playback. Temporary source capture was removed. Media and provenance
 remain under ignored `renders/chat-editor-demo/sidechain-motion/fast-preview/`.
+
+### Reference-style draft (2026-11-03)
+
+Validated a local cyan surface/mesh and pink/gold ribbon preset against public
+1QJB using background Blender. Final demonstration: 840×650, 64 CPU samples;
+schema validation and fresh-process catalog reload passed with identical style
+JSON. Reference and generated pixels were inspected separately. The result is a
+partial match: gloss, saturation, mesh distribution and central-bundle composition
+remain different. The example relabels original chains A/B residues 165–210 as
+C/D for ribbon selection without moving atoms; selectors require adaptation for
+other structures. An earlier camera-policy mismatch was observed; the saved
+draft now explicitly retains authored framing. No desktop scene was changed.
+Reference pixels, preset JSON, comparison notes and render manifests remain in
+ignored local outputs; no reference image or molecular data was committed.
