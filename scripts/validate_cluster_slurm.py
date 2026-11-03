@@ -59,7 +59,8 @@ def main():
                 'engine_build': engine.engine_identity()['engine_build'],
                 'package': str(Path(engine.__file__).resolve()),
                 'image_sha256': config.image_sha256, 'runtime_home': str(config.runtime_home or '/opt/studio-runtime'),
-                'gpus': config.gpus, 'cpus': config.cpus, 'renders': {}}
+                'gpus': config.gpus, 'cpus': config.cpus, 'gpu_options': scheduler.gpu_options(),
+                'constraint': config.constraint, 'renders': {}}
     started = time.monotonic()
 
     def run(name, command, timeout=120):
@@ -169,6 +170,10 @@ with pymol2.PyMOL() as p:
             log = config.spool / identifier / 'slurm.log'
             if log.is_file():
                 (root / (name + '-slurm.log')).write_bytes(log.read_bytes())
+            # Written by the batch script on the compute node, not the gateway.
+            version = config.spool / identifier / 'apptainer.version'
+            assert version.is_file(), 'Compute node did not record its Apptainer version'
+            compute_apptainer = ' '.join(version.read_text().split())[:200]
             manifest = json.loads(Path(fetched['outputs']['manifest.json']).read_text())
             device = manifest['cycles_device']
             assert device['device'] == ('GPU' if config.gpus else 'CPU'), device
@@ -205,7 +210,8 @@ with pymol2.PyMOL() as p:
                 evidence['bundle_restored'] = True
             evidence['renders'][name] = {'job_id': identifier, 'slurm_id': status['slurm_id'],
                 'hashes': {n: digest_file(p) for n, p in fetched['outputs'].items()}, 'blend_reopened': True,
-                'cycles_device': device, 'runtime_versions': manifest['runtime_versions']}
+                'cycles_device': device, 'runtime_versions': manifest['runtime_versions'],
+                'compute_node_apptainer': compute_apptainer}
             atomic_json(root / 'evidence.json', evidence)
 
         # Retry the exact same request, recover it, reject a conflicting retry,

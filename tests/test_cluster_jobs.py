@@ -295,3 +295,137 @@ def test_worker_rejects_changed_environment_before_render(config, monkeypatch):
     monkeypatch.setattr(local, 'render_payload', lambda *a, **kw: pytest.fail('must not render'))
     assert worker.run(config.spool) == 1
     assert 'builds differ' in (config.spool / 'worker-error.log').read_text()
+
+
+@pytest.mark.parametrize('settings, expected', [
+    ({'gpus': 1}, ['--gres=gpu:1']),
+    ({'gpus': 1, 'gpu_type': 'a100'}, ['--gres=gpu:a100:1']),
+    ({'gpus': 1, 'gpu_request': 'gpus'}, ['--gpus=1']),
+    ({'gpus': 1, 'gpu_request': 'gpus', 'gpu_type': 'h100'}, ['--gpus=h100:1']),
+    ({'gpus': 0}, []),
+])
+def test_site_gpu_request_syntax(config, settings, expected):
+    from dataclasses import replace
+    scheduler = Slurm(replace(config, **settings))
+    options = scheduler.batch_options(config.spool, 'a' * 32)
+    assert [o for o in options if o.startswith(('--gres', '--gpus'))] == expected
+
+
+def test_constraint_applies_to_cpu_and_gpu_jobs(config):
+    from dataclasses import replace
+    for gpus in (0, 1):
+        options = Slurm(replace(config, gpus=gpus, constraint='a100|h100')).batch_options(config.spool, 'x')
+        assert '--constraint=a100|h100' in options
+
+
+@pytest.mark.parametrize('settings, message', [
+    ({'gpu_request': 'gpu'}, 'gpu_request'),
+    ({'gpus': 1, 'gpu_type': 'a100:2'}, 'gpu_type'),
+    ({'gpus': 1, 'gpu_type': 'a100 --wrap=x'}, 'gpu_type'),
+    ({'gpu_type': 'a100'}, 'requires gpus'),
+    ({'constraint': 'a100 h100'}, 'constraint'),
+    ({'constraint': '[a100*2]'}, 'constraint'),
+    ({'constraint': 'a100|'}, 'constraint'),
+    ({'constraint': 'a' * 201}, 'constraint'),
+])
+def test_site_gpu_settings_are_bounded(config, settings, message):
+    from dataclasses import asdict
+    document = {**asdict(config), **settings}
+    with pytest.raises(ValueError, match=message):
+        ServerConfig(**document)
+
+
+def test_existing_configs_keep_plain_gres(config):
+    assert (config.gpu_request, config.gpu_type, config.constraint) == ('gres', '', '')
+
+
+def test_job_script_records_compute_node_apptainer_version(config):
+    script = Slurm(config).script(config.spool)
+    assert '/usr/bin/apptainer --version > apptainer.version 2>&1 || true\n' in script
+    assert script.index('apptainer.version') < script.index('exec ')
+
+
+def test_dry_run_uses_real_submission_options_without_queueing(config, monkeypatch, tmp_path):
+    from dataclasses import replace
+    config = replace(config, gpus=1, gpu_request='gpus', gpu_type='l40s', partition='gpu', constraint='ib')
+    scheduler = Slurm(config)
+    seen = []
+    monkeypatch.setattr(scheduler, 'run', lambda cmd: seen.append(cmd) or SimpleNamespace(
+        stdout='', stderr='sbatch: Job 77 to start at 2026-11-03T10:00:00 using 8 processors on nodes g1 in partition gpu\n'))
+    result = scheduler.dry_run(tmp_path)
+    assert seen[0][:2] == [config.sbatch, '--test-only'] and '--parsable' not in seen[0]
+    assert seen[0][2:-1] == scheduler.batch_options(tmp_path, 'doctor')
+    assert result['accepted'] and 'partition gpu' in result['message']
+    assert {'--gpus=l40s:1', '--partition=gpu', '--constraint=ib'} <= set(result['options'])
+    assert (tmp_path / 'job.sh').is_file()
+
+
+def test_dry_run_reports_slurm_rejection(config, monkeypatch, tmp_path):
+    scheduler = Slurm(config)
+    def reject(command):
+        raise subprocess.CalledProcessError(1, command, stderr='sbatch: error: Invalid generic resource (gres) specification\n')
+    monkeypatch.setattr(scheduler, 'run', reject)
+    with pytest.raises(ValueError, match='Invalid generic resource'):
+        scheduler.dry_run(tmp_path)
+
+
+@pytest.mark.parametrize('output, product, version', [
+    ('apptainer version 1.5.5\n', 'apptainer', '1.5.5'),
+    ('apptainer version 1.3.4-1.el8\n', 'apptainer', '1.3.4'),
+    ('apptainer version v1.1.0+12-gabc\n', 'apptainer', '1.1.0'),
+    ('apptainer version 1.2\n', 'apptainer', '1.2.0'),
+])
+def test_supported_apptainer_versions(output, product, version):
+    from blender_render.cluster.doctor import apptainer_version
+    runtime, warnings = apptainer_version(output)
+    assert (runtime['product'], runtime['version'], warnings) == (product, version, [])
+
+
+def test_old_apptainer_is_refused_and_singularity_warns():
+    from blender_render.cluster.doctor import apptainer_version
+    with pytest.raises(ValueError, match='1.0.3 is too old; 1.1 or newer'):
+        apptainer_version('apptainer version 1.0.3')
+    for output in ('singularity-ce version 4.1.2', 'singularity version 3.8.7'):
+        runtime, warnings = apptainer_version(output)
+        assert runtime['product'].startswith('singularity') and 'untested' in warnings[0]
+    with pytest.raises(ValueError, match='Could not determine'):
+        apptainer_version('command not found')
+
+
+def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatch):
+    import json
+    from blender_render.cluster import doctor
+    monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    calls = []
+
+    class Fake(Slurm):
+        def run(self, command):
+            calls.append(command)
+            if command[-1] == '--version':
+                return SimpleNamespace(stdout='apptainer version 1.4.5\n', stderr='')
+            return SimpleNamespace(stdout=json.dumps({'engine_build': 'b' * 64, 'platform': 'Linux',
+                                                      'machine': 'x86_64', 'python': '3.11.15'}), stderr='')
+
+        def dry_run(self, directory):
+            calls.append('dry-run')
+            return {'accepted': True, 'message': 'sbatch: Job 1 to start', 'options': []}
+
+    report = doctor.run(config, Fake(config), 'b' * 64)
+    assert calls[0] == [config.apptainer, '--version'] and calls[1][-1] == '--check' and calls[2] == 'dry-run'
+    assert report['apptainer']['version'] == '1.4.5' and report['slurm_dry_run']['accepted']
+    assert report['render_verified'] is False and report['warnings'] == []
+
+
+def test_doctor_stops_before_container_check_on_old_apptainer(config, monkeypatch):
+    from blender_render.cluster import doctor
+    monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    calls = []
+
+    class Fake(Slurm):
+        def run(self, command):
+            calls.append(command)
+            return SimpleNamespace(stdout='apptainer version 1.0.0\n', stderr='')
+
+    with pytest.raises(ValueError, match='too old'):
+        doctor.run(config, Fake(config), 'b' * 64)
+    assert len(calls) == 1

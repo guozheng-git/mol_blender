@@ -56,25 +56,60 @@ class Slurm:
         task = [self.config.srun, '--export=ALL', '--ntasks=1',
                 f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores',
                 '/bin/sh', '-c', launch, 'blender-cluster', *command]
-        return '#!/bin/sh\nset -eu\numask 077\nexec ' + shlex.join(task) + '\n'
+        # Record the compute node's container runtime for acceptance evidence.
+        version = shlex.quote(str(self.config.apptainer)) + ' --version > apptainer.version 2>&1 || true\n'
+        return '#!/bin/sh\nset -eu\numask 077\n' + version + 'exec ' + shlex.join(task) + '\n'
 
-    def submit(self, directory, identifier):
+    def gpu_options(self):
         c = self.config
-        path = directory / 'job.sh'
-        path.write_text(self.script(directory))
-        path.chmod(0o700)
+        if not c.gpus:
+            return []
+        count = (c.gpu_type + ':1') if c.gpu_type else '1'
+        return ['--gres=gpu:' + count] if c.gpu_request == 'gres' else ['--gpus=' + count]
+
+    def batch_options(self, directory, identifier):
+        """Every sbatch option of a real submission; shared with the doctor dry run."""
+        c = self.config
         hours, remainder = divmod(c.walltime_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        command = [c.sbatch, '--parsable', '--export=NIL', '--nodes=1', '--ntasks=1',
+        options = ['--export=NIL', '--nodes=1', '--ntasks=1',
             f'--cpus-per-task={c.cpus}', f'--mem={c.memory_mb}M',
             f'--time={hours:02}:{minutes:02}:{seconds:02}', '--job-name=br-' + identifier,
             '--chdir=' + str(directory), '--output=' + str(directory / 'slurm.log'),
             '--error=' + str(directory / 'slurm.log'), '--open-mode=append']
-        for key in ('partition', 'account', 'qos'):
+        for key in ('partition', 'account', 'qos', 'constraint'):
             if getattr(c, key):
-                command.append('--' + key + '=' + getattr(c, key))
-        if c.gpus:
-            command.append('--gres=gpu:1')
+                options.append('--' + key + '=' + getattr(c, key))
+        return options + self.gpu_options()
+
+    def write_script(self, directory):
+        path = directory / 'job.sh'
+        path.write_text(self.script(directory))
+        path.chmod(0o700)
+        return path
+
+    def dry_run(self, directory):
+        """Ask Slurm to validate the exact request shape without queuing a job."""
+        path = self.write_script(directory)
+        options = self.batch_options(directory, 'doctor')
+        try:
+            result = self.run([self.config.sbatch, '--test-only', *options, str(path)])
+        except subprocess.CalledProcessError as exc:
+            message = ' '.join((exc.stderr or exc.stdout or '').split())[:500]
+            raise ValueError('Slurm rejected the dry-run request: ' + (message or 'no message')) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError('Slurm dry run timed out') from exc
+        # sbatch --test-only reports the estimated start on stderr.
+        message = ' '.join((result.stderr or result.stdout or '').split())[:500]
+        shown = ('--partition', '--account', '--qos', '--constraint', '--gres', '--gpus',
+                 '--cpus-per-task', '--mem', '--time')
+        return {'accepted': True, 'message': message,
+                'options': [o for o in options if o.split('=')[0] in shown]}
+
+    def submit(self, directory, identifier):
+        c = self.config
+        path = self.write_script(directory)
+        command = [c.sbatch, '--parsable', *self.batch_options(directory, identifier)]
         try:
             result = self.run(command + [str(path)])
         except subprocess.TimeoutExpired as exc:

@@ -233,6 +233,13 @@ administrator-controlled location and adapt:
 - Partition, account, QoS, CPUs, memory, walltime and zero or one GPU per job.
   For CUDA set `gpus` to `1`. The Slurm walltime must exceed the renderer timeout
   by at least 60 seconds.
+- The site's GPU request syntax. `gpu_request` is `"gres"` (default, `--gres=gpu:1`)
+  or `"gpus"` (`--gpus=1`). An optional `gpu_type` such as `"a100"` produces
+  `--gres=gpu:a100:1` or `--gpus=a100:1`. An optional `constraint` such as
+  `"a100|h100"` adds `--constraint=...` to CPU and GPU jobs. Only NVIDIA CUDA GPUs
+  are supported; place AMD Instinct nodes on CPU (`"gpus": 0`). The
+  [cluster onboarding skill](../.agents/skills/cluster-onboarding/SKILL.md)
+  explains how to discover a site's values.
 - Limits for uploads, image size, samples, frames, active jobs and retention.
   Defaults accept at most 20 MiB of uncompressed JSON, 16 megapixels, 512 samples,
   360 frames, four active jobs per user, and 32 active jobs overall. The existing
@@ -262,6 +269,17 @@ For either access mode, check the configuration and start the gateway:
 blender-render cluster doctor --config /srv/blender-render/server.json
 blender-render cluster serve --config /srv/blender-render/server.json
 ```
+
+`doctor` runs on the gateway host and never installs, queues or renders. It checks
+the configuration and SIF checksum, the Slurm/Apptainer executables, and the
+Apptainer version (Apptainer 1.1 or newer; SingularityCE or legacy Singularity is
+reported as an untested warning). It then runs the container's identity check with
+the job flags, and asks Slurm to validate the exact job request with
+`sbatch --test-only`. A rejected GPU request fails here with Slurm's own message.
+A site `job_submit` plugin may still reject a real submission, and the check does
+not reach a compute node, GPU or the compute side of the spool;
+`scripts/validate_cluster_slurm.py` remains the real execution gate. Each job also
+records its compute node's `apptainer --version` in the private job directory.
 
 The service defaults to `127.0.0.1:8765`. Put an HTTPS reverse proxy in front, or
 use SSH forwarding to that loopback address. Direct TLS is available with

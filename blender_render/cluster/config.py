@@ -25,6 +25,10 @@ class ServerConfig:
     cpus: int = 8
     memory_mb: int = 16384
     gpus: int = 0
+    # Site-specific Slurm GPU/node selection. The defaults keep --gres=gpu:1.
+    gpu_request: str = 'gres'
+    gpu_type: str = ''
+    constraint: str = ''
     walltime_seconds: int = 3900
     runtime_home: Path | None = None
     limits: Limits = field(default_factory=Limits)
@@ -60,6 +64,17 @@ class ServerConfig:
                 raise ValueError(name + ' must be positive')
         if type(self.gpus) is not int or self.gpus not in (0, 1):
             raise ValueError('Request zero or one GPU per render')
+        if self.gpu_request not in ('gres', 'gpus'):
+            raise ValueError('gpu_request must be gres or gpus')
+        if self.gpu_type and not re.fullmatch('[A-Za-z0-9_.-]{1,64}', self.gpu_type):
+            raise ValueError('Invalid gpu_type; use the GPU type name reported by sinfo')
+        if self.gpu_type and not self.gpus:
+            raise ValueError('gpu_type requires gpus: 1')
+        # Slurm feature expressions such as a100|h100 or gpu&ib; no spaces,
+        # brackets, counts or shell syntax.
+        if self.constraint and not re.fullmatch(
+                r'[A-Za-z0-9_.-]+(?:[&|][A-Za-z0-9_.-]+)*', self.constraint) or len(self.constraint) > 200:
+            raise ValueError('Invalid Slurm constraint; use feature names joined by & or |')
         if self.walltime_seconds < self.limits.render_timeout + 60:
             raise ValueError('Slurm walltime must exceed render_timeout by at least 60 seconds')
 

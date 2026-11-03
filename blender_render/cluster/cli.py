@@ -3,7 +3,6 @@ import argparse
 import json
 from pathlib import Path
 import re
-import tempfile
 import subprocess
 
 from .common import read_json
@@ -27,7 +26,7 @@ def parser():
     revoke = commands.add_parser('user-revoke')
     revoke.add_argument('--config', required=True)
     revoke.add_argument('--user', required=True)
-    doctor = commands.add_parser('doctor', help='Check the SIF and its reusable uv runtime without installing or rendering')
+    doctor = commands.add_parser('doctor', help='Check the SIF, container runtime and a Slurm dry run without installing, queuing or rendering')
     doctor.add_argument('--config', required=True)
     reconcile = commands.add_parser('reconcile', help='Recover an ambiguous submission without launching another job')
     reconcile.add_argument('--config', required=True)
@@ -82,25 +81,13 @@ def execute(args):
         if args.command in ('doctor', 'reconcile'):
             from .slurm import Slurm
             from ..engine import generate_manifest
-            from .common import digest_file
             identity = generate_manifest(Path(__file__).resolve().parents[1])['engine_build']
             scheduler = Slurm(config)
             if args.command == 'reconcile':
                 from .store import Store
                 return Store(config, scheduler, identity).reconcile(args.job)
-            if digest_file(config.image) != config.image_sha256:
-                raise ValueError('SIF checksum mismatch')
-            for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
-                import os
-                if not os.access(getattr(config, name), os.X_OK):
-                    raise ValueError(name + ' executable is missing')
-            with tempfile.TemporaryDirectory(prefix='blender-cluster-check-') as temporary:
-                result = scheduler.run(scheduler.container_command(Path(temporary)) + ['--check'])
-            check = json.loads(result.stdout)
-            if check.get('engine_build') != identity or check.get('platform') != 'Linux' or check.get('python') != '3.11.15':
-                raise ValueError('Gateway and container must use the same renderer build and pinned Linux Python')
-            return {**check, 'status': 'configured', 'image_sha256': config.image_sha256,
-                    'runtime': str(config.runtime_home or '/opt/studio-runtime'), 'render_verified': False}
+            from . import doctor
+            return doctor.run(config, scheduler, identity)
         if args.command == 'user-add':
             from .auth import add_user
             return add_user(config.tokens_file, args.user, args.url, args.credential_output)
