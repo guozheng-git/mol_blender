@@ -918,3 +918,21 @@ source and installed-wheel acceptance, PNGs, manifests, and reconnect receipts.
 The wheel is under ignored `dist/editor-session-controls/clean-c26f986/`. The
 normal source bridge was restored in the selected desktop afterward, retaining
 the faster loop and quick color view. Changes were committed locally only.
+
+### Captured native timeline preview (2026-11-02)
+
+Rendered one two-second loop of the current orange `1sps` scene's illustrative
+sidechain motion: **48 frames at 24 fps, 640×480, 16-sample CPU Cycles**. The selected
+desktop was briefly paused to save a copy of its unsaved scene, then playback was
+resumed. A background-only Blender 5.0.1 process rendered frames 1–48 from that
+copy, retaining its existing camera, materials, geometry, and 48-frame loop.
+This used a local capture/encoding runner; `editor_render_scene` remains a still
+render tool. No desktop window was opened, reloaded, closed, or replaced.
+
+The frames rendered in **241.49 s**; rendering and MP4/GIF encoding took **250.39 s**
+overall. All 48 PNGs passed dimension and digest checks. The H.264 MP4 decoded
+without errors and reported 48 frames and 2.000 s; the looping GIF contained 48
+frames totaling 2,000 ms. Representative frames were visually checked. The
+selected session retained its process, filename, controls, unsaved state, and
+active playback. Temporary source capture was removed. Media and provenance
+remain under ignored `renders/chat-editor-demo/sidechain-motion/fast-preview/`.
