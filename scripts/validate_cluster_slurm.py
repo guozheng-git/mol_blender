@@ -183,7 +183,7 @@ with pymol2.PyMOL() as p:
             assert device['device'] == ('GPU' if config.gpus else 'CPU'), device
             if config.gpus:
                 assert device['compute_type'] == 'CUDA' and device['devices'], device
-            assert manifest['runtime_versions']['python'] == doctor.PINNED_PYTHON
+            assert doctor.python_matches_lock(manifest['runtime_versions']['python']), manifest['runtime_versions']
             assert not (config.spool / identifier / 'request.json').exists()
             denied(lambda: other.api('GET', '/v1/jobs/' + identifier + '/artifacts/render.png'), 404)
             with Image.open(fetched['outputs']['render.png']) as png:

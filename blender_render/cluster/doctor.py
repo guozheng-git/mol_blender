@@ -10,7 +10,14 @@ import tempfile
 # --cleanenv) passed real acceptance on a newer Apptainer; the exact oldest
 # compatible release has not been established on real hardware.
 MINIMUM_APPTAINER = (1, 1)
-PINNED_PYTHON = '3.11.15'
+
+
+def python_matches_lock(version):
+    """The container's Python must match runtime.lock.json, the package's runtime
+    contract, at the same major.minor precision blender_runtime checks."""
+    from ..config import runtime_versions
+    locked = runtime_versions()['python']
+    return isinstance(version, str) and (version == locked or version.startswith(locked + '.'))
 
 
 def apptainer_version(output):
@@ -75,8 +82,10 @@ def run(config, scheduler, identity):
     except ValueError as exc:
         raise ValueError('Container identity check printed no JSON: '
                          + ' '.join((result.stdout or result.stderr or '').split())[:500]) from exc
-    if check.get('engine_build') != identity or check.get('platform') != 'Linux' or check.get('python') != PINNED_PYTHON:
-        raise ValueError('Gateway and container must use the same renderer build and pinned Linux Python')
+    if check.get('engine_build') != identity or check.get('platform') != 'Linux':
+        raise ValueError('Gateway and container must use the same renderer build on Linux')
+    if not python_matches_lock(check.get('python')):
+        raise ValueError('Container Python ' + str(check.get('python')) + ' does not match runtime.lock.json')
     # Same shared filesystem as real jobs, so site job_submit rules on
     # --chdir/--output see the real request shape.
     with tempfile.TemporaryDirectory(prefix='.doctor-', dir=config.spool) as temporary:

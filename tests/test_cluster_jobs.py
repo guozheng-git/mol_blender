@@ -506,3 +506,25 @@ def test_doctor_requires_the_shared_spool(config, monkeypatch):
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
     with pytest.raises(ValueError, match='Create the private shared spool'):
         doctor.run(config, Slurm(config), 'b' * 64)
+
+
+def test_container_python_is_checked_against_the_runtime_lock(config, monkeypatch):
+    import json
+    from blender_render.cluster import doctor
+    from blender_render.config import runtime_versions
+    locked = runtime_versions()['python']
+    assert doctor.python_matches_lock(locked + '.15') and doctor.python_matches_lock(locked)
+    assert not doctor.python_matches_lock(locked + '1.0') and not doctor.python_matches_lock('3.12.1')
+    assert not doctor.python_matches_lock(None)
+    monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    config.spool.mkdir()
+
+    class Fake(Slurm):
+        def run(self, command):
+            if command[-1] == '--version':
+                return SimpleNamespace(stdout='apptainer version 1.4.5\n', stderr='')
+            return SimpleNamespace(stdout=json.dumps({'engine_build': 'b' * 64, 'platform': 'Linux',
+                                                      'python': '3.12.1'}), stderr='')
+
+    with pytest.raises(ValueError, match='Container Python 3.12.1 does not match runtime.lock.json'):
+        doctor.run(config, Fake(config), 'b' * 64)
