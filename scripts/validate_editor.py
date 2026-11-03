@@ -135,9 +135,19 @@ async def validate(args):
                     editor.call(session_id, 'disconnect')
                 except (OSError, ValueError, RuntimeError):
                     pass
+                # Disconnect returns its receipt before the UI timer tears down
+                # the socket/source capture. Let it finish before terminating
+                # this test's desktop, otherwise SIGTERM can skip that cleanup.
+                deadline = time.monotonic() + 3
+                registered = editor.registry() / (session_id + '.json')
+                while registered.exists() and time.monotonic() < deadline:
+                    await asyncio.sleep(.1)
             if pid and not args.leave_open:
                 # This process was launched by this acceptance run only.
-                os.kill(pid, signal.SIGTERM)
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
             evidence_path.write_text(json.dumps(evidence, indent=2))
     print(json.dumps(evidence, indent=2), flush=True)
 

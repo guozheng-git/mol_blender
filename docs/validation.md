@@ -796,3 +796,73 @@ scenes, extracted presets/reports, comparison PNGs, and restored movie artifacts
 Temporary installed environments and worker source captures were cleaned up.
 No installer, remote server update, new Slurm allocation, release publication or
 push was performed for this feature.
+
+
+## Optional local chat editing bridge (2026-11-02)
+
+Added the desktop bridge in `220c8f0` and CLI/PyMOL/stdio MCP integration in
+`5d89b79`. Real checks identified and fixed Blender's unsaved-file indicator
+(`bfaeeb9`) and repeated undo across an intervening manual edit (`5e91172`).
+The final wheel and both plugin ZIP candidates were built from clean revision
+`5e91172a9b6a298a3da35c5c0f847f784d19c310`, retaining `0.4.0rc4` for local validation.
+Their engine identity is
+`96d4cf9c31e30ca0ee955e0c31266cc5dbc01870bc6afccd0900cb1558b57511`.
+`verify_release.py` verified artifact hashes and every packaged source byte against
+that revision. The following validation/harness documentation commit does not
+change packaged renderer code.
+
+- Final source suite: **487 passed in 54.28 s**. Final wheel installed into a
+  separate uv environment outside the checkout: **487 passed in 41.64 s**.
+  Both enabled real PyMOL and browser tests, had no skips and reported four
+  existing dependency/fixture warnings. Installed checks used Python `-I`, module
+  location assertions and exact wheel/source inventory checks. One earlier
+  installed run stalled in its isolated headless browser; that test process and
+  browser were stopped, and the complete rerun passed.
+- Initial real acceptance ran from source. Final acceptance ran
+  `scripts/validate_editor.py` through a real stdio MCP subprocess using the exact
+  installed wheel, the public trusted `1sps` example and native Blender 5.0.1.
+  It exercised fresh rendering, desktop opening, inspection, grouped material/
+  background/light edits, stale-revision rejection, atomic invalid-edit rejection,
+  undo, unsaved preset capture, scene saving, overwrite refusal and independent
+  saved-scene reopening. No unsupported preset settings were reported.
+- The final installed run rendered a **256×192, 8-sample CPU preview in 2.54 s**
+  and a **local GPU final still in 4.71 s**, using separate captured-scene
+  processes. Native MCP image bytes matched the saved PNGs exactly. Preview
+  snapshots preserved the editor's filename, revision and unsaved state, and
+  temporary render-source captures were removed afterward. These small images
+  are acceptance checks, not publication-quality renders.
+- Replayed the captured preset through the existing `render_structure` MCP tool
+  with the warm local worker. The edited-scene final versus preset replay had
+  pixel RMS below **0.010 per 8-bit channel**. The warm worker was stopped after
+  the check. Visually inspected the original mint render, orange final and later
+  GUI-edit preview: the protein pose and ligand were retained.
+- In the real Blender window, confirmed chat changed Key light Power to **9**
+  and the filename acquired its unsaved marker. Changed Power manually to **11**
+  through Blender's normal controls. MCP rejected the stale revision, then made
+  a fresh chat edit to **12**. Chat undo restored **11**; a second undo refused to
+  cross the manual edit. MCP saved a new preset and `gui-chat.blend`, then returned
+  a native PNG preview. The UI showed the new filename without an unsaved marker
+  and retained Power **11**.
+- An external attachment script connected to an already-open scene with an
+  unsaved light edit. Real socket checks rejected an invalid token and recovered
+  a duplicate operation without replaying its mutation. The 30-second idle
+  shutdown removed the registry/socket/source capture while leaving the desktop
+  alive. Explicit disconnect was also checked for capture removal before closing
+  only the test's own saved desktop.
+- The real embedded PyMOL bridge, run outside the checkout with startup scripts
+  disabled, used the installed wheel and configured controller under a foreign
+  `PYTHONEXECUTABLE`. `edit_bridge=1` rendered a fresh **192×144, 8-sample** PNG,
+  saved the scene and opened the desktop bridge with **116 controls**. Inspection
+  and clean disconnection passed. No user PyMOL configuration was changed.
+
+Local, warm-worker and cluster regression tests passed in both full suites. The
+cluster API and Slurm allocation model were not changed: one independent Blender
+process remains allocated per submitted render. This feature's real runtime
+checks used macOS; no new Linux/Slurm allocation or cluster deployment is claimed.
+
+The final local candidates are in ignored `dist/chat-editor/`. Evidence is in
+ignored `.validation/editor-bridge/`, including `installed-current/`,
+`installed-attachment/`, `installed-pymol/`, PNGs, scenes, capture reports,
+provenance and complete logs. Test workers, desktops and temporary source captures
+were cleaned up. No runtime installer, remote server update, public release or
+push was performed.
