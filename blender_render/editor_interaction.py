@@ -125,16 +125,36 @@ def playback(scene, state):
     """Idempotent explicit play/pause; never toggle or follow another scene."""
     from . import editor_controls as controls
     checked_value(state, {'type': 'enum', 'choices': ['play', 'pause']})
-    windows = [w for w in bpy.context.window_manager.windows if w.scene == scene]
+    all_windows = list(bpy.context.window_manager.windows)
+    windows = [w for w in all_windows if w.scene == scene]
     if not windows:
         raise ValueError('The selected scene is not displayed in a desktop window')
     if state == 'play' and (bpy.context.mode != 'OBJECT' or bpy.app.is_job_running('RENDER')):
         raise ValueError('Finish the active edit mode or render before starting playback')
-    for window in windows:
-        playing = window.screen.is_animation_playing
+    active = [w for w in all_windows if w.screen.is_animation_playing]
+    selected_active = [w for w in active if w.scene == scene]
+    # Blender's native play/cancel operators operate on a process-wide timer.
+    # Calling play once per window would toggle it off again or stop a different
+    # scene. Refuse a conflicting timer and operate on just one selected window.
+    if state == 'play' and any(w.scene != scene for w in active):
+        raise ValueError('Another scene is playing in this Blender process; pause it there first. Nothing was changed.')
+    frame, subframe = scene.frame_current, scene.frame_subframe
+    changed = False
+    window = selected_active[0] if selected_active else windows[0]
+    if (state == 'pause' and selected_active) or (state == 'play' and not selected_active):
         with bpy.context.temp_override(window=window, screen=window.screen):
-            if state == 'pause' and playing:
+            if state == 'pause':
                 bpy.ops.screen.animation_cancel(restore_frame=False)
-            elif state == 'play' and not playing:
+                # Keep the exact frame at request execution even if a playback
+                # callback or Blender's stop path restores the initial frame.
+                if (scene.frame_current, scene.frame_subframe) != (frame, subframe):
+                    scene.frame_set(frame, subframe=subframe)
+            else:
                 bpy.ops.screen.animation_play()
-    return controls.inspect(scene)
+        changed = True
+    result = controls.inspect(scene)
+    if result['playing'] != (state == 'play'):
+        raise RuntimeError('Blender did not reach the requested playback state; inspect this session before retrying')
+    result['playback'] = {'state': state, 'changed': changed, 'frame_before': frame,
+                          'frame_after': scene.frame_current}
+    return result

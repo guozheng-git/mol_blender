@@ -67,10 +67,21 @@ async def validate(args):
             assert playing['playing']
             again = await tool('editor_playback', session_id=args.session, state='play')
             assert again['playing']
-            await asyncio.sleep(.35)
+            frames = [playing['frame'], again['frame']]
+            # A short loop can return to the same frame between two slow
+            # inspections. Sample several intervals before declaring a stall.
+            for interval in (.23, .41, .67):
+                await asyncio.sleep(interval)
+                sample = await tool('editor_inspect', session_id=args.session)
+                assert sample['playing']
+                frames.append(sample['frame'])
+                if len(set(frames)) > 1:
+                    break
             paused = await tool('editor_playback', session_id=args.session, state='pause')
             assert not paused['playing']
-            assert paused['frame'] != playing['frame'], (playing['frame'], paused['frame'])
+            assert paused['frame'] == paused['playback']['frame_before']
+            frames.append(paused['frame'])
+            assert len(set(frames)) > 1, frames
             submitted = await tool('editor_render_scene', session_id=args.session, revision=paused['revision'],
                                    output_path=str(root / 'preview.png'), width=384, height=288, samples=8)
             (root / 'job.json').write_text(json.dumps(submitted, indent=2))
@@ -89,7 +100,7 @@ async def validate(args):
             evidence.update(passed=True, selected_session_reused=True, desktop_not_replaced=True,
                 explicit_open_guard=True, invalid_speed_rejected=True, stale_revision_rejected=True,
                 speed_and_viewport_undo=True, shader_and_render_settings_preserved=True,
-                playback_idempotent=True, playback_frames=[playing['frame'], paused['frame']],
+                playback_idempotent=True, pause_retains_current_frame=True, playback_frames=frames,
                 unsaved_scene_preserved=True, preview=status)
             if args.leave_playing:
                 assert (await tool('editor_playback', session_id=args.session, state='play'))['playing']

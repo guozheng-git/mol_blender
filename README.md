@@ -280,11 +280,16 @@ locations follow [Codex skills](https://developers.openai.com/codex/skills/) and
 [Claude Code skills](https://code.claude.com/docs/en/skills).
 
 To edit an open Blender scene through chat, use the optional `mcp --editor`
-tools and start the scene with `edit_bridge=1` in PyMOL or `--edit-bridge` on the
-CLI. You can ask for material, light and camera changes, see previews, save the
+tools and attach the bridge to that window. Chat discovers existing sessions
+with `editor_sessions` and keeps the selected `session_id` for edits and
+reconnection. Another desktop window opens only when you explicitly request it.
+You can change materials, lights and cameras, adjust supported animation loops,
+switch to a fast color view, play or pause, see background previews, save the
 complete `.blend` or a reusable preset, and trigger a final render. Manual edits
-are detected before chat applies changes. See [chat editing](docs/chat-editing.md)
-for setup, attaching an existing window, and example conversations.
+are detected before chat applies changes, and unsaved work stays in the selected
+window. When explicitly opening a new scene, `edit_bridge=1` in PyMOL or
+`--edit-bridge` on the CLI enables its bridge. See [chat editing](docs/chat-editing.md)
+for setup and example conversations.
 
 ## Preset authoring
 

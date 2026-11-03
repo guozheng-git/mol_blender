@@ -21,8 +21,12 @@ def interaction(monkeypatch, bpy):
 
 
 def test_playback_is_idempotent_and_scoped_to_selected_scene(monkeypatch):
-    chosen, other = object(), object()
+    chosen, other = NS(frame_current=12, frame_subframe=.25), object()
+    def set_frame(frame, *, subframe):
+        chosen.frame_current, chosen.frame_subframe = frame, subframe
+    chosen.frame_set = set_frame
     window = NS(scene=chosen, screen=NS(is_animation_playing=False))
+    second = NS(scene=chosen, screen=NS(is_animation_playing=False))
     unrelated = NS(scene=other, screen=NS(is_animation_playing=True))
     calls = []
     def play():
@@ -30,14 +34,21 @@ def test_playback_is_idempotent_and_scoped_to_selected_scene(monkeypatch):
     def pause(**kwargs):
         assert kwargs == {'restore_frame': False}
         calls.append('pause'); window.screen.is_animation_playing = False
-    bpy = NS(context=NS(mode='OBJECT', window_manager=NS(windows=[window, unrelated]),
+        chosen.frame_current, chosen.frame_subframe = 1, 0
+    bpy = NS(context=NS(mode='OBJECT', window_manager=NS(windows=[window, second, unrelated]),
                         temp_override=lambda **kw: nullcontext()),
              app=NS(is_job_running=lambda _: False),
              ops=NS(screen=NS(animation_play=play, animation_cancel=pause)))
     module = interaction(monkeypatch, bpy)
     monkeypatch.setattr(blender_render, 'editor_controls', NS(inspect=lambda scene: {'playing': window.screen.is_animation_playing}), raising=False)
+    assert not module.playback(chosen, 'pause')['playback']['changed']
+    with pytest.raises(ValueError, match='Another scene'):
+        module.playback(chosen, 'play')
+    assert not calls and unrelated.screen.is_animation_playing
+    unrelated.screen.is_animation_playing = False
     for state in ('play', 'play', 'pause', 'pause'): module.playback(chosen, state)
-    assert calls == ['play', 'pause'] and unrelated.screen.is_animation_playing
+    assert calls == ['play', 'pause']
+    assert (chosen.frame_current, chosen.frame_subframe) == (12, .25)
     with pytest.raises(ValueError): module.playback(chosen, 'toggle')
     bpy.context.mode = 'EDIT_MESH'
     with pytest.raises(ValueError, match='edit mode'): module.playback(chosen, 'play')
