@@ -943,11 +943,15 @@ Added site-configurable Slurm GPU requests (`gpu_request`, `gpu_type`,
 `constraint`), an Apptainer version floor (1.1; SingularityCE/legacy Singularity
 warn as untested) and an `sbatch --test-only` dry run to `cluster doctor`. Each
 batch script now records the compute node's `apptainer --version`, which
-`validate_cluster_slurm.py` copies into `evidence.json`. The onboarding steps are
+`validate_cluster_slurm.py` parses (an error message there fails acceptance) into
+`evidence.json`. The acceptance preflight calls `cluster doctor` itself and stores
+its report under `evidence.doctor`. The batch step repeats the job's GPU request,
+scheduler commands search only the configured tool directories plus
+`/usr/bin:/bin`, and the doctor dry run uses a directory inside the spool. The onboarding steps are
 in `.agents/skills/cluster-onboarding/SKILL.md`. Defaults still produce
 `--gres=gpu:1`, so existing `server.json` files are unchanged in behavior.
 
-Mac source tests: **475 passed, 50 skipped** (real PyMOL, browser and built-wheel
+Mac source tests: **485 passed, 50 skipped** (real PyMOL, browser and built-wheel
 checks were not enabled for this run). The cluster tests use a scheduler
 substitute. **Not yet run on a real cluster:** `cluster doctor` against real
 `apptainer --version` output and real `sbatch --test-only`, `--gpus`/typed-GRES

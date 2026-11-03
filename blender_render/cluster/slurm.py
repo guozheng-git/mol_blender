@@ -21,11 +21,25 @@ class Slurm:
 
     def run(self, command):
         # Do not inherit SBATCH_*, APPTAINER_*, Python paths or service credentials.
-        env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+        # PATH holds only the directories of the administrator-configured tools
+        # (module installs often keep helpers beside them) plus the system dirs.
+        env = {'PATH': self.search_path(), 'LANG': 'C.UTF-8'}
         for name in ('HOME', 'USER', 'LOGNAME', 'SLURM_CONF'):
             if name in os.environ:
                 env[name] = os.environ[name]
         return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30, check=True)
+
+    def search_path(self):
+        c = self.config
+        directories = []
+        for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
+            parent = os.path.dirname(getattr(c, name))
+            if parent not in directories:
+                directories.append(parent)
+        for parent in ('/usr/bin', '/bin'):
+            if parent not in directories:
+                directories.append(parent)
+        return ':'.join(directories)
 
     def container_command(self, directory):
         c = self.config
@@ -53,8 +67,11 @@ class Slurm:
         if self.config.gpus:
             launch += 'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:?Slurm did not assign a GPU}"\n'
         launch += 'exec "$@"'
+        # The step repeats the job's GPU request: with --gpus (per-job TRES)
+        # some Slurm configurations do not hand the device to a step that
+        # does not ask for it, leaving CUDA_VISIBLE_DEVICES unset.
         task = [self.config.srun, '--export=ALL', '--ntasks=1',
-                f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores',
+                f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores', *self.gpu_options(),
                 '/bin/sh', '-c', launch, 'blender-cluster', *command]
         # Record the compute node's container runtime for acceptance evidence.
         version = shlex.quote(str(self.config.apptainer)) + ' --version > apptainer.version 2>&1 || true\n'

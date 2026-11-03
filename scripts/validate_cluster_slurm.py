@@ -40,6 +40,7 @@ def main():
     from blender_render.cluster.auth import add_user, revoke_user
     from blender_render.cluster.client import Client, RemoteError, configure, profile_path
     from blender_render.cluster.common import TERMINAL, atomic_json, digest_file
+    from blender_render.cluster import doctor
     from blender_render.cluster.config import ServerConfig
     from blender_render.cluster.server import create_app
     from blender_render.cluster.slurm import Slurm
@@ -54,7 +55,9 @@ def main():
     scheduler = Slurm(config)
     inspection = root / 'inspection'
     inspection.mkdir(mode=0o700)
-    inspector = Slurm(replace(config, gpus=0))
+    # Scene inspection needs no GPU; drop every GPU setting together so the
+    # config rule 'gpu_type requires gpus: 1' still holds.
+    inspector = Slurm(replace(config, gpus=0, gpu_type=''))
     evidence = {'passed': False, 'execution': 'real Slurm and Apptainer',
                 'engine_build': engine.engine_identity()['engine_build'],
                 'package': str(Path(engine.__file__).resolve()),
@@ -92,12 +95,10 @@ def main():
         else:
             raise AssertionError('Expected HTTP ' + str(code))
 
-    # Explicit preflight before opening a listener or submitting an allocation.
-    assert digest_file(config.image) == config.image_sha256
-    probe = json.loads(run('container-check', inspector.container_command(inspection) + ['--check']))
-    assert probe['engine_build'] == evidence['engine_build']
-    assert probe['platform'] == 'Linux' and probe['python'] == '3.11.15'
-    evidence['container_check'] = probe
+    # Explicit preflight before opening a listener or submitting an allocation:
+    # the same checks as `cluster doctor`, including the sbatch --test-only dry run.
+    config.spool.mkdir(mode=0o700)
+    evidence['doctor'] = doctor.run(config, scheduler, evidence['engine_build'])
     atomic_json(root / 'evidence.json', evidence)
 
     sock = socket.socket()
@@ -173,13 +174,16 @@ with pymol2.PyMOL() as p:
             # Written by the batch script on the compute node, not the gateway.
             version = config.spool / identifier / 'apptainer.version'
             assert version.is_file(), 'Compute node did not record its Apptainer version'
-            compute_apptainer = ' '.join(version.read_text().split())[:200]
+            # Parse it: the job script tolerates a failing --version, so the file
+            # alone may hold an error such as 'not found'.
+            compute_apptainer, compute_warnings = doctor.apptainer_version(version.read_text())
+            compute_apptainer['warnings'] = compute_warnings
             manifest = json.loads(Path(fetched['outputs']['manifest.json']).read_text())
             device = manifest['cycles_device']
             assert device['device'] == ('GPU' if config.gpus else 'CPU'), device
             if config.gpus:
                 assert device['compute_type'] == 'CUDA' and device['devices'], device
-            assert manifest['runtime_versions']['python'] == '3.11.15'
+            assert manifest['runtime_versions']['python'] == doctor.PINNED_PYTHON
             assert not (config.spool / identifier / 'request.json').exists()
             denied(lambda: other.api('GET', '/v1/jobs/' + identifier + '/artifacts/render.png'), 404)
             with Image.open(fetched['outputs']['render.png']) as png:

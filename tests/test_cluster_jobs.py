@@ -396,6 +396,7 @@ def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatc
     import json
     from blender_render.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    config.spool.mkdir()
     calls = []
 
     class Fake(Slurm):
@@ -407,6 +408,7 @@ def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatc
                                                       'machine': 'x86_64', 'python': '3.11.15'}), stderr='')
 
         def dry_run(self, directory):
+            assert directory.parent == config.spool
             calls.append('dry-run')
             return {'accepted': True, 'message': 'sbatch: Job 1 to start', 'options': []}
 
@@ -419,6 +421,7 @@ def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatc
 def test_doctor_stops_before_container_check_on_old_apptainer(config, monkeypatch):
     from blender_render.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    config.spool.mkdir()
     calls = []
 
     class Fake(Slurm):
@@ -429,3 +432,77 @@ def test_doctor_stops_before_container_check_on_old_apptainer(config, monkeypatc
     with pytest.raises(ValueError, match='too old'):
         doctor.run(config, Fake(config), 'b' * 64)
     assert len(calls) == 1
+
+
+def test_gpu_step_repeats_the_job_gpu_request(config):
+    from dataclasses import replace
+    for settings, option in (({'gpu_request': 'gpus', 'gpu_type': 'a100'}, '--gpus=a100:1'),
+                             ({}, '--gres=gpu:1')):
+        script = Slurm(replace(config, gpus=1, **settings)).script(config.spool)
+        step = script[script.index('/usr/bin/srun'):]
+        assert option in step.split(' /bin/sh')[0]
+    script = Slurm(config).script(config.spool)
+    assert '--gres' not in script and '--gpus' not in script
+
+
+def test_cpu_inspector_drops_gpu_type_without_failing_validation(config):
+    from dataclasses import replace
+    typed = replace(config, gpus=1, gpu_type='a100')
+    assert replace(typed, gpus=0, gpu_type='').gpu_type == ''
+    with pytest.raises(ValueError, match='requires gpus'):
+        replace(typed, gpus=0)
+
+
+def test_commands_search_only_configured_tool_directories(config, monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setenv('PATH', '/home/user/bin:/usr/bin')
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/home/user/lib')
+    scheduler = Slurm(replace(config, apptainer='/opt/apptainer/1.3/bin/apptainer'))
+    seen = {}
+    monkeypatch.setattr(subprocess, 'run', lambda command, env, **kw: seen.update(env) or SimpleNamespace())
+    scheduler.run(['/usr/bin/true'])
+    assert seen['PATH'] == '/opt/apptainer/1.3/bin:/usr/bin:/bin'
+    assert 'LD_LIBRARY_PATH' not in seen
+
+
+@pytest.mark.parametrize('settings', [{'constraint': ['a100']}, {'gpus': 1, 'gpu_type': 100},
+                                      {'partition': 7}, {'sbatch': None}])
+def test_non_string_settings_name_the_field(config, tmp_path, settings):
+    import json
+    from dataclasses import asdict
+    document = {k: str(v) if isinstance(v, Path) else v for k, v in asdict(config).items() if k != 'limits'}
+    path = tmp_path / 'server.json'
+    path.write_text(json.dumps({**document, **settings}))
+    name = next(k for k in settings if k != 'gpus')
+    with pytest.raises(ValueError, match=name + ' must be a string'):
+        ServerConfig.load(path)
+
+
+def test_apptainer_version_after_wrapper_messages():
+    from blender_render.cluster.doctor import apptainer_version
+    runtime, _ = apptainer_version('INFO: loading module apptainer/1.3\napptainer version 1.3.4\n')
+    assert runtime['version'] == '1.3.4'
+    with pytest.raises(ValueError, match='Could not determine'):
+        apptainer_version('/bin/sh: 1: /usr/bin/apptainer: not found\n')
+
+
+def test_doctor_reports_container_check_stderr(config, monkeypatch):
+    from blender_render.cluster import doctor
+    monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    config.spool.mkdir()
+
+    class Fake(Slurm):
+        def run(self, command):
+            if command[-1] == '--version':
+                return SimpleNamespace(stdout='apptainer version 1.4.5\n', stderr='')
+            raise subprocess.CalledProcessError(255, command, stderr='FATAL: --no-mount is not supported\n')
+
+    with pytest.raises(ValueError, match='Container identity check failed: FATAL: --no-mount'):
+        doctor.run(config, Fake(config), 'b' * 64)
+
+
+def test_doctor_requires_the_shared_spool(config, monkeypatch):
+    from blender_render.cluster import doctor
+    monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
+    with pytest.raises(ValueError, match='Create the private shared spool'):
+        doctor.run(config, Slurm(config), 'b' * 64)

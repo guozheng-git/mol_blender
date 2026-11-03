@@ -73,7 +73,10 @@ sbatch --test-only --nodes=1 --ntasks=1 --cpus-per-task=4 --mem=8192M \
 
 Start from [`examples/cluster-server.json`](../../../examples/cluster-server.json).
 Use absolute paths found with `command -v sbatch` etc.; module-provided tools
-often live outside `/usr/bin`. Keep `walltime_seconds` at least 60 seconds above
+often live outside `/usr/bin`. Commands run with `PATH` set to those tools'
+directories plus `/usr/bin:/bin` and no `LD_LIBRARY_PATH`, so check that each tool
+runs from a clean shell (`env -i PATH=<dir>:/usr/bin:/bin <tool> --version`).
+Create the private spool (mode `0700`) before running doctor. Keep `walltime_seconds` at least 60 seconds above
 `limits.render_timeout` and below the partition's MaxTime. Start with a CPU
 configuration (`"gpus": 0`); add the GPU settings after CPU acceptance passes.
 Unknown fields are rejected, which catches typos.
@@ -115,6 +118,7 @@ without private hostnames, accounts or paths.
 | `Slurm rejected the dry-run request: Invalid generic resource` | Wrong GPU syntax: try a `gpu_type`, `"gpu_request": "gpus"`, or a `constraint`. |
 | Dry run rejects partition/account/QoS or time limit | Fix those values from `scontrol show partition` and `sacctmgr`. |
 | Dry run passes, real submission rejected | A site `job_submit` plugin; read the private job's diagnostics and site docs. |
+| `... failed: ... error while loading shared libraries` | The tool needs its module's environment; use a wrapper script or an RPATH install. |
 | `--no-mount` / bind errors from the container check | Apptainer or `apptainer.conf` lacks the needed features; ask the site admins. |
 | `GLIBC_x.yy not found` loading NVIDIA libraries | Host drivers need a newer glibc than the image; report it, a rebuilt base image is required. |
 | `Slurm did not assign a GPU` in the job log | GPU request accepted but no device granted to the step; check GRES configuration with the site. |

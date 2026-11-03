@@ -34,6 +34,17 @@ class ServerConfig:
     limits: Limits = field(default_factory=Limits)
 
     def __post_init__(self):
+        # Reject JSON numbers/lists before any regex or Path call, so the
+        # administrator is told which value is wrong rather than 'unknown field'.
+        for name in ('authentication', 'image_sha256', 'apptainer', 'sbatch', 'squeue', 'sacct',
+                     'scancel', 'srun', 'partition', 'account', 'qos', 'gpu_request', 'gpu_type',
+                     'constraint'):
+            if not isinstance(getattr(self, name), str):
+                raise ValueError(name + ' must be a string')
+        for name in ('spool', 'image', 'tokens_file', 'runtime_home'):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, (str, Path)):
+                raise ValueError(name + ' must be a path string')
         if self.authentication not in ('token', 'none'):
             raise ValueError('authentication must be token or none')
         if self.authentication == 'token' and self.tokens_file is None:
@@ -72,8 +83,8 @@ class ServerConfig:
             raise ValueError('gpu_type requires gpus: 1')
         # Slurm feature expressions such as a100|h100 or gpu&ib; no spaces,
         # brackets, counts or shell syntax.
-        if self.constraint and not re.fullmatch(
-                r'[A-Za-z0-9_.-]+(?:[&|][A-Za-z0-9_.-]+)*', self.constraint) or len(self.constraint) > 200:
+        if len(self.constraint) > 200 or self.constraint and not re.fullmatch(
+                r'[A-Za-z0-9_.-]+(?:[&|][A-Za-z0-9_.-]+)*', self.constraint):
             raise ValueError('Invalid Slurm constraint; use feature names joined by & or |')
         if self.walltime_seconds < self.limits.render_timeout + 60:
             raise ValueError('Slurm walltime must exceed render_timeout by at least 60 seconds')

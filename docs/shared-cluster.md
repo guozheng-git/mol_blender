@@ -275,11 +275,19 @@ the configuration and SIF checksum, the Slurm/Apptainer executables, and the
 Apptainer version (Apptainer 1.1 or newer; SingularityCE or legacy Singularity is
 reported as an untested warning). It then runs the container's identity check with
 the job flags, and asks Slurm to validate the exact job request with
-`sbatch --test-only`. A rejected GPU request fails here with Slurm's own message.
-A site `job_submit` plugin may still reject a real submission, and the check does
-not reach a compute node, GPU or the compute side of the spool;
+`sbatch --test-only`, using a temporary directory inside the spool (which must
+already exist) as the job's working and log directory. A rejected GPU request
+fails here with Slurm's own message. A site `job_submit` plugin may still reject a
+real submission, and the check does not reach a compute node or GPU;
 `scripts/validate_cluster_slurm.py` remains the real execution gate. Each job also
-records its compute node's `apptainer --version` in the private job directory.
+records its compute node's `apptainer --version` in the private job directory,
+and the acceptance script parses it.
+
+Scheduler and container commands run with a minimal environment: `PATH` holds
+only the directories of the configured executables plus `/usr/bin:/bin`, and no
+`LD_LIBRARY_PATH`, `SBATCH_*` or `APPTAINER_*` variables are inherited. A
+module-provided tool that only works after `module load` needs a wrapper or an
+install with RPATH.
 
 The service defaults to `127.0.0.1:8765`. Put an HTTPS reverse proxy in front, or
 use SSH forwarding to that loopback address. Direct TLS is available with
