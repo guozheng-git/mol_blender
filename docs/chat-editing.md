@@ -85,7 +85,9 @@ mesh edits and new objects are not exposed.
 Each edit uses the inspected scene revision. If you changed the scene manually
 in the meantime, the bridge refuses the stale request and the chat must inspect
 again. A group of changes is validated before applying it and rolled back if a
-control fails. `editor_undo` can undo the last chat edit while its result is still
+control fails. Successful edits enter Blender's undo history and mark the file as
+unsaved, so closing the window offers its normal save warning. `editor_undo` can
+undo the last chat edit while its result is still
 current. It refuses to undo over intervening manual edits. Pause timeline playback
 before editing or capturing; `editor_pause` is available for an explicit pause.
 Leave Edit Mode and finish any desktop render before saving or changing controls.

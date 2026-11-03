@@ -184,6 +184,15 @@ def inspect(scene):
             'unsupported': exported['unsupported'], 'ignored': exported['ignored']}
 
 
+def record_edit(result, label):
+    # Direct RNA assignments do not set bpy.data.is_dirty. Record a native undo
+    # step so closing the window also offers Blender's normal save warning.
+    if 'FINISHED' not in bpy.ops.ed.undo_push(message=label):
+        raise RuntimeError('Blender could not record this edit in its undo history')
+    result['dirty'] = bpy.data.is_dirty
+    return result
+
+
 def edit(scene, changes):
     if not isinstance(changes, list) or not 1 <= len(changes) <= MAX_CHANGES:
         raise ValueError('Supply 1 to 64 explicit control changes')
@@ -208,7 +217,7 @@ def edit(scene, changes):
         for screen in bpy.data.screens:
             for area in screen.areas:
                 area.tag_redraw()
-        result = inspect(scene)
+        result = record_edit(inspect(scene), 'Blender Render chat edit')
     except BaseException:
         for control, _, old in reversed(pending):
             control.set_raw(old)
@@ -227,7 +236,7 @@ def restore(scene, before):
         for control, value in pending:
             control.set_raw(value)
         bpy.context.view_layer.update()
-        return inspect(scene)
+        return record_edit(inspect(scene), 'Undo Blender Render chat edit')
     except BaseException:
         for control, value in reversed(rollback):
             control.set_raw(value)

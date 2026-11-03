@@ -72,7 +72,7 @@ async def validate(args):
                 {'control': 'light/o1/power', 'value': 8.0},
             ]
             changed = await tool('editor_edit', session_id=session_id, revision=initial_revision, changes=changes)
-            assert not changed['unsupported']
+            assert not changed['unsupported'] and changed['dirty']
             failed = await client.call_tool('editor_edit', {'session_id': session_id, 'revision': initial_revision,
                                             'changes': changes}, raise_on_error=False)
             assert failed.is_error
@@ -87,8 +87,9 @@ async def validate(args):
                                  preset='user/chat-look', report_path=str(root / 'preset-report.json'))
             assert not preset['partial'] and len(preset['changes']) == len(changes)
             state = await tool('editor_inspect', session_id=session_id)
-            assert state['revision'] == changed['revision'] and state['file'] == initial_file
+            assert state['revision'] == changed['revision'] and state['file'] == initial_file and state['dirty']
             preview = await render_image(state['revision'], 'preview.png', width=256, height=192, samples=8)
+            assert (await tool('editor_inspect', session_id=session_id))['dirty']
             print(json.dumps({'stage': 'preview', 'status': preview['status']}), flush=True)
             saved = await tool('editor_save_scene', session_id=session_id, revision=state['revision'],
                               output_path=str(root / 'edited.blend'))
