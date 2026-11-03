@@ -3,8 +3,9 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import tempfile
+
+from .common import digest_file, one_line
 
 # Provisional floor. The job flags (--containall, --no-mount hostfs,bind-paths,cwd,
 # --cleanenv) passed real acceptance on a newer Apptainer; the exact oldest
@@ -26,62 +27,37 @@ def apptainer_version(output):
     match = re.search(r'^\s*(apptainer|singularity-ce|singularity)\s+version\s+v?(\d+)\.(\d+)(?:\.(\d+))?',
                       output or '', re.IGNORECASE | re.MULTILINE)
     if not match:
-        raise ValueError('Could not determine the container runtime version from: '
-                         + ' '.join((output or '').split())[:200])
+        raise ValueError('Could not determine the container runtime version from: ' + one_line(output, 200))
     product = match.group(1).lower()
-    version = tuple(int(part or 0) for part in match.group(2, 3, 4))
+    version = '.'.join(part or '0' for part in match.group(2, 3, 4))
+    minimum = '.'.join(map(str, MINIMUM_APPTAINER))
     warnings = []
     if product == 'apptainer':
-        if version[:2] < MINIMUM_APPTAINER:
-            raise ValueError('Apptainer ' + '.'.join(map(str, version)) + ' is too old; '
-                             + '.'.join(map(str, MINIMUM_APPTAINER)) + ' or newer is required')
+        if (int(match.group(2)), int(match.group(3))) < MINIMUM_APPTAINER:
+            raise ValueError(f'Apptainer {version} is too old; {minimum} or newer is required')
     else:
-        warnings.append(product + ' ' + '.'.join(map(str, version))
-                        + ' is untested; Apptainer ' + '.'.join(map(str, MINIMUM_APPTAINER))
-                        + ' or newer is the supported runtime')
-    return {'product': product, 'version': '.'.join(map(str, version)),
-            'raw': ' '.join(output.split())[:200]}, warnings
-
-
-ENVIRONMENT_HINT = (' Commands run with PATH limited to the configured tool directories plus '
-                    '/usr/bin:/bin and no LD_LIBRARY_PATH; module-provided tools that need more '
-                    'environment must be wrapped or installed with RPATH.')
-
-
-def _failure(prefix, exc):
-    if isinstance(exc, subprocess.TimeoutExpired):
-        return ValueError(prefix + ' timed out after ' + str(exc.timeout) + ' seconds')
-    output = getattr(exc, 'stderr', None) or getattr(exc, 'stdout', None) or str(exc)
-    if isinstance(output, bytes):
-        output = output.decode(errors='replace')
-    return ValueError(prefix + ' failed: ' + (' '.join(output.split())[:500] or 'no message')
-                      + ENVIRONMENT_HINT)
+        warnings.append(f'{product} {version} is untested; Apptainer {minimum} or newer is the supported runtime')
+    return {'product': product, 'version': version, 'raw': one_line(output, 200)}, warnings
 
 
 def run(config, scheduler, identity):
-    from .common import digest_file
     if digest_file(config.image) != config.image_sha256:
         raise ValueError('SIF checksum mismatch')
-    for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
+    for name in config.EXECUTABLES:
         if not os.access(getattr(config, name), os.X_OK):
             raise ValueError(name + ' executable is missing')
     if not config.spool.is_dir():
         raise ValueError('Create the private shared spool ' + str(config.spool) + ' before running doctor')
-    try:
-        result = scheduler.run([config.apptainer, '--version'])
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise _failure(str(config.apptainer) + ' --version', exc) from exc
+    result = scheduler.run_checked([config.apptainer, '--version'], config.apptainer + ' --version')
     runtime, warnings = apptainer_version((result.stdout or '') + '\n' + (result.stderr or ''))
     with tempfile.TemporaryDirectory(prefix='blender-cluster-check-') as temporary:
-        try:
-            result = scheduler.run(scheduler.container_command(Path(temporary)) + ['--check'])
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise _failure('Container identity check', exc) from exc
+        result = scheduler.run_checked(scheduler.container_command(Path(temporary)) + ['--check'],
+                                       'Container identity check')
     try:
         check = json.loads(result.stdout)
     except ValueError as exc:
         raise ValueError('Container identity check printed no JSON: '
-                         + ' '.join((result.stdout or result.stderr or '').split())[:500]) from exc
+                         + one_line(result.stdout or result.stderr)) from exc
     if check.get('engine_build') != identity or check.get('platform') != 'Linux':
         raise ValueError('Gateway and container must use the same renderer build on Linux')
     if not python_matches_lock(check.get('python')):
@@ -91,6 +67,6 @@ def run(config, scheduler, identity):
     with tempfile.TemporaryDirectory(prefix='.doctor-', dir=config.spool) as temporary:
         dry_run = scheduler.dry_run(Path(temporary))
     return {**check, 'status': 'configured', 'image_sha256': config.image_sha256,
-            'runtime': str(config.runtime_home or '/opt/studio-runtime'),
+            'runtime': config.runtime_root,
             'apptainer': runtime, 'slurm_dry_run': dry_run, 'warnings': warnings,
             'render_verified': False}

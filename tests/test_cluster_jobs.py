@@ -528,3 +528,16 @@ def test_container_python_is_checked_against_the_runtime_lock(config, monkeypatc
 
     with pytest.raises(ValueError, match='Container Python 3.12.1 does not match runtime.lock.json'):
         doctor.run(config, Fake(config), 'b' * 64)
+
+
+@pytest.mark.parametrize('error, message', [
+    (subprocess.TimeoutExpired(['sbatch'], 30), 'Slurm dry run timed out after 30 seconds'),
+    (FileNotFoundError(2, 'No such file or directory'), 'Slurm dry run failed: .*No such file'),
+])
+def test_preflight_command_failures_name_the_step(config, monkeypatch, tmp_path, error, message):
+    scheduler = Slurm(config)
+    def fail(command):
+        raise error
+    monkeypatch.setattr(scheduler, 'run', fail)
+    with pytest.raises(ValueError, match=message):
+        scheduler.dry_run(tmp_path)

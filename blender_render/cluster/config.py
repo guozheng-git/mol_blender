@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
+from typing import ClassVar
 
 from .common import Limits, read_json
 
@@ -33,12 +34,19 @@ class ServerConfig:
     runtime_home: Path | None = None
     limits: Limits = field(default_factory=Limits)
 
+    EXECUTABLES: ClassVar[tuple] = ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun')
+    DEFAULT_RUNTIME: ClassVar[str] = '/opt/studio-runtime'
+
+    @property
+    def runtime_root(self):
+        """The Studio runtime inside the image (or bound from runtime_home)."""
+        return str(self.runtime_home or self.DEFAULT_RUNTIME)
+
     def __post_init__(self):
         # Reject JSON numbers/lists before any regex or Path call, so the
         # administrator is told which value is wrong rather than 'unknown field'.
-        for name in ('authentication', 'image_sha256', 'apptainer', 'sbatch', 'squeue', 'sacct',
-                     'scancel', 'srun', 'partition', 'account', 'qos', 'gpu_request', 'gpu_type',
-                     'constraint'):
+        for name in ('authentication', 'image_sha256', *self.EXECUTABLES, 'partition', 'account',
+                     'qos', 'gpu_request', 'gpu_type', 'constraint'):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(name + ' must be a string')
         for name in ('spool', 'image', 'tokens_file', 'runtime_home'):
@@ -49,21 +57,17 @@ class ServerConfig:
             raise ValueError('authentication must be token or none')
         if self.authentication == 'token' and self.tokens_file is None:
             raise ValueError('Token authentication requires tokens_file')
-        for name in ('spool', 'image', 'tokens_file'):
-            if name == 'tokens_file' and self.tokens_file is None:
+        # Commas and colons would split Apptainer --bind specifications.
+        for name in ('spool', 'image', 'tokens_file', 'runtime_home'):
+            if getattr(self, name) is None:
                 continue
             path = Path(getattr(self, name)).expanduser()
             if not path.is_absolute() or any(c in str(path) for c in '\n\r,:'):
                 raise ValueError(name + ' must be an absolute path without newline, comma or colon')
             object.__setattr__(self, name, path.resolve())
-        if self.runtime_home is not None:
-            path = Path(self.runtime_home).expanduser()
-            if not path.is_absolute() or any(c in str(path) for c in '\n\r,:'):
-                raise ValueError('runtime_home must be an absolute Linux path without comma, colon or newline')
-            object.__setattr__(self, 'runtime_home', path.resolve())
         if not re.fullmatch('[0-9a-f]{64}', self.image_sha256):
             raise ValueError('Pin the SIF image_sha256 before serving')
-        for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
+        for name in self.EXECUTABLES:
             if not Path(getattr(self, name)).is_absolute():
                 raise ValueError(name + ' must be an absolute executable path')
         for name in ('partition', 'account', 'qos'):

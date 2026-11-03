@@ -115,10 +115,10 @@ without private hostnames, accounts or paths.
 | Symptom | Likely cause and action |
 | --- | --- |
 | `Apptainer X is too old` | Load a newer Apptainer module and point `apptainer` at it. |
-| `Slurm rejected the dry-run request: Invalid generic resource` | Wrong GPU syntax: try a `gpu_type`, `"gpu_request": "gpus"`, or a `constraint`. |
+| `Slurm dry run failed: Invalid generic resource` | Wrong GPU syntax: try a `gpu_type`, `"gpu_request": "gpus"`, or a `constraint`. |
 | Dry run rejects partition/account/QoS or time limit | Fix those values from `scontrol show partition` and `sacctmgr`. |
 | Dry run passes, real submission rejected | A site `job_submit` plugin; read the private job's diagnostics and site docs. |
-| `... failed: ... error while loading shared libraries` | The tool needs its module's environment; use a wrapper script or an RPATH install. |
+| `error while loading shared libraries` or `not found` in a doctor or dry-run error, while the tool works in your shell | Commands run with only the configured tool directories plus `/usr/bin:/bin` on `PATH` and no `LD_LIBRARY_PATH`. The tool needs its module's environment: point the config at a wrapper script or an RPATH install. |
 | `--no-mount` / bind errors from the container check | Apptainer or `apptainer.conf` lacks the needed features; ask the site admins. |
 | `GLIBC_x.yy not found` loading NVIDIA libraries | Host drivers need a newer glibc than the image; report it, a rebuilt base image is required. |
 | `Slurm did not assign a GPU` in the job log | GPU request accepted but no device granted to the step; check GRES configuration with the site. |

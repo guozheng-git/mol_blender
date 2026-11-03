@@ -61,7 +61,7 @@ def main():
     evidence = {'passed': False, 'execution': 'real Slurm and Apptainer',
                 'engine_build': engine.engine_identity()['engine_build'],
                 'package': str(Path(engine.__file__).resolve()),
-                'image_sha256': config.image_sha256, 'runtime_home': str(config.runtime_home or '/opt/studio-runtime'),
+                'image_sha256': config.image_sha256, 'runtime_home': config.runtime_root,
                 'gpus': config.gpus, 'cpus': config.cpus, 'gpu_options': scheduler.gpu_options(),
                 'constraint': config.constraint, 'renders': {}}
     started = time.monotonic()

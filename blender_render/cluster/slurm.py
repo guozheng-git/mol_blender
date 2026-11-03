@@ -7,6 +7,8 @@ from datetime import datetime
 import pwd
 import time
 
+from .common import one_line
+
 
 class SubmissionUnknown(RuntimeError):
     """A job may have been accepted. Never resubmit automatically."""
@@ -29,17 +31,21 @@ class Slurm:
                 env[name] = os.environ[name]
         return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30, check=True)
 
+    def run_checked(self, command, what):
+        """run() for preflight checks: failures become a ValueError naming the
+        step and carrying the tool's own message."""
+        try:
+            return self.run(command)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(f'{what} timed out after {exc.timeout} seconds') from exc
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(f'{what} failed: ' + (one_line(exc.stderr or exc.stdout) or 'no message')) from exc
+        except OSError as exc:
+            raise ValueError(f'{what} failed: {exc}') from exc
+
     def search_path(self):
-        c = self.config
-        directories = []
-        for name in ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun'):
-            parent = os.path.dirname(getattr(c, name))
-            if parent not in directories:
-                directories.append(parent)
-        for parent in ('/usr/bin', '/bin'):
-            if parent not in directories:
-                directories.append(parent)
-        return ':'.join(directories)
+        directories = [os.path.dirname(getattr(self.config, name)) for name in self.config.EXECUTABLES]
+        return ':'.join(dict.fromkeys(directories + ['/usr/bin', '/bin']))
 
     def container_command(self, directory):
         c = self.config
@@ -48,7 +54,7 @@ class Slurm:
                    '--pwd', '/job']
         if c.gpus:
             command.append('--nv')
-        runtime = str(c.runtime_home or '/opt/studio-runtime')
+        runtime = c.runtime_root
         if c.runtime_home:
             command.extend(['--bind', f'{runtime}:{runtime}:ro',
                             '--env', 'STRUCTURE_STUDIO_HOME=' + runtime,
@@ -109,15 +115,9 @@ class Slurm:
         """Ask Slurm to validate the exact request shape without queuing a job."""
         path = self.write_script(directory)
         options = self.batch_options(directory, 'doctor')
-        try:
-            result = self.run([self.config.sbatch, '--test-only', *options, str(path)])
-        except subprocess.CalledProcessError as exc:
-            message = ' '.join((exc.stderr or exc.stdout or '').split())[:500]
-            raise ValueError('Slurm rejected the dry-run request: ' + (message or 'no message')) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise ValueError('Slurm dry run timed out') from exc
+        result = self.run_checked([self.config.sbatch, '--test-only', *options, str(path)], 'Slurm dry run')
         # sbatch --test-only reports the estimated start on stderr.
-        message = ' '.join((result.stderr or result.stdout or '').split())[:500]
+        message = one_line(result.stderr or result.stdout)
         shown = ('--partition', '--account', '--qos', '--constraint', '--gres', '--gpus',
                  '--cpus-per-task', '--mem', '--time')
         return {'accepted': True, 'message': message,
