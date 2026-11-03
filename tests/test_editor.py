@@ -210,6 +210,31 @@ def test_editor_cli_routes(monkeypatch, tmp_path):
     assert calls[-1][1]['preview'] is False and calls[-1][1]['device'] == 'GPU'
 
 
+@pytest.mark.parametrize('method,args,kwargs', [
+    ('animation_speed', ('session', 'revision', True), {}),
+    ('animation_speed', ('session', 'revision', 9), {}),
+    ('animation_speed', ('session', 'revision', float('nan')), {}),
+    ('animation_speed', ('session', 'revision', 2), {'control': ['not an ID']}),
+    ('viewport', ('session', 'revision', 'execute_python'), {}),
+    ('viewport', ('session', 'revision', 'solid_color'), {'overlays': 1}),
+    ('playback', ('session', 'toggle'), {}),
+])
+def test_invalid_interactions_never_reach_the_desktop(monkeypatch, method, args, kwargs):
+    monkeypatch.setattr(editor, 'call', lambda *a, **kw: pytest.fail('Invalid input reached the desktop'))
+    with pytest.raises(ValueError): getattr(editor, method)(*args, **kwargs)
+
+
+def test_interaction_cli_keeps_the_selected_session(monkeypatch):
+    from blender_render import editor_cli
+    calls = []
+    monkeypatch.setattr(editor, 'call', lambda *a, **kw: calls.append((a, kw)))
+    editor_cli.execute(editor_cli.parser().parse_args(['animation-speed', 'chosen', '--revision', 'rev', '--multiplier', '2']))
+    editor_cli.execute(editor_cli.parser().parse_args(['viewport', 'chosen', '--revision', 'rev', '--no-overlays']))
+    editor_cli.execute(editor_cli.parser().parse_args(['playback', 'chosen', 'play']))
+    assert [args for args, _ in calls] == [('chosen', 'animation_speed'), ('chosen', 'viewport'), ('chosen', 'playback')]
+    assert calls[0][1]['multiplier'] == 2 and calls[1][1]['overlays'] is False
+
+
 def test_optional_mcp_editor_tools_and_original_png(tmp_path, monkeypatch):
     pytest.importorskip('fastmcp')
     import asyncio, base64, hashlib
@@ -223,7 +248,7 @@ def test_optional_mcp_editor_tools_and_original_png(tmp_path, monkeypatch):
     async def check():
         async with Client(create_stdio(editor_enabled=True)) as client:
             names = {tool.name for tool in await client.list_tools()}
-            assert {'render_structure', 'editor_open', 'editor_inspect', 'editor_edit', 'editor_save_scene', 'editor_save_preset', 'editor_render_scene', 'editor_render_status', 'editor_operation', 'editor_disconnect'} <= names
+            assert {'render_structure', 'editor_open', 'editor_inspect', 'editor_edit', 'editor_save_scene', 'editor_save_preset', 'editor_render_scene', 'editor_render_status', 'editor_operation', 'editor_disconnect', 'editor_reconnect', 'editor_animation_speed', 'editor_viewport', 'editor_playback'} <= names
             await client.call_tool('editor_edit', {'session_id': 'session', 'revision': 'old', 'changes': [{'control': 'world/color', 'value': '#112233'}]})
             result = await client.call_tool('editor_render_status', {'job_id': 'job'})
             images = [c for c in result.content if c.type == 'image']

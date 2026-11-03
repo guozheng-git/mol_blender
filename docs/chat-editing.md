@@ -88,7 +88,34 @@ current values, types and bounds. It can change existing material controls,
 background and illumination colors, light power/size/location/rotation, camera
 pose and projection, depth of field, and supported render settings. Material
 controls come from the existing scene's preset bindings; arbitrary shader code,
-mesh edits and new objects are not exposed.
+mesh edits and new objects are not exposed. It also exposes bounded timeline FPS,
+existing loop periods, viewport shading, viewport display colors and overlays.
+
+For example, in the **same selected session**:
+
+1. `editor_playback(session_id, state="pause")` retains the current frame and
+   returns the revision to use for edits.
+2. `editor_animation_speed(session_id, revision, multiplier=2)` doubles the current
+   loop speed without changing its amplitude. Use the returned revision next.
+3. `editor_viewport(session_id, revision, mode="solid_color", overlays=False)`
+   enables a fast colored Workbench view. It copies supported pigment colors into
+   material display colors without changing the Cycles shaders or render engine.
+4. `editor_playback(session_id, state="play")` resumes the existing timeline.
+
+Playback takes explicit `play` or `pause`, so repeating a request cannot toggle
+it accidentally. View modes are `solid_color`, `material`, `rendered`, and
+`wireframe`. The quick solid view approximates the colors; lighting and shader
+effects require a rendered preview. Viewport changes participate in revision
+checks and chat undo, so a subsequent manual viewport edit also blocks stale undo.
+
+Loop speed supports existing top-level Geometry Nodes groups with an unlinked
+numeric input named `Period (frames)` or `Period (seconds)`. `editor_inspect`
+returns their IDs in `animation_loops`. Select a control explicitly when there is
+more than one. Multipliers range from 0.125 to 8 relative to the current speed,
+and resulting periods must remain within their inspected bounds. Unrecognized,
+linked, or keyframed node controls are not modified; other animation systems need
+their own bounded adapter. Timeline FPS is separate and is **not** treated as a
+universal animation-speed control. Unsupported operations do not open a new scene.
 
 Each edit uses the inspected scene revision. If you changed the scene manually
 in the meantime, the bridge refuses the stale request and the chat must inspect
@@ -213,6 +240,10 @@ revision and control IDs, then put a list of changes in `changes.json`:
 
 ```sh
 blender-render editor inspect SESSION_ID
+blender-render editor playback SESSION_ID pause
+blender-render editor animation-speed SESSION_ID --revision REVISION --multiplier 2
+blender-render editor viewport SESSION_ID --revision NEW_REVISION --mode solid_color --no-overlays
+blender-render editor playback SESSION_ID play
 blender-render editor edit SESSION_ID --revision REVISION --changes-json changes.json
 # Use the new returned revision after each change or Save As.
 blender-render editor save SESSION_ID renders/my-look.blend --revision REVISION

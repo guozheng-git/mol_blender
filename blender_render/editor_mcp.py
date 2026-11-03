@@ -68,6 +68,38 @@ def register(mcp):
         return editor.call(session_id, 'pause')
 
     @mcp.tool()
+    def editor_playback(session_id: str, state: str) -> dict:
+        """Play or pause the selected existing scene. state is exactly play or pause; this never toggles.
+
+        Keeps the current frame. Pause before revision-checked edits or captures, then use that returned
+        revision. Retain the same session_id. Never open another window to start playback.
+        """
+        return editor.playback(session_id, state)
+
+    @mcp.tool()
+    def editor_animation_speed(session_id: str, revision: str, multiplier: float, control: str = '') -> dict:
+        """Change a supported existing loop's speed, preserving its geometry and amplitude.
+
+        multiplier is 0.125 to 8, relative to the current speed; 2 doubles it by halving the period.
+        Select control from editor_inspect.animation_loops; it may be omitted only if there is one.
+        Supports explicit unlinked Period (frames) / Period (seconds) Geometry Nodes inputs. Other
+        animation systems are reported as unsupported. Do not create/open a replacement scene.
+        Pause, use the inspected revision, edit, then editor_playback(state='play') to resume.
+        """
+        return editor.animation_speed(session_id, revision, multiplier, control=control)
+
+    @mcp.tool()
+    def editor_viewport(session_id: str, revision: str, mode: str = 'solid_color', overlays: bool | None = None) -> dict:
+        """Change the selected window's 3D view without changing the render engine or opening a desktop.
+
+        mode: solid_color (fast Workbench material colors), material, rendered, or wireframe.
+        solid_color synchronizes supported material pigments to viewport display colors; it is a quick
+        approximation, not a Cycles preview. overlays is optional. Pause and inspect before changing.
+        Changes are revision-checked, atomic and undoable, including the display colors.
+        """
+        return editor.viewport(session_id, revision, mode, overlays=overlays)
+
+    @mcp.tool()
     def editor_save_scene(session_id: str, revision: str, output_path: str, overwrite: bool = False) -> dict:
         """Save the complete open scene, including unsaved manual edits, to a local .blend.
 

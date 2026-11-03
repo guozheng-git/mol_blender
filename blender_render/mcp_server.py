@@ -39,6 +39,9 @@ def create_stdio(*, editor_enabled=False):
         warm=True explicitly starts/reuses a local Blender worker (15 minute idle shutdown).
         open_blender=True saves the scene and launches desktop Blender for local editing.
         edit_bridge=True also enables local chat editing; use mcp --editor for the editor tools.
+        Both desktop options require an explicit user request to open a window. For edits to an
+        existing scene, discover editor_sessions and retain the selected session_id instead. Never
+        render/open a replacement scene to work around a connection failure or unsupported edit.
         """
         import json
         options = {'style_doc': json.loads(Path(style_json).expanduser().read_text())} if style_json else {'preset': preset}

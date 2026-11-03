@@ -24,9 +24,11 @@ def metadata():
 
 
 def revision(scene, data):
+    from .editor_interaction import desktop_state
     bpy.context.view_layer.update()
     return capture.digest({'scene': scene.name, 'file': bpy.data.filepath,
-        'frame': scene.frame_current, 'metadata': capture.digest(data), 'state': capture.snapshot(scene)})
+        'frame': scene.frame_current, 'metadata': capture.digest(data), 'state': capture.snapshot(scene),
+        'desktop': desktop_state(scene)})
 
 
 def schema_for(path):
@@ -163,6 +165,8 @@ def controls(scene, data):
                 spec={'type': 'enum', 'choices': ['ORTHO', 'PERSP']} if field == 'projection' else None)
         for field, attr in [('enabled', 'use_dof'), ('focus_distance', 'focus_distance'), ('f_stop', 'aperture_fstop')]:
             add('camera/dof/' + field, camera.data.dof, attr)
+    from .editor_interaction import append_controls
+    append_controls(scene, data, result, Control)
     return result
 
 
@@ -178,9 +182,12 @@ def inspect(scene):
                           'value': values[0], 'mixed': any(capture.changed(values[0], x) for x in values[1:])})
         except ValueError:
             continue
+    from .editor_interaction import views
     return {'revision': revision(scene, data), 'scene': scene.name, 'file': bpy.data.filepath,
             'dirty': bpy.data.is_dirty, 'frame': scene.frame_current,
-            'playing': any(w.screen.is_animation_playing for w in bpy.context.window_manager.windows), 'controls': items,
+            'playing': any(w.scene == scene and w.screen.is_animation_playing for w in bpy.context.window_manager.windows), 'controls': items,
+            'animation_loops': [item['id'] for item in items if item['id'].startswith('animation/loop/')],
+            'viewport_count': sum(1 for _ in views(scene)),
             'unsupported': exported['unsupported'], 'ignored': exported['ignored']}
 
 

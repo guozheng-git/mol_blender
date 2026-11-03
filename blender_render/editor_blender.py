@@ -95,6 +95,9 @@ class Bridge:
             raise ValueError('Expected an editor command')
         action = command.get('action')
         allowed = {'inspect': {'action'}, 'edit': {'action', 'revision', 'changes'},
+                   'animation_speed': {'action', 'revision', 'control', 'multiplier'},
+                   'viewport': {'action', 'revision', 'mode', 'overlays'},
+                   'playback': {'action', 'state'},
                    'save': {'action', 'revision', 'path', 'copy', 'overwrite'},
                    'undo': {'action', 'revision'}, 'pause': {'action'}, 'disconnect': {'action'}}
         if action not in allowed or set(command) - allowed[action]:
@@ -104,14 +107,11 @@ class Bridge:
             return {'status': 'disconnected', 'editor_left_open': True}
         if bpy.context.scene != self.scene:
             raise ValueError('Active Blender scene changed; reattach to select the new scene')
-        if action == 'pause':
-            for window in bpy.context.window_manager.windows:
-                if window.screen.is_animation_playing:
-                    with bpy.context.temp_override(window=window):
-                        bpy.ops.screen.animation_cancel(restore_frame=False)
-            return controls.inspect(bpy.context.scene)
+        if action in ('pause', 'playback'):
+            from blender_render.editor_interaction import playback
+            return playback(self.scene, 'pause' if action == 'pause' else command.get('state'))
         scene = bpy.context.scene
-        if action != 'inspect' and any(w.screen.is_animation_playing for w in bpy.context.window_manager.windows):
+        if action != 'inspect' and any(w.scene == scene and w.screen.is_animation_playing for w in bpy.context.window_manager.windows):
             raise ValueError('Pause timeline playback before editing, saving or rendering')
         if action != 'inspect' and (bpy.context.mode != 'OBJECT' or bpy.app.is_job_running('RENDER')):
             raise ValueError('Finish the active edit mode or render before changing or saving the scene')
@@ -121,8 +121,15 @@ class Bridge:
             raise ValueError('Scene changed since inspection. Inspect again before editing, saving or rendering.')
         if action == 'inspect':
             return controls.inspect(scene)
-        if action == 'edit':
-            result, before = controls.edit(scene, command.get('changes'))
+        if action in ('edit', 'animation_speed', 'viewport'):
+            if action == 'edit':
+                result, before = controls.edit(scene, command.get('changes'))
+            else:
+                from blender_render.editor_interaction import animation_speed, viewport
+                if action == 'animation_speed':
+                    result, before = animation_speed(scene, command.get('control', ''), command.get('multiplier'))
+                else:
+                    result, before = viewport(scene, command.get('mode'), command.get('overlays'))
             self.undo.append((result['revision'], before))
             self.undo = self.undo[-32:]
             return result

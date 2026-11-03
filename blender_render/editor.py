@@ -217,6 +217,27 @@ def edit(session_id, revision, changes):
     return call(session_id, 'edit', revision=revision, changes=changes)
 
 
+def animation_speed(session_id, revision, multiplier, *, control=''):
+    number(multiplier, 0.125, 8)
+    if not isinstance(control, str) or len(control) > 1024:
+        raise ValueError('Expected an inspected animation control ID')
+    return call(session_id, 'animation_speed', revision=revision, control=control, multiplier=multiplier)
+
+
+def viewport(session_id, revision, mode, *, overlays=None):
+    from .editor_protocol import checked_value
+    checked_value(mode, {'type': 'enum', 'choices': ['solid_color', 'material', 'rendered', 'wireframe']})
+    if overlays is not None:
+        checked_value(overlays, {'type': 'boolean'})
+    return call(session_id, 'viewport', revision=revision, mode=mode, overlays=overlays)
+
+
+def playback(session_id, state):
+    from .editor_protocol import checked_value
+    checked_value(state, {'type': 'enum', 'choices': ['play', 'pause']})
+    return call(session_id, 'playback', state=state)
+
+
 def save_scene(session_id, revision, path, *, overwrite=False, copy=False):
     return call(session_id, 'save', revision=revision, path=str(Path(path).expanduser().absolute()),
                 overwrite=overwrite, copy=copy)
