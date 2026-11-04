@@ -1050,3 +1050,15 @@ fresh-process full JSON reload and pixel-identical preset rendering at 840×650,
 128 CPU samples. Manifest confirmed CIF-first input and DSS. Geometry-driven
 auto-fit and light interactions can still change nearby pixels. Evidence is in
 ignored `tube-*` artifacts. No renderer code or desktop scene was modified.
+
+The approved tubular style was promoted to built-in `cyan_candy_mesh` with its
+full JSON unchanged and the exact approved PNG added to the README gallery.
+Gallery provenance records public 1QJB preparation, pose and hashes without
+committing coordinates, executable sessions, original reference pixels or local
+paths. Selection limitations and adaptation are documented. The default remains
+`mint_sky_assembly`. The built wheel was installed into a fresh environment
+outside the checkout; qualified/unqualified preset lookup, schema validation,
+15-entry catalog, option resolution and equality to the approved JSON passed.
+Gallery JSON/PNG hashes were checked. Relevant schema, reference, local and
+authoring tests passed (101 tests). The retained render/reload checks above
+establish visual behavior; this promotion did not rerun Blender.

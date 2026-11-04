@@ -13,7 +13,7 @@ structure. To preserve the protein's geometry, keep the rendered protein intact
 and let AI build the scene around it. If the generator redraws the protein, check
 it against the original render.
 
-Start with one of the 14 [built-in presets](#preset-gallery), from soft pastel
+Start with one of the 15 [built-in presets](#preset-gallery), from soft pastel
 ribbons to frosted surfaces and vivid binding-site views. If you have a PNG with a
 style you love, the [recreate-render-preset skill](#claude-code-and-codex) can use it
 as a visual reference, refine the look through local previews and save a reusable
@@ -132,11 +132,18 @@ See [preset details](docs/reference-presets.md) and the
 | [vivid_binding_site](blender_render/style_preset_vivid_binding_site.json) | Macro ligand view with vivid element colors and teal cartoon context. | [<img src="examples/presets/vivid_binding_site.png" alt="vivid_binding_site preview" width="220">](examples/presets/vivid_binding_site.png) |
 | [ivory_lime_frosted](blender_render/style_preset_ivory_lime_frosted.json) | Ivory frosted grid shell, lime core and cyan nucleic acids. | [<img src="examples/presets/ivory_lime_frosted.png" alt="ivory_lime_frosted preview" width="220">](examples/presets/ivory_lime_frosted.png) |
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
+| [cyan_candy_mesh](blender_render/style_preset_cyan_candy_mesh.json) | Glossy cyan blobs, recessed blue mesh, and neon pink/yellow helical tubes. A/B surfaces, C/D tubes. | [<img src="examples/presets/cyan_candy_mesh.png" alt="cyan_candy_mesh preview" width="220">](examples/presets/cyan_candy_mesh.png) |
 | [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 
 ```sh
 blender-render render structure.pse --preset pastel_duplex_rounded -o renders/duplex.png
 ```
+
+Use the cyan candy style with `--preset cyan_candy_mesh` (or
+`preset=cyan_candy_mesh` in PyMOL). Its selections are explicit: chains A/B form
+the cyan surface, C the pink tube, and D the yellow tube. Adapt the JSON
+selections for other structures. The [example preparation](docs/reference-presets.md#cyan-candy-mesh)
+explains the public 1QJB preview; loading unmodified 1QJB does not create its C/D selections.
 
 All presets also support `--animation rock` and `--animation 360`. Use
 `blender-render presets` to include your own saved presets in the catalog.

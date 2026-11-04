@@ -1,0 +1,247 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "filename": "cyan_candy_mesh.png",
+    "width": 840,
+    "height": 650,
+    "samples": 128,
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "CPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "view_transform": "Standard",
+    "look": "None",
+    "exposure": 0,
+    "gamma": 1,
+    "denoise": true,
+    "seed": 19
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#C9CDD2",
+    "bottom_color": "#C8DDE6",
+    "strength": 1,
+    "ambient_color": "#FFFFFF",
+    "ambient_strength": 0.4
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 140,
+      "relative_vector": [
+        -1.7,
+        2.2,
+        3
+      ],
+      "size_scale": 2.3,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 35,
+      "relative_vector": [
+        2,
+        -0.4,
+        3
+      ],
+      "size_scale": 3.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#DDEEFF"
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 85,
+      "relative_vector": [
+        0,
+        2,
+        -2
+      ],
+      "size_scale": 2.8,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    }
+  ],
+  "materials": {
+    "pink": {
+      "base_color": "#FF286D",
+      "roughness": 0.29,
+      "specular": 0.45,
+      "alpha": 1,
+      "transmission": 0,
+      "coat": 0.18,
+      "emission_color": "#FF1C60",
+      "emission_strength": 0.3
+    },
+    "ligand": {
+      "base_color": "#F89816",
+      "roughness": 0.64,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#F89816",
+      "highlight_color": "#F89816",
+      "rim_strength": 0.03
+    },
+    "shell": {
+      "base_color": "#12C7FF",
+      "roughness": 0.24,
+      "specular": 0.4,
+      "alpha": 1,
+      "transmission": 0,
+      "coat": 0.2,
+      "frosted": {
+        "noise_scale": 0.065,
+        "opacity_min": 0,
+        "opacity_max": 1,
+        "grid_scale": 1.5,
+        "grid_width": 0.045,
+        "grid_strength": 0,
+        "grid_color": "#F9FBEF",
+        "coordinates": "angstrom"
+      }
+    },
+    "core": {
+      "base_color": "#003AFF",
+      "roughness": 0.25,
+      "specular": 0.45,
+      "alpha": 1,
+      "transmission": 0,
+      "coat": 0.1
+    },
+    "ivory": {
+      "base_color": "#DCE1D3",
+      "roughness": 0.55,
+      "transmission": 0.2,
+      "alpha": 0.6
+    },
+    "mesh": {
+      "base_color": "#C2F7FF",
+      "roughness": 1,
+      "alpha": 1,
+      "emission_color": "#C2F7FF",
+      "emission_strength": 0.45
+    },
+    "gold": {
+      "base_color": "#FF9808",
+      "roughness": 0.29,
+      "specular": 0.45,
+      "alpha": 1,
+      "coat": 0.18,
+      "emission_color": "#FFD01A",
+      "emission_strength": 0.16
+    }
+  },
+  "styles": [
+    {
+      "name": "protein_shell1",
+      "style": "surface",
+      "material": "shell",
+      "selection": {
+        "query": "chain A or chain B"
+      },
+      "quality": 2,
+      "shade_smooth": true,
+      "probe_radius": 1.5,
+      "color_by_chain": false,
+      "surface_scale_radius": 2.3,
+      "surface_relaxation_steps": 50
+    },
+    {
+      "name": "protein_core1",
+      "style": "surface",
+      "material": "core",
+      "selection": {
+        "query": "chain A or chain B"
+      },
+      "quality": 2,
+      "shade_smooth": true,
+      "probe_radius": 1.1,
+      "color_by_chain": false,
+      "surface_scale_radius": 1.15,
+      "surface_relaxation_steps": 30
+    },
+    {
+      "name": "surface_mesh1",
+      "style": "surface",
+      "material": "mesh",
+      "selection": {
+        "query": "chain A or chain B"
+      },
+      "quality": 2,
+      "shade_smooth": true,
+      "probe_radius": 1.28,
+      "color_by_chain": false,
+      "surface_scale_radius": 1.65,
+      "surface_relaxation_steps": 34,
+      "wireframe_width_angstrom": 0.04,
+      "wireframe_spacing_angstrom": 1.3
+    },
+    {
+      "name": "pink_ribbons",
+      "style": "cartoon",
+      "material": "pink",
+      "selection": {
+        "query": "chain C"
+      },
+      "thickness": 1.35,
+      "width": 1.35,
+      "loop_radius": 0.25,
+      "quality": 5,
+      "peptide_smoothing": 0.9,
+      "peptide_cylinders": false,
+      "peptide_rounded": true,
+      "shade_smooth": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "gold_ribbons",
+      "style": "cartoon",
+      "material": "gold",
+      "selection": {
+        "query": "chain D"
+      },
+      "thickness": 1.35,
+      "width": 1.35,
+      "loop_radius": 0.25,
+      "quality": 5,
+      "peptide_smoothing": 0.9,
+      "peptide_cylinders": false,
+      "peptide_rounded": true,
+      "shade_smooth": true,
+      "color_by_chain": false
+    },
+    {
+      "name": "ligand",
+      "style": "sticks",
+      "material": "ligand",
+      "selection": {
+        "query": "ligand and not resn HOH,WAT,DOD,SOL,NA,K,CL,CA,MG,ZN"
+      },
+      "quality": 4,
+      "shade_smooth": true,
+      "radius": 0.3,
+      "color_by_chain": false
+    }
+  ],
+  "camera": {
+    "mode": "override",
+    "direction_source": "pymol",
+    "projection": "ORTHO",
+    "fit": true,
+    "fit_margin": 1.18
+  }
+}

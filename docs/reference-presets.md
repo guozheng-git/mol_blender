@@ -1,6 +1,6 @@
 # Reference presets
 
-Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 14 choices using actual local Blender renders of public structures.
+Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 15 choices using actual local Blender renders of public structures.
 
 | Reference | Preset / alias | Example | Match and scope |
 |---|---|---|---|
@@ -64,3 +64,29 @@ assets are historical examples, not newly verified renders from this branch.
 
 Use the configured Molecular Nodes environment and pinned CCD. A successful
 local render does not by itself verify image display in Claude or Codex.
+
+## Cyan candy mesh
+
+`cyan_candy_mesh` combines glossy cyan surface patches, a deep-blue core, fine
+recessed mesh and vivid pink/yellow rounded helical tubes. The approved material
+and geometry settings are retained in the full preset JSON. It is a stylized
+representation of real coordinates, not a reconstruction of the reference illustration.
+
+```sh
+blender-render render prepared-pose.pse --preset cyan_candy_mesh -o candy.png
+```
+
+The preview uses public **1QJB**, with solvent removed. Original chain A residues
+165–210 were relabeled C and original chain B residues 165–210 relabeled D,
+without moving coordinates, to expose selected protein segments as colored
+tubes. The remaining A/B residues form the cyan surface. Its other chains Q/S
+are not selected by these styles. This is a demonstration-specific split, not
+an automatic chain assignment or a claim that 1QJB has a central helical bundle.
+For another structure, edit the three A/B surface selections and the C/D cartoon
+selections together; preserve the intended backbone paths. The saved PyMOL
+orientation determines the view; the authored camera fits an orthographic frame.
+Use `--no-preserve-view` to select the preset's authored framing.
+
+The gallery preserves the approved 840×650, 128-sample render. The preset is
+available as `cyan_candy_mesh` or `builtin/cyan_candy_mesh`; it is distinct from
+any personal `user/cyan_candy_mesh` copy.

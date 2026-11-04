@@ -773,5 +773,57 @@
       "biotite": "1.6.0"
     },
     "scene_requested": false
+  },
+  {
+    "preset": "cyan_candy_mesh",
+    "description": "Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes.",
+    "source_id": "1QJB",
+    "coordinate_url": "https://files.rcsb.org/download/1QJB.cif",
+    "coordinate_sha256": "e91ba1794c82f30e1afd0d824660b61ce1c90323d557cb44973db62b515b3f93",
+    "preparation": "Solvent removed; A residues 165-210 relabeled C, B residues 165-210 relabeled D; coordinates unchanged. A/B surfaces, C/D tubes.",
+    "view": {
+      "pymol_view": [
+        -0.4160378873348236,
+        -0.6069616079330444,
+        0.6771337985992432,
+        -0.863207995891571,
+        0.49778297543525696,
+        -0.08416668325662613,
+        -0.285979688167572,
+        -0.619523823261261,
+        -0.7310307025909424,
+        0.0,
+        0.0,
+        -217.04249572753906,
+        21.405059814453125,
+        6.346446990966797,
+        50.3011474609375,
+        171.11795043945312,
+        262.967041015625,
+        -20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": false,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_cyan_candy_mesh.json",
+    "preset_file_sha256": "c457db7ac8b2e9dd47c376e610e7747da88695433292ad040637d9041c281b98",
+    "resolved_style_sha256": "a8db20c41c8e5bdc366a74d552c6b68dc7459d648dd0772de73ccd88110fcef9",
+    "dimensions": [
+      840,
+      650
+    ],
+    "samples": 128,
+    "thumbnail": "examples/presets/cyan_candy_mesh.png",
+    "thumbnail_sha256": "87cde6f20c6073a6aaeff758910cda7e5346371ecaddae0ba33079e3ccf93a34",
+    "full_png_sha256": "87cde6f20c6073a6aaeff758910cda7e5346371ecaddae0ba33079e3ccf93a34",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10"
+    },
+    "scene_requested": false
   }
 ]
