@@ -1014,3 +1014,16 @@ slightly and orthographic scale by about 0.006 percent as ribbon bounds changed.
 Blob appearance is therefore not claimed pixel-identical. Different helix
 placement, underside brightness and highlight positions remain approximate.
 No renderer code or desktop Blender scene was modified.
+
+A further helix reference pass corrected overly stacked turns using narrower
+rounded spiral bands (width 1.7, thickness 0.8), after visually comparing two
+new 840×650, 128-sample CPU renders. Fresh pink/yellow materials use modest
+colored emission to lift shadows; this is an artistic approximation, not a
+claim about the reference shader. Blob materials/styles and scene-light,
+world, renderer and camera settings were checked unchanged. Bounds-driven
+framing and indirect illumination can still affect blob pixels. Final local
+catalog revision 9 passed schema validation and fresh-process JSON reload;
+the saved-preset render was pixel-identical to the direct JSON render. Manifest
+checks confirmed CIF-first input and DSS. Evidence is in ignored `curl-*`
+artifacts. Different helix placement/occlusion and slightly lighter/cooler pink
+remain. No renderer code or desktop Blender scene was modified.
