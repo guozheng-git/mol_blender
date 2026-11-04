@@ -1039,3 +1039,14 @@ CIF-first input and DSS were verified. Original reference and both candidates
 were visually inspected. Evidence is in ignored `neon-*` artifacts. Different
 helix placement and partial occlusion still limit resemblance to the prominent
 central bundle in the reference. No renderer code or desktop scene changed.
+
+The subsequent helical-tube request changed only native rounded cartoon width
+and thickness to 1.35/1.35 for the two colored helix styles. All material values,
+blob styles, lighting and camera settings were checked unchanged. The resulting
+full-quality render was visually inspected for a plump coiled cross-section
+and continuous highlights. Native backbone paths were retained; straight helix
+cylinders were not enabled. Local catalog revision 11 passed schema validation,
+fresh-process full JSON reload and pixel-identical preset rendering at 840×650,
+128 CPU samples. Manifest confirmed CIF-first input and DSS. Geometry-driven
+auto-fit and light interactions can still change nearby pixels. Evidence is in
+ignored `tube-*` artifacts. No renderer code or desktop scene was modified.
