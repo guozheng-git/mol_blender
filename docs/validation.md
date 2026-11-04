@@ -973,3 +973,13 @@ the saved style exactly; camera and geometry selections matched the earlier
 draft. The final manifest/resolved style confirmed those settings. Gloss and
 brightness improved, while uniform mesh coverage and the example's composition
 remain visibly different from the reference. No desktop scene was changed.
+
+A subsequent reference comparison used three sequential, visually inspected
+iterations at fixed structure/camera: mesh beneath a patchy rounded cyan shell,
+a deeper blue core, broader ribbons and softened highlights. The final local
+catalog revision 6 rendered at 840×650 and 128 CPU samples. A fresh-process
+catalog render reproduced its PNG pixels exactly; style JSON reload equality
+and resolved sample count were checked. Remaining mismatches are peripheral
+rather than central helices, irregular rather than square mesh, and softer
+translucent patch boundaries. This is still an approximation. Evidence is in
+ignored local `match-01`, `match-02`, `match-03` and `match-reloaded` artifacts.
