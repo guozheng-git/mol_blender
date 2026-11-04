@@ -1,0 +1,194 @@
+{
+  "version": "1.0",
+  "output": {
+    "format": "PNG",
+    "filename": "northern_nights.png",
+    "width": 900,
+    "height": 900,
+    "samples": 96,
+    "save_blend": false
+  },
+  "renderer": {
+    "engine": "CYCLES",
+    "device": "CPU",
+    "compute_device_type": "AUTO",
+    "transparent_background": false,
+    "view_transform": "Standard",
+    "look": "None",
+    "exposure": 0,
+    "gamma": 1,
+    "denoise": true,
+    "seed": 19
+  },
+  "camera": {
+    "mode": "override",
+    "direction_source": "pymol",
+    "projection": "ORTHO",
+    "fit": true,
+    "fit_margin": 1.2
+  },
+  "world": {
+    "background_type": "gradient",
+    "top_color": "#CFF6EF",
+    "bottom_color": "#D1CEDC",
+    "strength": 1,
+    "ambient_color": "#FFFFFF",
+    "ambient_strength": 0.55,
+    "gradient_direction": [
+      -1,
+      1
+    ]
+  },
+  "lights": [
+    {
+      "name": "Key",
+      "type": "AREA",
+      "energy": 92.625,
+      "relative_vector": [
+        -1.7,
+        2.2,
+        3
+      ],
+      "size_scale": 2.8,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    },
+    {
+      "name": "Fill",
+      "type": "AREA",
+      "energy": 37.050000000000004,
+      "relative_vector": [
+        2,
+        -0.4,
+        3
+      ],
+      "size_scale": 3.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#DDEEFF"
+    },
+    {
+      "name": "Rim",
+      "type": "AREA",
+      "energy": 55.575,
+      "relative_vector": [
+        0,
+        2,
+        -2
+      ],
+      "size_scale": 2.5,
+      "camera_space": true,
+      "normalize_energy": true,
+      "look_at_target": true,
+      "color": "#FFFFFF"
+    }
+  ],
+  "materials": {
+    "protein": {
+      "base_color": "#44166B",
+      "roughness": 0.35,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#44166B",
+      "highlight_color": "#44166B",
+      "rim_strength": 0.03,
+      "color_gradient": {
+        "colors": [
+          "#056860",
+          "#0B1A44",
+          "#100C2C",
+          "#44166B"
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "peptide": {
+      "base_color": "#0DB183",
+      "roughness": 0.35,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#0DB183",
+      "highlight_color": "#0DB183",
+      "rim_strength": 0.03,
+      "emission_color": "#0DB183",
+      "emission_strength": 0.465,
+      "glow": {
+        "strength": 0.8,
+        "threshold": 0.8,
+        "size": 7
+      }
+    },
+    "ptm": {
+      "base_color": "#0DB183",
+      "roughness": 0.35,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.15,
+      "shadow_color": "#0DB183",
+      "highlight_color": "#0DB183",
+      "rim_strength": 0.03,
+      "emission_color": "#0DB183",
+      "emission_strength": 0.465,
+      "glow": {
+        "strength": 0.8,
+        "threshold": 0.8,
+        "size": 7
+      }
+    }
+  },
+  "styles": [
+    {
+      "style": "cartoon",
+      "quality": 4,
+      "shade_smooth": true,
+      "color_by_chain": false,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "name": "protein_cartoon",
+      "material": "protein",
+      "selection": {
+        "query": "protein and not chain D"
+      }
+    },
+    {
+      "style": "cartoon",
+      "quality": 4,
+      "shade_smooth": true,
+      "color_by_chain": false,
+      "thickness": 0.5,
+      "width": 2.2,
+      "loop_radius": 0.28,
+      "peptide_rounded": false,
+      "peptide_arrows": true,
+      "name": "peptide_cartoon",
+      "material": "peptide",
+      "selection": {
+        "query": "protein and chain D"
+      }
+    },
+    {
+      "name": "phosphoresidue_sticks",
+      "style": "sticks",
+      "material": "ptm",
+      "selection": {
+        "query": "resn PTR,SEP,TPO and not name N,C,O"
+      },
+      "quality": 4,
+      "radius": 0.28,
+      "color_by_chain": false,
+      "shade_smooth": true
+    }
+  ]
+}

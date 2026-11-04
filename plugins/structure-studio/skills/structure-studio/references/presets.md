@@ -21,5 +21,6 @@ General presets work on any structure. Chain-specific presets select chain IDs f
 | `mint_sky_assembly` (default) | Mint and sky protein assembly with purple and pink nucleic acids. | 1600×900, 128 samples | chains BP1,DP1, L,M,N | 8AA5 |
 | `neon_duplex_hero` | Green protein and gradient nucleic acids against a pink-cyan background. | 1600×900, 128 samples | any structure | 7PZB |
 | `cyan_candy_mesh` | Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes; A/B surfaces, C/D tubes. | 840×650, 128 samples | chains A, B, C, D | 1QJB |
+| `northern_nights` | Teal-blue-violet protein ribbons with luminous mint chain D on a pale mint/lavender background. | 900×900, 96 samples | chains D | 1SPS |
 
 On CPU-only machines `studio.py render` caps the long edge at 1280 px and samples at 64 unless `--full-quality` or explicit `--width/--height/--samples` are given.

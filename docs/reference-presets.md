@@ -1,6 +1,6 @@
 # Reference presets
 
-Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 15 choices using actual local Blender renders of public structures.
+Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 16 choices using actual local Blender renders of public structures.
 
 | Reference | Preset / alias | Example | Match and scope |
 |---|---|---|---|
@@ -90,3 +90,29 @@ Use `--no-preserve-view` to select the preset's authored framing.
 The gallery preserves the approved 840×650, 128-sample render. The preset is
 available as `cyan_candy_mesh` or `builtin/cyan_candy_mesh`; it is distinct from
 any personal `user/cyan_candy_mesh` copy.
+
+## Northern Nights
+
+`northern_nights` adapts the Northern Nights paper-render look: satin teal,
+midnight-blue, violet and purple ribbon cartoons, luminous mint peptide/sticks,
+and a pale mint/lavender diagonal background. The gallery uses public **1SPS**,
+with its saved example pose; no private research structure or animation is included.
+
+```sh
+blender-render render prepared-pose.pse --preset northern_nights -o northern-nights.png
+# Optional rigid turntable, not a molecular trajectory:
+blender-render render prepared-pose.pse --preset northern_nights --animation 360 -o northern-nights.gif
+```
+
+In PyMOL, use `blender_render preset=northern_nights`. Chain D is the mint peptide
+in the public example; other protein chains receive the teal-to-purple spatial
+gradient. Phosphoresidues PTR/SEP/TPO are also shown as mint sticks, excluding
+backbone N/C/O. For other complexes, edit both cartoon selection queries to
+choose the intended peptide chain. Colors are encoded for the renderer's linear
+shader inputs; they need not resemble the display palette as hexadecimal swatches.
+
+This portable preset uses the shared renderer only. Its spatial gradient and
+native glow approximate the original residue-by-residue coloring and custom
+Gaussian emission halo. It does not add the original scene's computed hydrogen
+bond guides, custom atom-color emission, or paper-specific topology patches.
+It is a reusable style adaptation, not an exact recreation of that scene.

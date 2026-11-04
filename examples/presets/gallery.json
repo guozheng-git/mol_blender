@@ -825,5 +825,61 @@
       "molecularnodes": "4.5.10"
     },
     "scene_requested": false
+  },
+  {
+    "preset": "northern_nights",
+    "description": "Satin teal-blue-violet protein with luminous mint peptide, adapted from the Northern Nights look.",
+    "source_id": "1SPS",
+    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
+    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
+    "source_pose": "examples/1sps_pose.pse",
+    "view": {
+      "pymol_view": [
+        0.7286985516548157,
+        -0.6336627006530762,
+        -0.2597499191761017,
+        0.6036470532417297,
+        0.4151865839958191,
+        0.6806104183197021,
+        -0.32343271374702454,
+        -0.6527570486068726,
+        0.6850544214248657,
+        0.0,
+        0.0,
+        -142.9575653076172,
+        71.72372436523438,
+        92.1063232421875,
+        30.55997085571289,
+        112.70883178710938,
+        173.206298828125,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "preset_json": "blender_render/style_preset_northern_nights.json",
+    "preset_file_sha256": "3fc1e0c84b045bd6e6004317e4bb866c86f50a0e9b05f65cf1aa2e4ba0ecdfb0",
+    "resolved_style_sha256": "7e5025aab983ae8d767c23644d0bbac1d8e5febb76d4ee1eadedb8b93a60a853",
+    "dimensions": [
+      900,
+      900
+    ],
+    "samples": 96,
+    "thumbnail": "examples/presets/northern_nights.png",
+    "thumbnail_sha256": "a3e993e0faa8f6f401c4d111d5137f86434a728d664230c12dc15df0823febe2",
+    "full_png_sha256": "a3e993e0faa8f6f401c4d111d5137f86434a728d664230c12dc15df0823febe2",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false,
+    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen bond guides or topology patches."
   }
 ]

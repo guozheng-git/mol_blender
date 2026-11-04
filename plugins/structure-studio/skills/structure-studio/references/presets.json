@@ -315,5 +315,24 @@
     ],
     "example_structure": "1QJB",
     "default": false
+  },
+  {
+    "id": "northern_nights",
+    "aliases": [],
+    "description": "Teal-blue-violet protein ribbons with luminous mint chain D on a pale mint/lavender background.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks"
+    ],
+    "width": 900,
+    "height": 900,
+    "samples": 96,
+    "chain_specific": true,
+    "chain_selections": [
+      "D"
+    ],
+    "example_structure": "1SPS",
+    "default": false
   }
 ]

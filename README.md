@@ -13,7 +13,7 @@ structure. To preserve the protein's geometry, keep the rendered protein intact
 and let AI build the scene around it. If the generator redraws the protein, check
 it against the original render.
 
-Start with one of the 15 [built-in presets](#preset-gallery), from soft pastel
+Start with one of the 16 [built-in presets](#preset-gallery), from soft pastel
 ribbons to frosted surfaces and vivid binding-site views. If you have a PNG with a
 style you love, the [recreate-render-preset skill](#claude-code-and-codex) can use it
 as a visual reference, refine the look through local previews and save a reusable
@@ -133,6 +133,7 @@ See [preset details](docs/reference-presets.md) and the
 | [ivory_lime_frosted](blender_render/style_preset_ivory_lime_frosted.json) | Ivory frosted grid shell, lime core and cyan nucleic acids. | [<img src="examples/presets/ivory_lime_frosted.png" alt="ivory_lime_frosted preview" width="220">](examples/presets/ivory_lime_frosted.png) |
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
 | [cyan_candy_mesh](blender_render/style_preset_cyan_candy_mesh.json) | Glossy cyan blobs, recessed blue mesh, and neon pink/yellow helical tubes. A/B surfaces, C/D tubes. | [<img src="examples/presets/cyan_candy_mesh.png" alt="cyan_candy_mesh preview" width="220">](examples/presets/cyan_candy_mesh.png) |
+| [northern_nights](blender_render/style_preset_northern_nights.json) | Teal, midnight-blue and violet ribbons with a luminous mint peptide. [Selection details](docs/reference-presets.md#northern-nights). | [<img src="examples/presets/northern_nights.png" alt="Northern Nights preview" width="220">](examples/presets/northern_nights.png) |
 | [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 
 ```sh

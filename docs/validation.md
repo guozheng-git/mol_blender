@@ -1098,3 +1098,23 @@ version parsing, pinned Python compatibility, typed GPU options and presence
 of the cyan-candy preset passed. No live server was changed or real Slurm job
 submitted in this integration check. The PR author reports real-site CPU/GPU
 acceptance in the PR description; that is distinct from these local checks.
+
+## Northern Nights preset (2026-11-04)
+
+Adapted the supplied Northern Nights scene's style settings and inspected its
+poster as a private reference. The repository preset and gallery contain only
+style configuration and a newly rendered public 1SPS preview, not research
+coordinates, executable scenes, private paths or the original poster. Three
+900×900, 96-sample CPU renders were inspected while correcting palette encoding,
+selecting public peptide chain D and retaining the pale background. The final
+render loaded `northern_nights` by built-in ID in a fresh process. Manifest
+checks confirmed CIF-first export and DSS. The source's per-residue atom colors
+and custom Gaussian emission halo are approximated by a spatial gradient and
+native glow; custom interaction guides and topology patches are not included.
+
+Built and installed a wheel in a fresh environment outside the checkout:
+preset aliases, schema validation, full JSON equality and the 16-entry catalog
+passed. Refreshed the Structure Studio plugin catalog. Full source tests:
+**492 passed, 50 skipped**. No desktop Blender session or running cluster service
+was modified; no animation execution was newly validated. Local evidence is
+retained in ignored `renders/style-onboarding/northern_nights/` artifacts.
