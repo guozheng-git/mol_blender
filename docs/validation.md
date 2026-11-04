@@ -983,3 +983,20 @@ and resolved sample count were checked. Remaining mismatches are peripheral
 rather than central helices, irregular rather than square mesh, and softer
 translucent patch boundaries. This is still an approximation. Evidence is in
 ignored local `match-01`, `match-02`, `match-03` and `match-reloaded` artifacts.
+
+The next color/brightness pass compared five real CPU candidates against the
+original reference, retaining the existing 1QJB front-pose input and camera
+(not the earlier 2R28 cutaway). Final local catalog revision 7 uses intermediate
+opacity-patch size, brighter cyan highlights, darker gold and a gray-blue
+background. JSON validation passed. A fresh-process preset render at 840×650,
+128 samples reproduced the direct JSON render pixel-for-pixel; full JSON reload,
+CIF-first input and DSS were verified in the manifest. No renderer code or
+desktop scene changed. Evidence is in ignored local `tone-*` artifacts.
+
+Color-region sRGB luma measurements guided comparison, but are not physical
+luminance or registered image matching. Background median is 0.921 versus
+reference 0.918; cyan highlight P90 improved from 0.735 to 0.772 versus reference
+0.819. Cyan median remains too low (0.584 versus 0.625). The selected texture
+balance is not an exact match: translucent patch boundaries, irregular mesh,
+and the different molecular arrangement remain visible. Preset selectors still
+require adaptation for other structures.
