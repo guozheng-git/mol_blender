@@ -319,7 +319,7 @@
   {
     "id": "northern_nights",
     "aliases": [],
-    "description": "Teal-blue-violet protein ribbons with luminous mint chain D on a pale mint/lavender background.",
+    "description": "Teal-blue-violet protein ribbons with luminous mint chain B on a pale mint/lavender background.",
     "material": "clay",
     "representations": [
       "cartoon",
@@ -330,9 +330,29 @@
     "samples": 96,
     "chain_specific": true,
     "chain_selections": [
-      "D"
+      "B"
     ],
     "example_structure": "1SPS",
+    "default": false
+  },
+  {
+    "id": "northern_nights_cutaway",
+    "aliases": [],
+    "description": "Northern Nights protein cutaway with mint chain B and element-colored pocket sticks on black.",
+    "material": "clay",
+    "representations": [
+      "cartoon",
+      "sticks",
+      "surface"
+    ],
+    "width": 900,
+    "height": 900,
+    "samples": 96,
+    "chain_specific": true,
+    "chain_selections": [
+      "B"
+    ],
+    "example_structure": "",
     "default": false
   }
 ]

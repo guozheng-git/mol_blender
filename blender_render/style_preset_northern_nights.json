@@ -137,12 +137,8 @@
       "highlight_color": "#0DB183",
       "rim_strength": 0.03,
       "emission_color": "#0DB183",
-      "emission_strength": 0.465,
-      "glow": {
-        "strength": 0.8,
-        "threshold": 0.8,
-        "size": 7
-      }
+      "emission_strength": 0,
+      "color_attribute": "ElementColor"
     }
   },
   "styles": [
@@ -159,7 +155,7 @@
       "name": "protein_cartoon",
       "material": "protein",
       "selection": {
-        "query": "protein and not chain D"
+        "query": "protein and not chain B"
       }
     },
     {
@@ -175,7 +171,7 @@
       "name": "peptide_cartoon",
       "material": "peptide",
       "selection": {
-        "query": "protein and chain D"
+        "query": "protein and chain B"
       }
     },
     {
@@ -188,7 +184,18 @@
       "quality": 4,
       "radius": 0.28,
       "color_by_chain": false,
-      "shade_smooth": true
+      "shade_smooth": true,
+      "color_blur": false
     }
-  ]
+  ],
+  "geometry": {
+    "element_palette": {
+      "H": "#FFFFFF",
+      "C": "#40D9BE",
+      "N": "#416FA9",
+      "O": "#B94B47",
+      "S": "#B99637",
+      "P": "#C7782D"
+    }
+  }
 }

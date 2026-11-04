@@ -38,7 +38,9 @@ _PRESETS = (
     ("cyan_candy_mesh", "style_preset_cyan_candy_mesh.json", "cyan_candy_mesh.png",
      "Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes; A/B surfaces, C/D tubes.", (), "frosted"),
     ("northern_nights", "style_preset_northern_nights.json", "northern_nights.png",
-     "Teal-blue-violet protein ribbons with luminous mint chain D on a pale mint/lavender background.", (), "clay"),
+     "Teal-blue-violet protein ribbons with luminous mint chain B on a pale mint/lavender background.", (), "clay"),
+    ("northern_nights_cutaway", "style_preset_northern_nights_cutaway.json", "northern_nights_cutaway.png",
+     "Northern Nights protein cutaway with mint chain B and element-colored pocket sticks on black.", (), "clay"),
 )
 DEFAULT_PRESET = "mint_sky_assembly"
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
