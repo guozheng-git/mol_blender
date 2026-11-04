@@ -937,6 +937,132 @@ selected session retained its process, filename, controls, unsaved state, and
 active playback. Temporary source capture was removed. Media and provenance
 remain under ignored `renders/chat-editor-demo/sidechain-motion/fast-preview/`.
 
+### Reference-style draft (2026-11-03)
+
+Validated a local cyan surface/mesh and pink/gold ribbon preset against public
+1QJB using background Blender. Final demonstration: 840×650, 64 CPU samples;
+schema validation and fresh-process catalog reload passed with identical style
+JSON. Reference and generated pixels were inspected separately. The result is a
+partial match: gloss, saturation, mesh distribution and central-bundle composition
+remain different. The example relabels original chains A/B residues 165–210 as
+C/D for ribbon selection without moving atoms; selectors require adaptation for
+other structures. An earlier camera-policy mismatch was observed; the saved
+draft now explicitly retains authored framing. No desktop scene was changed.
+Reference pixels, preset JSON, comparison notes and render manifests remain in
+ignored local outputs; no reference image or molecular data was committed.
+
+### Cyan reference refinement (2026-11-03)
+
+Used public 2R28 biological assembly 1: calmodulin chains A/B and peptide
+chains C/D. Surface-only cutaways omit protein residues within 10 A of the
+peptides, relabeled X/Y for selection. Exact atomic coordinate multisets match
+the original assembly after solvent removal. No atoms were repositioned.
+Cyan shell roughness is 0.12 with coat 0.5; mesh width/spacing are 0.009/0.55 A.
+Real CPU renders at 840x650 and 64 samples were visually inspected against the
+separate reference. Fresh catalog reload preserved the complete JSON and produced
+pixel-identical output. The four-lobed assembly silhouette and uniform mesh
+remain different from the reference; this is an illustrative cutaway, not an
+exact reconstruction. Source and saved-preset manifests are retained in ignored
+local outputs. No renderer code or desktop Blender scene was modified.
+
+The same local draft was refined with brighter cyan, stronger specular/coat
+response and softened area lights. Two real CPU renders were inspected; the
+first had overly sharp highlights. The final 840×650, 96-sample render used
+`#00AAFF` shell pigment and roughness 0.21. Fresh-process catalog reload matched
+the saved style exactly; camera and geometry selections matched the earlier
+draft. The final manifest/resolved style confirmed those settings. Gloss and
+brightness improved, while uniform mesh coverage and the example's composition
+remain visibly different from the reference. No desktop scene was changed.
+
+A subsequent reference comparison used three sequential, visually inspected
+iterations at fixed structure/camera: mesh beneath a patchy rounded cyan shell,
+a deeper blue core, broader ribbons and softened highlights. The final local
+catalog revision 6 rendered at 840×650 and 128 CPU samples. A fresh-process
+catalog render reproduced its PNG pixels exactly; style JSON reload equality
+and resolved sample count were checked. Remaining mismatches are peripheral
+rather than central helices, irregular rather than square mesh, and softer
+translucent patch boundaries. This is still an approximation. Evidence is in
+ignored local `match-01`, `match-02`, `match-03` and `match-reloaded` artifacts.
+
+The next color/brightness pass compared five real CPU candidates against the
+original reference, retaining the existing 1QJB front-pose input and camera
+(not the earlier 2R28 cutaway). Final local catalog revision 7 uses intermediate
+opacity-patch size, brighter cyan highlights, darker gold and a gray-blue
+background. JSON validation passed. A fresh-process preset render at 840×650,
+128 samples reproduced the direct JSON render pixel-for-pixel; full JSON reload,
+CIF-first input and DSS were verified in the manifest. No renderer code or
+desktop scene changed. Evidence is in ignored local `tone-*` artifacts.
+
+Color-region sRGB luma measurements guided comparison, but are not physical
+luminance or registered image matching. Background median is 0.921 versus
+reference 0.918; cyan highlight P90 improved from 0.735 to 0.772 versus reference
+0.819. Cyan median remains too low (0.584 versus 0.625). The selected texture
+balance is not an exact match: translucent patch boundaries, irregular mesh,
+and the different molecular arrangement remain visible. Preset selectors still
+require adaptation for other structures.
+
+Helix-only follow-up retained the accepted cyan surface materials and styles,
+lights, world and renderer settings. Two sequential 840×650, 128-sample CPU
+renders were inspected against the original reference: fuller rounded ribbons
+and broader satin highlights, then a richer pink and restored gloss. Final
+ribbon width/thickness are 2.35/0.9; roughness 0.27, specular 0.45, coat 0.2.
+Local catalog revision 8 passed schema validation and fresh-process JSON reload;
+its preset render reproduced the direct JSON render pixels exactly. CIF-first
+input and DSS were confirmed. Evidence is in ignored local `helix-*` artifacts.
+Camera settings/orientation stayed fixed, but automatic fit changed translation
+slightly and orthographic scale by about 0.006 percent as ribbon bounds changed.
+Blob appearance is therefore not claimed pixel-identical. Different helix
+placement, underside brightness and highlight positions remain approximate.
+No renderer code or desktop Blender scene was modified.
+
+A further helix reference pass corrected overly stacked turns using narrower
+rounded spiral bands (width 1.7, thickness 0.8), after visually comparing two
+new 840×650, 128-sample CPU renders. Fresh pink/yellow materials use modest
+colored emission to lift shadows; this is an artistic approximation, not a
+claim about the reference shader. Blob materials/styles and scene-light,
+world, renderer and camera settings were checked unchanged. Bounds-driven
+framing and indirect illumination can still affect blob pixels. Final local
+catalog revision 9 passed schema validation and fresh-process JSON reload;
+the saved-preset render was pixel-identical to the direct JSON render. Manifest
+checks confirmed CIF-first input and DSS. Evidence is in ignored `curl-*`
+artifacts. Different helix placement/occlusion and slightly lighter/cooler pink
+remain. No renderer code or desktop Blender scene was modified.
+
+On 2026-11-04, two more full-quality helix material comparisons increased pink
+and yellow saturation/emission, then softened overly sharp highlights and
+reduced excessive yellow brightness. Only the two helix materials changed;
+blob settings, geometry, lights, world and actual camera matrix/scale matched
+the preceding spiral render. Colored emission may affect nearby surface pixels.
+Local catalog revision 10 passed schema validation, fresh-process full JSON
+reload and a pixel-identical saved-preset render at 840×650, 128 CPU samples.
+CIF-first input and DSS were verified. Original reference and both candidates
+were visually inspected. Evidence is in ignored `neon-*` artifacts. Different
+helix placement and partial occlusion still limit resemblance to the prominent
+central bundle in the reference. No renderer code or desktop scene changed.
+
+The subsequent helical-tube request changed only native rounded cartoon width
+and thickness to 1.35/1.35 for the two colored helix styles. All material values,
+blob styles, lighting and camera settings were checked unchanged. The resulting
+full-quality render was visually inspected for a plump coiled cross-section
+and continuous highlights. Native backbone paths were retained; straight helix
+cylinders were not enabled. Local catalog revision 11 passed schema validation,
+fresh-process full JSON reload and pixel-identical preset rendering at 840×650,
+128 CPU samples. Manifest confirmed CIF-first input and DSS. Geometry-driven
+auto-fit and light interactions can still change nearby pixels. Evidence is in
+ignored `tube-*` artifacts. No renderer code or desktop scene was modified.
+
+The approved tubular style was promoted to built-in `cyan_candy_mesh` with its
+full JSON unchanged and the exact approved PNG added to the README gallery.
+Gallery provenance records public 1QJB preparation, pose and hashes without
+committing coordinates, executable sessions, original reference pixels or local
+paths. Selection limitations and adaptation are documented. The default remains
+`mint_sky_assembly`. The built wheel was installed into a fresh environment
+outside the checkout; qualified/unqualified preset lookup, schema validation,
+15-entry catalog, option resolution and equality to the approved JSON passed.
+Gallery JSON/PNG hashes were checked. Relevant schema, reference, local and
+authoring tests passed (101 tests). The retained render/reload checks above
+establish visual behavior; this promotion did not rerun Blender.
+
 # Cluster onboarding preflight (2026-11-03, local only)
 
 Added site-configurable Slurm GPU requests (`gpu_request`, `gpu_type`,

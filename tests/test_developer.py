@@ -155,7 +155,8 @@ def test_save_restart_reuse_and_revision(style, tmp_path):
     style["camera"]["depth_of_field"]["f_stop"] = 4
     new = authoring.save_preset("user/macro", style, tmp_path, camera_policy="authored", description="Revision", replace=True)
     assert new["revision"] == 2 and new["sha256"] != saved["sha256"]
-    assert len(authoring.list_presets(tmp_path)) == 15
+    from blender_render.presets import catalog
+    assert len(authoring.list_presets(tmp_path)) == len(catalog()) + 1
 
 
 @pytest.mark.parametrize("identifier", ["builtin/pastel", "macro", "user/../macro", "user/a/b", "project/../../x"])

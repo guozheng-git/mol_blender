@@ -35,6 +35,8 @@ _PRESETS = (
      'Mint and sky protein assembly with purple and pink nucleic acids.', ('reference_07',), 'clay'),
     ('neon_duplex_hero', 'style_preset_neon_duplex_hero.json', 'reference_08.png',
      'Green protein and gradient nucleic acids against a pink-cyan background.', ('reference_08',), 'clay'),
+    ("cyan_candy_mesh", "style_preset_cyan_candy_mesh.json", "cyan_candy_mesh.png",
+     "Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes; A/B surfaces, C/D tubes.", (), "frosted"),
 )
 DEFAULT_PRESET = "mint_sky_assembly"
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
