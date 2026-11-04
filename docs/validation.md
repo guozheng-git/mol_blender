@@ -1151,3 +1151,50 @@ Refreshed the Structure Studio catalog and gallery hashes. No desktop window
 was launched and no cluster deployment or Slurm execution was changed. Molecular
 coordinates, sessions, source animations and private paths remain outside tracked
 files; only the requested presets and newly rendered previews are included.
+
+## Northern Nights reference reconstruction and rocking cutaway (2026-11-04)
+
+This revision supersedes the simplified Northern Nights settings above. Inspected
+the supplied bright close-up, STAT cutaway animation, H3T11 palette reference,
+saved scenes and creation scripts. Recovered residue-order palettes, PTR atom
+colors, source light strengths and emission-only Gaussian halo settings. The
+bright preset uses the source close-up framing; the dark preset uses the STAT
+rounded opening and orientation with the H3T11 violet-blue-purple binder palette.
+Only newly rendered STAT previews are tracked; the unpublished H3T11 coordinates,
+reference images, original animations and executable sessions are excluded.
+
+Both built-in presets rendered in fresh background processes at 900 × 900,
+96 CPU samples, Blender 5.0.1 / Molecular Nodes 4.5.10. Final PNGs were inspected
+against their references. The selected input retains its native geometry; no
+claim of pixel-identical reconstruction is made. Pocket stick colors and inferred
+contact endpoints can differ slightly from the source's manually prepared scene.
+A separate 320 × 320, 8-sample cutaway preview rendered all 16 frames of a two-second,
+8-fps, ±8° camera rock. Inspected frames at both extremes and the central view;
+the baked surface opening, PTR and contact guides stay aligned. GIF and MP4 were
+produced; the small GIF is linked from the README.
+
+The initial saved-scene audit caught PTR's DSS assignment being dropped because
+it was a HETATM. Fixed the export to retain PTR/TPO/SEP secondary-structure hints
+while excluding unrelated hetero residues, added regression coverage and rerendered
+both final previews. Reopened both saved scenes with script execution disabled:
+PTR B11 has one Cα, helical secondary structure and two boundary peptide bonds.
+Live PyMOL export confirms GLY 10 / PTR 11 / VAL 12 are helical and the residue
+name is restored to PTR. This establishes PTR continuity for this input, not
+real-render validation of every TPO/SEP case.
+
+Both reopened scenes contain 18 capsule dashes for six putative polar contacts,
+PTR emission 0.65 driven by atom Color, 16.5-pixel Gaussian blur at 900 pixels and
+an additive halo factor of 0.7. The dark surface contains 2,755 inner-wall faces
+with its separate cavity material. The unchanged default mint_sky_assembly also
+completed a 256 × 256, 8-sample render of the public example and was inspected.
+
+Full source tests: **505 passed, 50 skipped**. Built a wheel and installed it into
+a fresh uv environment outside the checkout: both preset JSON documents match
+source, schema validation, required engine capabilities, new module imports,
+sequence-color behavior and the 17-entry catalog pass. These installed-package
+checks do not constitute an installed-wheel Blender render. Updated the plugin
+catalog and gallery hashes. Existing cluster-payload compatibility is covered by
+tests; no new Slurm/Apptainer run or service deployment was performed. All renders
+ran in background processes without opening another desktop Blender window.
+Local manifests, resolved styles, reference decisions and audit results are kept
+in ignored renders/style-onboarding/northern_nights artifacts.

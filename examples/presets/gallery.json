@@ -828,7 +828,7 @@
   },
   {
     "preset": "northern_nights",
-    "description": "Satin teal-blue-violet ribbons and mint chain B on a bright background.",
+    "description": "Teal-blue-violet ribbons, mint peptide and element-colored PTR glow on a bright background.",
     "source_id": "STAT example (user-selected)",
     "source_note": "User-selected STAT animation example. No public PDB identity is asserted; molecular coordinates, sessions and original animation are excluded.",
     "view": {
@@ -859,18 +859,18 @@
         480
       ]
     },
-    "framing": "Reference viewing direction with automatic fit of the complete complex, rather than its close-up crop.",
+    "framing": "Recovered bright reference PTR close-up, 27 angstrom orthographic extent.",
     "preset_json": "blender_render/style_preset_northern_nights.json",
-    "preset_file_sha256": "d9c5f0d9449761368e67ed04f3101178bbeacc3690eb27feb75477507f87f729",
-    "resolved_style_sha256": "278901aa32bdd7477eda1f02c5abe275cf2fc8411f294b994cecd20ffba296b4",
+    "preset_file_sha256": "ecd05e2ee2143ba1989600ef971355736c3d99f72fdbe365881e2fd62b4780ae",
+    "resolved_style_sha256": "ba0b67a902b719a11fb338a5b8a9967be082a00fb5db9a6d8d127ddcbb2d1aed",
     "dimensions": [
       900,
       900
     ],
     "samples": 96,
     "thumbnail": "examples/presets/northern_nights.png",
-    "thumbnail_sha256": "747cf584db29a4001e7636cccc407d70c26482e93bb9e7a0987c8a3771049df3",
-    "full_png_sha256": "747cf584db29a4001e7636cccc407d70c26482e93bb9e7a0987c8a3771049df3",
+    "thumbnail_sha256": "3666ec6c3abcf3f6b550eba28bc748fd2c4df99144ae445881696000773de8f9",
+    "full_png_sha256": "3666ec6c3abcf3f6b550eba28bc748fd2c4df99144ae445881696000773de8f9",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -878,25 +878,25 @@
       "numpy": "1.26.4",
       "biotite": "1.6.0"
     },
-    "scene_requested": false,
-    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen-bond guides or topology patches."
+    "scene_requested": true,
+    "limitations": "Putative contacts are geometric inferences. Preview scenes were saved for local validation but are not distributed. Source scripts informed styling; final pixels are not claimed identical to the references."
   },
   {
     "preset": "northern_nights_cutaway",
-    "description": "Northern Nights surface cutaway and element-colored pocket sticks on black.",
+    "description": "Rounded STAT pocket cutaway with the H3T11 violet-blue-purple binder palette and localized PTR glow.",
     "source_id": "STAT example (user-selected)",
     "source_note": "User-selected STAT animation example. No public PDB identity is asserted; molecular coordinates, sessions and original animation are excluded.",
     "view": {
       "pymol_view": [
-        -0.5775976181030273,
-        -0.7917866706848145,
-        0.19863229990005493,
-        0.7239890694618225,
-        -0.3844592273235321,
-        0.572739839553833,
-        -0.37712177634239197,
-        0.4746206998825073,
-        0.7953076362609863,
+        -0.5388439297676086,
+        -0.7325279116630554,
+        -0.41599270701408386,
+        0.7805015444755554,
+        -0.6199302673339844,
+        0.08064509928226471,
+        -0.31696128845214844,
+        -0.28122779726982117,
+        0.9057849645614624,
         0.0,
         0.0,
         -146.73036193847656,
@@ -914,18 +914,18 @@
         480
       ]
     },
-    "framing": "Reference viewing direction with automatic fit of the complete complex, rather than its close-up crop.",
+    "framing": "Recovered STAT cutaway view, 61.2711966 angstrom orthographic extent.",
     "preset_json": "blender_render/style_preset_northern_nights_cutaway.json",
-    "preset_file_sha256": "aa595f7e47da9a78521dec65c1f9b3187265d7ffc9d6dc9261ca590848d0d7a9",
-    "resolved_style_sha256": "1bf1f85f742adbab5a23adcefeedec6d31b05f3e09fcb2c73157158a00be1c3b",
+    "preset_file_sha256": "048099224aaf980c51e9d2bc88fb291553aadc1126fd1b661d45dbf1b29f654c",
+    "resolved_style_sha256": "5d87b14d2c522b5777f9d1653f452f693b45cc15a0ed9f266e1af73c70513763",
     "dimensions": [
       900,
       900
     ],
     "samples": 96,
     "thumbnail": "examples/presets/northern_nights_cutaway.png",
-    "thumbnail_sha256": "b79d3350ea85fde665b7e25d20c36b1499306e1a46893809d2644a59b94d5381",
-    "full_png_sha256": "b79d3350ea85fde665b7e25d20c36b1499306e1a46893809d2644a59b94d5381",
+    "thumbnail_sha256": "4528b9c6261e6bb4adec3a6d99d4d0618fe27a34413983b954b8e9df9d89b230",
+    "full_png_sha256": "4528b9c6261e6bb4adec3a6d99d4d0618fe27a34413983b954b8e9df9d89b230",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -933,7 +933,20 @@
       "numpy": "1.26.4",
       "biotite": "1.6.0"
     },
-    "scene_requested": false,
-    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen-bond guides or topology patches."
+    "scene_requested": true,
+    "limitations": "Putative contacts are geometric inferences. Preview scenes were saved for local validation but are not distributed. Source scripts informed styling; final pixels are not claimed identical to the references.",
+    "animation_preview": {
+      "gif": "examples/presets/northern_nights_cutaway_rock.gif",
+      "sha256": "24054f6420d02b8ba0922aee9f83f80a65d90a8aeb7bbe8e478ab2617b391236",
+      "frames": 16,
+      "dimensions": [
+        320,
+        320
+      ],
+      "fps": 8,
+      "duration_seconds": 2,
+      "rock_angle_degrees": 8,
+      "samples": 8
+    }
   }
 ]

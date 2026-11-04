@@ -94,43 +94,66 @@ any personal `user/cyan_candy_mesh` copy.
 
 ## Northern Nights: bright ribbons and dark cutaway
 
-Two separate presets share the Northern Nights palette and element coloring:
+Two separate presets follow the supplied Northern Nights designs:
 
-- `northern_nights`: satin teal/blue/violet protein ribbons and a luminous mint
-  peptide on a bright mint/lavender background.
-- `northern_nights_cutaway`: the same molecular colors with a protein surface
-  cutaway, nearby residue sticks and a black background.
+- `northern_nights`: residue-ordered teal/blue/violet protein ribbons, constant
+  mint peptide, a bright mint/lavender background and a PTR close-up.
+- `northern_nights_cutaway`: a rounded pocket opening and black background,
+  using the H3T11 reference's restricted violet–blue–purple binder palette and
+  teal-to-mint peptide gradient. The preview uses the selected STAT structure
+  and the supplied STAT cutaway orientation, not the unpublished H3T11 input.
 
-The README previews use the user-selected STAT example and the viewing direction
-from its supplied rocking animation, fitted to show the complete complex rather
-than the reference close-up crop. Molecular coordinates, sessions, source
-animations and private paths are not included. The previews replace the earlier
-1SPS demonstration; no public PDB identity is asserted for the selected example.
+Both gallery previews use the user-selected STAT example. No public PDB identity
+is asserted. Molecular coordinates, executable sessions and original reference
+images/animations are excluded from tracked files.
 
 ```sh
+# Keep your prepared input camera:
 blender-render render prepared-pose.pse --preset northern_nights -o bright.png
 blender-render render prepared-pose.pse --preset northern_nights_cutaway -o cutaway.png
+# Select the authored PTR close-up framing (27 angstrom orthographic extent):
+blender-render render prepared-pose.pse --preset northern_nights --no-preserve-view -o detail.png
+# Optional camera rocking, not a molecular trajectory:
+blender-render render prepared-pose.pse --preset northern_nights_cutaway --animation rock --gif -o rocking.png
 ```
 
-In PyMOL, use `blender_render preset=northern_nights` or
-`blender_render preset=northern_nights_cutaway`. Chain B is the mint peptide;
-other protein chains receive the spatial teal-to-purple gradient. Adapt the
-cartoon and surface selections together for another complex. The cutaway needs
-a valid ligand/phosphoresidue anchor and suitable pocket dimensions; it is not
-an automatic identification of a binding site. It cuts only the surface, keeping
-the peptide cartoon intact. A 5 Å neighborhood selects complete pocket residues.
+In PyMOL, select `preset=northern_nights` or `preset=northern_nights_cutaway`.
+Chain B is the peptide. Adapt the chain palette and all cartoon/surface/pocket
+selections together for another complex. The bright binder palette is
+`#25ABA5 → #3B5A8D → #463D73 → #8D52AD`; its peptide is `#40D9BE`.
+The dark binder uses `#463D73 → #3B5A8D → #8D52AD`, with peptide
+`#25ABA5 → #40D9BE`. Colors interpolate in sRGB by residue order within each
+chain, then convert to linear shader values. They do not depend on orientation.
 
-PTR/SEP/TPO sidechain sticks include Cα but exclude backbone N/C/O. Carbon is
-mint, nitrogen blue, oxygen red, sulfur gold and phosphorus orange. The sticks
-use `ElementColor` without uniform mint emission, preserving their element
-colors; the peptide cartoon retains mint glow. In the selected STAT input,
-PTR B11 has one Cα and both peptide bonds (GLY 10 → PTR 11 → VAL 12).
-The saved Blender atom mesh also retains both bonds, one Cα, and peptide/cartoon
-selection membership for PTR B11. This does not establish rendered continuity for
-every PTR/TPO/SEP input; those residues must remain part of the input chain.
+PTR/SEP/TPO sticks use a 0.36 Å radius and include Cα but exclude backbone
+N/C/O/OXT. Carbon follows the peptide palette; oxygen stays vivid red and
+phosphorus orange. Native stick color boundaries remain sharp. Only the
+phosphoresidue material emits: strength **0.65**, in its atom colors. A Gaussian
+blur of the emission pass is added at **0.7**, with width scaled from **22 pixels
+at 1200 pixels**. The peptide cartoon itself has no emission. This reproduces
+the source halo mechanism rather than applying bloom to the entire image.
 
-These presets use the shared renderer. The spatial gradient/native glow
-approximate the original residue-by-residue colors/custom Gaussian halo. Custom
-hydrogen-bond dashes, atom-color emission and paper-specific topology patches
-are not included. No molecular coordinates are rearranged. Shader palette values
-are encoded for linear inputs, so the JSON swatches differ from display colors.
+Before DSS, the exporter temporarily classifies PTR/TPO/SEP as TYR/THR/SER,
+then restores their original residue names even if DSS fails. Their DSS labels
+are retained even when CIF records them as HETATM. Coordinates and bonds do not
+change. For the selected STAT input, PTR B11 remains helical between
+GLY 10 and VAL 12, with one Cα and both peptide bonds. This is measured evidence
+for PTR in this input, not a claim that all phosphoresidues should be helical.
+
+White capsule guides show **putative interchain polar contacts**, using PyMOL
+`find_pairs` in both donor/acceptor directions, mode 1, 3.6 Å cutoff and 45° angle.
+They use the source design's three dashes and 0.20 Å radius. These are geometric
+inferences, not experimentally established hydrogen bonds. The payload carries
+at most 256 atom-key pairs; the renderer verifies their atoms and distances.
+Inputs without exported contact metadata show no guides.
+
+The dark preset cuts only an isolated protein surface with a bounded ellipsoid;
+interior ribbons and sticks remain intact. A darker, sequence-colored inner wall
+retains the binder palette. Pocket shape, tilt and dimensions are authored for
+this example and may need adjustment for another complex. The cut is baked for
+the initial view and can be rocked as a rigid scene. Animated lids and molecular
+state animations are not supported with this rounded cut/contact-guide setup.
+
+These controls use the shared local renderer and are available to updated cluster
+workers. Existing workers must receive the matching engine revision before using
+these new preset capabilities; this preset update does not deploy a service.
