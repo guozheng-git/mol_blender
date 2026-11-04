@@ -214,3 +214,12 @@ def test_open_profiles_are_explicit_and_send_no_credentials(tmp_path, monkeypatc
             Client('invalid')
     with pytest.raises(ValueError, match='either'):
         configure('ambiguous', tmp_path / 'credential.json', url=client.url)
+
+
+def test_existing_presets_strip_unused_contact_metadata(live_service, tmp_path):
+    client, store = live_service
+    data=payload();data['polar_contacts']=[['A:1:ARG:NE','B:2:PTR:O1P']]
+    result=client.submit(data, {}, tmp_path/'without-contacts.png')
+    saved=read_json(store.directory(result['job_id'])/'request.json')['request']
+    assert 'polar_contacts' not in saved['payload']
+    assert 'polar_contacts' in data

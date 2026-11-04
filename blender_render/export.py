@@ -107,12 +107,12 @@ def _collect_color_hints(cmd_obj: Any, selection: str) -> dict[str, Any]:
 
 
 def _collect_secondary_structure_hints(cmd_obj: Any, selection: str) -> dict[str, Any]:
-    records: list[tuple[str, str, str, int]] = []
+    records: list[tuple[str, str, str, int, str]] = []
     space: dict[str, Any] = {"records": records}
     try:
         cmd_obj.iterate(
             selection,
-            "records.append((chain, resi, ss, type == 'HETATM'))",
+            "records.append((chain, resi, ss, type == 'HETATM', resn))",
             space=space,
         )
     except Exception:
@@ -120,8 +120,8 @@ def _collect_secondary_structure_hints(cmd_obj: Any, selection: str) -> dict[str
 
     by_chain_resi: dict[str, str] = {}
     counts: Counter[str] = Counter()
-    for chain, resi, ss, hetatm in records:
-        if int(hetatm):
+    for chain, resi, ss, hetatm, resn in records:
+        if int(hetatm) and str(resn).upper() not in {"PTR", "TPO", "SEP"}:
             continue
         ss_code = str(ss or "").strip().upper()
         if ss_code not in {"H", "S", "L"}:
@@ -182,14 +182,49 @@ def collect_view_payload(cmd_obj: Any) -> dict[str, Any]:
     return payload
 
 
+def _collect_polar_contacts(cmd_obj: Any, selection: str, state: int) -> list:
+    if not callable(getattr(cmd_obj, "find_pairs", None)):
+        return []
+    if not cmd_obj.count_atoms(f"({selection}) and resn PTR+TPO+SEP"):
+        return []
+    atoms = {}
+    cmd_obj.iterate(selection, "atoms[(model,index)] = (chain,resi,resn,name)", space={"atoms": atoms})
+    modified = f"({selection}) and resn PTR+TPO+SEP"
+    partner = f"({selection}) and polymer.protein and not resn PTR+TPO+SEP"
+    pairs = set()
+    for a, b in ((modified, partner), (partner, modified)):
+        for first, second in cmd_obj.find_pairs(f"({a}) and donors", f"({b}) and acceptors",
+                                               state1=state, state2=state, cutoff=3.6, mode=1, angle=45):
+            left, right = atoms.get(tuple(first)), atoms.get(tuple(second))
+            if left and right and left[0] != right[0]:
+                pairs.add(tuple(sorted((':'.join(left), ':'.join(right)))))
+    if len(pairs) > 256:
+        raise ValueError('Too many phosphoresidue polar contacts; narrow the selection')
+    return [list(pair) for pair in sorted(pairs)]
+
+
 def _run_dss_assignment(cmd_obj: Any, selection: str) -> dict[str, Any]:
     dss_target = str(selection or "(all)").strip() or "(all)"
     result: dict[str, Any] = {"ran": False, "selection": dss_target}
+    originals = {}
     try:
+        # PyMOL DSS can skip modified residues. Classify their unchanged backbone
+        # as the canonical parent, then restore chemical identity even on failure.
+        if callable(getattr(cmd_obj, "alter", None)):
+            cmd_obj.iterate(f"({dss_target}) and resn PTR+TPO+SEP",
+                            "originals[(model,index)] = resn", space={"originals": originals})
+            if originals:
+                parents = {"PTR": "TYR", "TPO": "THR", "SEP": "SER"}
+                cmd_obj.alter(dss_target, "resn = parents.get(resn, resn)", space={"parents": parents})
         cmd_obj.dss(dss_target)
         result["ran"] = True
+        if originals:
+            result["modified_residue_parent_assignment"] = True
     except Exception as exc:
         result["error"] = str(exc)
+    finally:
+        if originals:
+            cmd_obj.alter(dss_target, "resn = originals.get((model,index), resn)", space={"originals": originals})
     return result
 
 
@@ -402,6 +437,9 @@ def _build_single_payload(
         color_hints = _collect_color_hints(cmd_obj, selection)
         if color_hints:
             payload["color_hints"] = color_hints
+    contacts = _collect_polar_contacts(cmd_obj, selection, state)
+    if contacts:
+        payload["polar_contacts"] = contacts
     return payload
 
 

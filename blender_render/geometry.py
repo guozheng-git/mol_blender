@@ -42,6 +42,13 @@ def apply_atom_attributes(molecule, view, style):
                                      for element in array.element], dtype=np.float32)
         store(element_colors, "ElementColor", atype="FLOAT_COLOR")
         store(element_colors, "Color", atype="FLOAT_COLOR")
+    sequence_palettes = style.get("geometry", {}).get("chain_sequence_palettes")
+    if sequence_palettes:
+        from blender_render.sequence_palette import sequence_colors
+        sequence, elements = sequence_colors(array.chain_id, residue_ids, array.element,
+                                             sequence_palettes, element_palette or {})
+        store(sequence, "SequenceColor", atype="FLOAT_COLOR")
+        store(elements, "SequenceElementColor", atype="FLOAT_COLOR")
     palette = style.get("geometry", {}).get("secondary_structure_palette")
     follow = style.get("color_follow", {})
     atom_hints = view.get("color_hints", {}).get("atoms", {}) if follow.get("enabled") else {}

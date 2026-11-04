@@ -25,7 +25,12 @@
     "direction_source": "pymol",
     "projection": "ORTHO",
     "fit": true,
-    "fit_margin": 1.2
+    "fit_margin": 1.2,
+    "focus_style": "phosphoresidue_sticks",
+    "ortho_scale_angstrom": 27,
+    "shift_x": -0.02359316610637769,
+    "shift_y": 0.029683777549319647,
+    "world_scale": 0.01
   },
   "world": {
     "background_type": "gradient",
@@ -43,7 +48,7 @@
     {
       "name": "Key",
       "type": "AREA",
-      "energy": 92.625,
+      "energy": 142.5,
       "relative_vector": [
         -1.7,
         2.2,
@@ -58,7 +63,7 @@
     {
       "name": "Fill",
       "type": "AREA",
-      "energy": 37.050000000000004,
+      "energy": 57,
       "relative_vector": [
         2,
         -0.4,
@@ -73,7 +78,7 @@
     {
       "name": "Rim",
       "type": "AREA",
-      "energy": 55.575,
+      "energy": 85.5,
       "relative_vector": [
         0,
         2,
@@ -88,57 +93,53 @@
   ],
   "materials": {
     "protein": {
-      "base_color": "#44166B",
-      "roughness": 0.35,
+      "base_color": "#20B4A4",
+      "roughness": 0.4,
       "specular": 0.2,
       "alpha": 1,
       "ao_strength": 0.15,
-      "shadow_color": "#44166B",
-      "highlight_color": "#44166B",
+      "shadow_color": "#178276",
+      "highlight_color": "#4DC3B6",
       "rim_strength": 0.03,
-      "color_gradient": {
-        "colors": [
-          "#056860",
-          "#0B1A44",
-          "#100C2C",
-          "#44166B"
-        ],
-        "direction": [
-          0,
-          0,
-          1
-        ]
-      }
+      "emission_strength": 0,
+      "color_attribute": "SequenceColor"
     },
     "peptide": {
-      "base_color": "#0DB183",
-      "roughness": 0.35,
+      "base_color": "#20B4A4",
+      "roughness": 0.4,
       "specular": 0.2,
       "alpha": 1,
       "ao_strength": 0.15,
-      "shadow_color": "#0DB183",
-      "highlight_color": "#0DB183",
-      "rim_strength": 0.03,
-      "emission_color": "#0DB183",
-      "emission_strength": 0.465,
-      "glow": {
-        "strength": 0.8,
-        "threshold": 0.8,
-        "size": 7
-      }
-    },
-    "ptm": {
-      "base_color": "#0DB183",
-      "roughness": 0.35,
-      "specular": 0.2,
-      "alpha": 1,
-      "ao_strength": 0.15,
-      "shadow_color": "#0DB183",
-      "highlight_color": "#0DB183",
+      "shadow_color": "#178276",
+      "highlight_color": "#4DC3B6",
       "rim_strength": 0.03,
       "emission_color": "#0DB183",
       "emission_strength": 0,
-      "color_attribute": "ElementColor"
+      "color_attribute": "SequenceColor"
+    },
+    "ptm": {
+      "base_color": "#20B4A4",
+      "roughness": 0.34,
+      "specular": 0.2,
+      "alpha": 1,
+      "ao_strength": 0.08,
+      "shadow_color": "#178276",
+      "highlight_color": "#4DC3B6",
+      "rim_strength": 0.03,
+      "emission_color": "#0DB183",
+      "emission_strength": 0.65,
+      "color_attribute": "Color",
+      "emission_attribute": "Color",
+      "emission_halo": {
+        "strength": 0.7,
+        "radius_fraction": 0.018333333333333333
+      }
+    },
+    "pocket": {
+      "base_color": "#44166B",
+      "color_attribute": "Color",
+      "roughness": 0.5,
+      "specular": 0.5
     }
   },
   "styles": [
@@ -179,23 +180,57 @@
       "style": "sticks",
       "material": "ptm",
       "selection": {
-        "query": "resn PTR,SEP,TPO and not name N,C,O"
+        "query": "resn PTR,SEP,TPO and not name N,C,O,OXT"
+      },
+      "quality": 4,
+      "radius": 0.36,
+      "color_by_chain": false,
+      "shade_smooth": true,
+      "color_blur": false,
+      "atom_color_attribute": "SequenceElementColor"
+    },
+    {
+      "name": "pocket_sidechains",
+      "style": "sticks",
+      "material": "pocket",
+      "selection": {
+        "query": "protein and not chain B and not name N,CA,C,O,OXT",
+        "within_ligand_radius": 5,
+        "expand_to_residue": true
       },
       "quality": 4,
       "radius": 0.28,
       "color_by_chain": false,
+      "color_blur": false,
       "shade_smooth": true,
-      "color_blur": false
+      "atom_color_attribute": "SequenceElementColor"
     }
   ],
   "geometry": {
     "element_palette": {
       "H": "#FFFFFF",
       "C": "#40D9BE",
-      "N": "#416FA9",
-      "O": "#B94B47",
-      "S": "#B99637",
-      "P": "#C7782D"
+      "N": "#3333FF",
+      "O": "#FF4D4D",
+      "S": "#E8C25E",
+      "P": "#FF8000"
+    },
+    "chain_sequence_palettes": {
+      "*": [
+        "#25ABA5",
+        "#3B5A8D",
+        "#463D73",
+        "#8D52AD"
+      ],
+      "B": [
+        "#40D9BE",
+        "#40D9BE"
+      ]
+    },
+    "polar_contacts": {
+      "radius_angstrom": 0.2,
+      "dashes": 3,
+      "color": "#F1F8F4"
     }
   }
 }

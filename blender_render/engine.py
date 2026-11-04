@@ -32,6 +32,8 @@ CAPABILITIES = sorted({
     'world.separate_illumination', 'camera.depth_of_field', 'camera.reference_framing', 'camera.relative_pose',
     'animation.camera_orbit', 'animation.camera_path', 'animation.molecular_states',
     'animation.cutaway_lid', 'encoding.ffmpeg',
+    'geometry.chain_sequence_palettes', 'geometry.branch_atom_colors', 'geometry.polar_contacts',
+    'material.attribute_emission', 'material.emission_halo', 'representation.rounded_cutaway',
 })
 
 
@@ -221,7 +223,8 @@ def resource_bytes(path):
 ACTION_MODULES = {
     'conversion': ('export',),
     'render': ('core', 'chain_palette', 'ligand_selection', 'cutout_planes',
-               'geometry', 'paint', 'reference_effects', 'operation_progress', 'telemetry', 'worker_ccd', 'animation', 'animation_blender'),
+               'geometry', 'paint', 'reference_effects', 'sequence_palette', 'emission_halo',
+               'rounded_cutaway', 'polar_contacts', 'operation_progress', 'telemetry', 'worker_ccd', 'animation', 'animation_blender'),
 }
 
 

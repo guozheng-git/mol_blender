@@ -23,7 +23,9 @@ CAPABILITIES = frozenset(('representation.cartoon', 'representation.ribbon', 're
     'material.uniform_polymer_color', 'material.edge_highlight', 'geometry.edge_rounding',
     'geometry.element_palette', 'world.directional_gradient', 'world.separate_illumination',
     'camera.depth_of_field', 'camera.reference_framing', 'camera.relative_pose', 'animation.camera_orbit',
-    'animation.camera_path', 'animation.molecular_states', 'animation.cutaway_lid', 'encoding.ffmpeg'))
+    'animation.camera_path', 'animation.molecular_states', 'animation.cutaway_lid', 'encoding.ffmpeg',
+    'geometry.chain_sequence_palettes', 'geometry.branch_atom_colors', 'geometry.polar_contacts',
+    'material.attribute_emission', 'material.emission_halo', 'representation.rounded_cutaway'))
 MESSAGES = {
     'engine_build_mismatch':'Worker engine build does not match the admitted execution.',
     'engine_protocol_mismatch':'Worker engine protocol is incompatible.',
@@ -70,7 +72,8 @@ def _evidence(value):
         elif key == 'dependency':
             valid = isinstance(item, str) and item in DEPENDENCIES
         elif key in ('bundle_versions', 'schema_versions', 'capabilities'):
-            valid = type(item) is list and len(item) <= 32 and all(
+            limit = len(CAPABILITIES) if key == 'capabilities' else 32
+            valid = type(item) is list and len(item) <= limit and all(
                 isinstance(v, str) and (v in CAPABILITIES if key == 'capabilities' else _version(v)) for v in item)
         elif key == 'versions':
             valid = type(item) is dict and len(item) <= len(VERSION_KEYS) and all(

@@ -108,8 +108,12 @@ class Client:
         info = self.api('GET', '/v1/info')
         if info.get('protocol') != PROTOCOL:
             raise RemoteError('Unsupported cluster protocol')
+        style = resolve_authored(options, payload, config_root() / 'presets')['style_doc']
+        if not style.get('geometry', {}).get('polar_contacts'):
+            # Preserve the older server payload contract for existing presets.
+            payload = {key: value for key, value in payload.items() if key != 'polar_contacts'}
         document = validate_request({'protocol': PROTOCOL, 'request_id': uuid.uuid4().hex,
-            'payload': payload, 'style': resolve_authored(options, payload, config_root() / 'presets')['style_doc']},
+            'payload': payload, 'style': style},
             Limits(**info['limits']))
         output.parent.mkdir(parents=True, exist_ok=True)
         record = {'protocol': PROTOCOL, 'profile': self.profile, 'url': self.url,

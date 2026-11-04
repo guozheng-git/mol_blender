@@ -283,7 +283,9 @@
         "depth_of_field": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["focus_distance_angstrom"],
+          "required": [
+            "focus_distance_angstrom"
+          ],
           "description": "Omit to disable. Requires mode=override, projection=PERSP, and a ray-traced output. Focus is measured from the final camera along its optical axis; geometry and framing are unchanged.",
           "properties": {
             "focus_distance_angstrom": {
@@ -578,21 +580,48 @@
           "glow": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["strength", "threshold", "size"],
+            "required": [
+              "strength",
+              "threshold",
+              "size"
+            ],
             "properties": {
-              "strength": {"type": "number", "minimum": 0},
-              "threshold": {"type": "number", "minimum": 0},
-              "size": {"type": "integer", "minimum": 2, "maximum": 9}
+              "strength": {
+                "type": "number",
+                "minimum": 0
+              },
+              "threshold": {
+                "type": "number",
+                "minimum": 0
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 9
+              }
             }
           },
           "edge_highlight": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["power", "color", "strength"],
+            "required": [
+              "power",
+              "color",
+              "strength"
+            ],
             "properties": {
-              "power": {"type": "number", "exclusiveMinimum": 0},
-              "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
-              "strength": {"type": "number", "minimum": 0}
+              "power": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9A-Fa-f]{6}$"
+              },
+              "strength": {
+                "type": "number",
+                "minimum": 0
+              }
             }
           },
           "paint": {
@@ -602,7 +631,9 @@
             "type": "string",
             "enum": [
               "Color",
-              "ElementColor"
+              "ElementColor",
+              "SequenceColor",
+              "SequenceElementColor"
             ]
           },
           "color_gradient": {
@@ -647,7 +678,10 @@
             "properties": {
               "coordinates": {
                 "type": "string",
-                "enum": ["generated", "angstrom"]
+                "enum": [
+                  "generated",
+                  "angstrom"
+                ]
               },
               "noise_scale": {
                 "type": "number",
@@ -680,6 +714,35 @@
               "grid_color": {
                 "type": "string",
                 "pattern": "^#[0-9A-Fa-f]{6}$"
+              }
+            }
+          },
+          "emission_attribute": {
+            "type": "string",
+            "enum": [
+              "Color",
+              "ElementColor",
+              "SequenceColor",
+              "SequenceElementColor"
+            ]
+          },
+          "emission_halo": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "strength",
+              "radius_fraction"
+            ],
+            "properties": {
+              "strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 4
+              },
+              "radius_fraction": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 0.1
               }
             }
           }
@@ -859,7 +922,8 @@
           "ligand_cutout_mode": {
             "type": "string",
             "enum": [
-              "planes"
+              "planes",
+              "ellipsoid"
             ]
           },
           "ligand_cutout_frame_mode": {
@@ -1009,6 +1073,19 @@
           "nucleic_base_scale": {
             "type": "number",
             "exclusiveMinimum": 0
+          },
+          "ligand_cutout_tilt_deg": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "atom_color_attribute": {
+            "type": "string",
+            "enum": [
+              "ElementColor",
+              "SequenceColor",
+              "SequenceElementColor"
+            ]
           }
         }
       }
@@ -1116,6 +1193,49 @@
           "additionalProperties": {
             "type": "string",
             "pattern": "^#[0-9A-Fa-f]{6}$"
+          }
+        },
+        "chain_sequence_palettes": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          }
+        },
+        "polar_contacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "radius_angstrom",
+            "dashes",
+            "color"
+          ],
+          "properties": {
+            "radius_angstrom": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 0.5
+            },
+            "dashes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            "color": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
           }
         }
       }

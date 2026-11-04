@@ -18,7 +18,7 @@ ARTIFACTS = frozenset({'render.png', 'render.mp4', 'render.gif', 'frames.zip',
 TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'expired'})
 PAYLOAD_KEYS = frozenset({'version', 'generated_at_utc', 'selection', 'state', 'run_id',
     'structure_summary', 'view', 'dss', 'ss_hints', 'cif_text', 'pdb_text', 'color_hints',
-    'provenance', 'state_coordinates'})
+    'provenance', 'state_coordinates', 'polar_contacts'})
 
 
 def validate_url(url):

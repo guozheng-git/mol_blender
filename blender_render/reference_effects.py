@@ -59,6 +59,11 @@ def _surface_grid(tree, vector, normal, scale, width):
 
 
 def apply_material_effects(tree, bsdf, config, rgba):
+    if config.get("emission_attribute"):
+        emission = tree.nodes.new("ShaderNodeAttribute")
+        emission.name = "Atom-colored emission"
+        emission.attribute_name = config["emission_attribute"]
+        tree.links.new(emission.outputs["Color"], bsdf.inputs.get("Emission Color") or bsdf.inputs["Emission"])
     pigment = None
     if config.get("color_attribute"):
         attribute = tree.nodes.new("ShaderNodeAttribute")

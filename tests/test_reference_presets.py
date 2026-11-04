@@ -167,3 +167,26 @@ def test_wire_mesh_requires_width_and_positive_spacing():
     entry['wireframe_spacing_angstrom'] = 0
     with pytest.raises(core.StyleValidationError, match='minimum'):
         core.validate_style_document(style)
+
+
+def test_emission_halo_and_sequence_attributes_are_explicit():
+    style=base()
+    style['materials']['test']={'emission_attribute':'SequenceElementColor','emission_strength':.65,
+                               'emission_halo':{'strength':.7,'radius_fraction':.02}}
+    with pytest.raises(core.StyleValidationError, match='requires geometry'):
+        core.validate_style_document(style)
+    style['geometry']={'chain_sequence_palettes':{'*':['#000000','#FFFFFF']},'element_palette':{'O':'#FF0000'}}
+    core.validate_style_document(style)
+    style['materials']['test']['emission_halo']['radius_fraction']=1
+    with pytest.raises(core.StyleValidationError,match='maximum'):
+        core.validate_style_document(style)
+
+
+def test_rounded_cutaway_requires_isolated_colored_surface():
+    from blender_render.presets import preset_path
+    style=json.loads(preset_path('northern_nights_cutaway').read_text())
+    core.validate_style_document(style)
+    surface=next(s for s in style['styles'] if s['style']=='surface')
+    surface['ligand_cutout_isolate']=False
+    with pytest.raises(core.StyleValidationError,match='isolated surface'):
+        core.validate_style_document(style)

@@ -244,6 +244,12 @@ def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append("'view.viewport_px' must be [width, height] when provided.")
 
     states = payload.get("state_coordinates")
+    contacts = payload.get("polar_contacts")
+    if contacts is not None and (not isinstance(contacts, list) or len(contacts) > 256 or any(
+            not isinstance(pair, list) or len(pair) != 2 or any(
+                not isinstance(key, str) or len(key) > 128 or key.count(':') != 3 for key in pair)
+            for pair in contacts)):
+        errors.append("polar_contacts must contain at most 256 pairs of bounded atom keys")
     if states is not None:
         errors.extend(_state_coordinate_errors(states))
 
@@ -287,6 +293,25 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
         if "wireframe_spacing_angstrom" in style and "wireframe_width_angstrom" not in style:
             errors.append(f"{prefix}.wireframe_spacing_angstrom requires wireframe_width_angstrom")
         reference = style.get("material")
+        atom_attribute = style.get("atom_color_attribute", "")
+        geometry_cfg = style_doc.get("geometry", {})
+        if atom_attribute and isinstance(geometry_cfg, dict):
+            if str(atom_attribute).startswith("Sequence") and not geometry_cfg.get("chain_sequence_palettes"):
+                errors.append(f"{prefix}.atom_color_attribute requires geometry.chain_sequence_palettes")
+            if atom_attribute in ("ElementColor", "SequenceElementColor") and not geometry_cfg.get("element_palette"):
+                errors.append(f"{prefix}.atom_color_attribute requires geometry.element_palette")
+        if style.get("ligand_cutout_mode") == "ellipsoid":
+            if style.get("style") != "surface" or style.get("ligand_cutout_isolate") is not True or style.get("ligand_cutout_selection", False):
+                errors.append(f"{prefix}: ellipsoid requires an isolated surface without atom selection clipping")
+            if style.get("ligand_cutout_frame_mode") != "camera":
+                errors.append(f"{prefix}: ellipsoid requires camera framing")
+            surface_material = materials.get(reference, {}) if isinstance(materials, dict) and isinstance(reference, str) else {}
+            if not isinstance(surface_material, dict) or not surface_material.get("color_attribute"):
+                errors.append(f"{prefix}: ellipsoid requires a surface color_attribute")
+            output = style_doc.get("output", {})
+            animation_cfg = output.get("animation", {}) if isinstance(output, dict) else {}
+            if style.get("ligand_cutout_mirror") or (isinstance(animation_cfg, dict) and animation_cfg.get("lid")):
+                errors.append(f"{prefix}: ellipsoid does not support mirrored cuts or animated lids")
         if isinstance(reference, str) and isinstance(materials, dict) and reference not in materials:
             errors.append(f"{prefix}.material references '{reference}', which is not defined in materials")
         for key in ("selection", "fallback_selection", "ligand_cutout_selection"):
@@ -342,14 +367,31 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"materials.{name}.color_attribute ElementColor requires geometry.element_palette")
         if material.get("color_attribute") and gradient:
             errors.append(f"materials.{name}: choose color_attribute or color_gradient, not both")
+        for field in ("color_attribute", "emission_attribute"):
+            attribute = material.get(field, "")
+            geometry_cfg = geometry if isinstance(geometry, dict) else {}
+            if isinstance(attribute, str) and attribute.startswith("Sequence") and not geometry_cfg.get("chain_sequence_palettes"):
+                errors.append(f"materials.{name}.{field} requires geometry.chain_sequence_palettes")
+            if attribute in ("ElementColor", "SequenceElementColor") and not geometry_cfg.get("element_palette"):
+                errors.append(f"materials.{name}.{field} requires geometry.element_palette")
+        if material.get("emission_attribute") and material.get("edge_highlight"):
+            errors.append(f"materials.{name}: emission_attribute cannot be combined with edge_highlight")
+        if material.get("emission_halo") and not material.get("emission_strength", 0):
+            errors.append(f"materials.{name}.emission_halo requires positive emission_strength")
         glow = material.get("glow")
         if isinstance(glow, dict) and float(glow.get("strength", 0)) > 0 and "emission_color" not in material:
             errors.append(f"materials.{name}.glow requires emission_color")
     animation = style_doc.get("output", {}).get("animation") if isinstance(style_doc.get("output"), dict) else None
+    material_rows = list(materials.values()) if isinstance(materials, dict) else []
+    halos = [m["emission_halo"] for m in material_rows if isinstance(m, dict) and "emission_halo" in m]
+    if halos and (any(h != halos[0] for h in halos) or any(m.get("glow") for m in material_rows if isinstance(m, dict))):
+        errors.append("emission_halo uses one shared emission pass: settings must agree and glow cannot be combined")
     if isinstance(animation, dict) and animation.get("lid") and not any(
             isinstance(entry, dict) and entry.get("ligand_cutout_radius", 0) for entry in style_doc.get("styles", [])):
         errors.append("output.animation.lid needs a preset with a ligand cutout, such as cyan_mint_cutaway")
     if isinstance(animation, dict) and animation.get("states"):
+        if isinstance(geometry, dict) and geometry.get("polar_contacts"):
+            errors.append("state animations cannot use static polar contact guides")
         for entry in style_doc.get("styles", []):
             if isinstance(entry, dict) and (entry.get("ligand_cutout_radius", 0) or "wireframe_width_angstrom" in entry):
                 errors.append(f"styles.{entry.get('name')}: state animations cannot follow cut surfaces or wire overlays; choose a preset without them")
@@ -443,6 +485,8 @@ def _materialize_payload_bundle(payload: dict[str, Any], run_id: str) -> tuple[P
     ss_hints = payload.get("ss_hints")
     if isinstance(ss_hints, dict):
         view_doc["ss_hints"] = ss_hints
+    if "polar_contacts" in payload:
+        view_doc["polar_contacts"] = payload["polar_contacts"]
     states = payload.get("state_coordinates")
     if isinstance(states, dict):
         states_path = bundle_dir / "states.json"

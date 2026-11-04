@@ -1001,6 +1001,12 @@ def _set_world(scene: bpy.types.Scene, world_cfg: dict[str, Any]) -> None:
 
 def _configure_glow_compositor(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> None:
     """Add one optional fog-glow pass for materials that explicitly request it."""
+    halos = [m["emission_halo"] for m in style_doc.get("materials", {}).values()
+             if isinstance(m, dict) and m.get("emission_halo")]
+    if halos:
+        from blender_render.emission_halo import configure_emission_halo
+        configure_emission_halo(scene, halos[0])
+        return
     glows = [material.get("glow") for material in style_doc.get("materials", {}).values()
              if isinstance(material, dict) and isinstance(material.get("glow"), dict)]
     if not glows:
@@ -1644,6 +1650,27 @@ def _add_style(load_result: Any, style_cfg: dict[str, Any], selection: Any,
     before = {node.as_pointer() for node in load_result.tree.nodes}
     result = load_result.add_style(_native_style_from_cfg(style_cfg), selection=selection,
         color=None, name=style_cfg.get("name"), material=material)
+    if style_cfg.get("atom_color_attribute"):
+        tree = load_result.tree
+        branches = [n for n in tree.nodes if n.as_pointer() not in before
+                    and getattr(getattr(n, "node_tree", None), "name", "").startswith("Style ")
+                    and n.inputs.get("Atoms") is not None]
+        if not branches:
+            raise RuntimeError("Molecular Nodes branch missing for atom_color_attribute")
+        for branch in branches:
+            socket = branch.inputs["Atoms"]
+            if not socket.is_linked:
+                raise RuntimeError("Molecular Nodes branch has no atom input")
+            source = socket.links[0].from_socket
+            attribute = tree.nodes.new("GeometryNodeInputNamedAttribute")
+            attribute.data_type = "FLOAT_COLOR"
+            attribute.inputs["Name"].default_value = style_cfg["atom_color_attribute"]
+            store = tree.nodes.new("GeometryNodeStoreNamedAttribute")
+            store.data_type = "FLOAT_COLOR";store.domain = "POINT"
+            store.inputs["Name"].default_value = "Color"
+            tree.links.new(source, store.inputs["Geometry"])
+            tree.links.new(attribute.outputs["Attribute"], store.inputs["Value"])
+            tree.links.new(store.outputs["Geometry"], socket)
     if "nucleic_base_scale" in style_cfg:
         from blender_render.reference_effects import scale_nucleic_bases
         branches = [node for node in load_result.tree.nodes if node.as_pointer() not in before
@@ -3281,8 +3308,29 @@ def _apply_surface_ligand_cutout(
     seal_region_scale: float = 2.0,
     runtime_info: dict[str, Any] | None = None,
     lid_transparency: float | None = None,
+    tilt_deg: float = 0,
+    selection_indices: list[int] | None = None,
 ) -> bool:
     mode = str(cutout_mode or "planes").strip().lower()
+    if mode == "ellipsoid":
+        from blender_render.rounded_cutaway import apply
+        anchor_result = anchor_load_result if anchor_load_result is not None else load_result
+        anchor_target = anchor_object if anchor_object is not None else target_obj
+        # The pinned MN atom mesh uses angstrom * .01. Rendered cartoon bounds
+        # are not an accurate scale estimator for the original atom coordinates.
+        center = anchor_target.matrix_world @ (ligand_anchor * .01)
+        scale = .01
+        x, front, up, _ = _resolve_cutout_frame_axes(
+            frame_mode="camera", frame_axes_cfg=None, ligand_anchor=center,
+            interface_center=interface_center, camera_axis=camera_axis, camera_up=camera_up,
+            flatten_z=False, allow_preset_fallback=False)
+        tilt = Matrix.Rotation(math.radians(tilt_deg), 3, x)
+        up, front = tilt @ up, tilt @ front
+        center += front * offset * scale
+        return apply(target_obj, center, (x, up, front),
+                     (radius * width_scale * scale, radius * height_scale * scale, radius * depth_scale * scale),
+                     selection_indices, (cap_material_cfg or {}).get("color_attribute", "Color"),
+                     runtime_info if runtime_info is not None else {})
     return _apply_surface_ligand_cutout_planes(
         load_result=load_result,
         target_obj=target_obj,
@@ -3836,7 +3884,7 @@ def _render(args: argparse.Namespace) -> None:
             if cutout_cap_mode_value in {"panel", "none"}:
                 cutout_cap_mode = cutout_cap_mode_value
             cutout_mode_value = str(style_cfg.get("ligand_cutout_mode", "planes")).strip().lower()
-            if cutout_mode_value in {"planes"}:
+            if cutout_mode_value in {"planes", "ellipsoid"}:
                 cutout_mode = cutout_mode_value
             cutout_frame_axes_raw = style_cfg.get("ligand_cutout_frame_axes")
             if isinstance(cutout_frame_axes_raw, dict):
@@ -4093,6 +4141,8 @@ def _render(args: argparse.Namespace) -> None:
                                 seal_region_scale=cutout_seal_region_scale,
                                 runtime_info=cutout_runtime_info,
                                 lid_transparency=cutaway_lid_transparency,
+                                tilt_deg=float(style_cfg.get("ligand_cutout_tilt_deg", 0)),
+                                selection_indices=selection_indices,
                             )
                             cutout_applied = cutout_applied or bool(applied)
                             surface_cutout_manifest_entries.append(cutout_runtime_info)
@@ -4232,6 +4282,11 @@ def _render(args: argparse.Namespace) -> None:
                 f"materials={material_slots}"
             )
 
+    contact_cfg = style_doc.get("geometry", {}).get("polar_contacts")
+    if contact_cfg and view_doc.get("polar_contacts"):
+        from blender_render.polar_contacts import build as build_contacts
+        created_objects.extend(build_contacts(_get_atom_array(load_result), base_obj,
+                                              view_doc["polar_contacts"], contact_cfg))
     if not created_objects and base_obj is not None:
         if not styled_geometry_applied:
             raise RuntimeError(

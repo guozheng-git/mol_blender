@@ -38,9 +38,9 @@ _PRESETS = (
     ("cyan_candy_mesh", "style_preset_cyan_candy_mesh.json", "cyan_candy_mesh.png",
      "Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes; A/B surfaces, C/D tubes.", (), "frosted"),
     ("northern_nights", "style_preset_northern_nights.json", "northern_nights.png",
-     "Teal-blue-violet protein ribbons with luminous mint chain B on a pale mint/lavender background.", (), "clay"),
+     "Sequence-colored teal-blue-violet ribbons, mint chain B and atom-colored phosphoresidue glow on a bright background.", (), "clay"),
     ("northern_nights_cutaway", "style_preset_northern_nights_cutaway.json", "northern_nights_cutaway.png",
-     "Northern Nights protein cutaway with mint chain B and element-colored pocket sticks on black.", (), "clay"),
+     "Rounded STAT-style pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.", (), "clay"),
 )
 DEFAULT_PRESET = "mint_sky_assembly"
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
@@ -70,6 +70,18 @@ def required_capabilities(style: dict) -> list[str]:
                 required.add(capability)
     if "element_palette" in style.get("geometry", {}):
         required.add("geometry.element_palette")
+    if "chain_sequence_palettes" in style.get("geometry", {}):
+        required.add("geometry.chain_sequence_palettes")
+    if "polar_contacts" in style.get("geometry", {}):
+        required.add("geometry.polar_contacts")
+    if any(s.get("atom_color_attribute") for s in style["styles"]):
+        required.add("geometry.branch_atom_colors")
+    if any(m.get("emission_attribute") for m in style["materials"].values()):
+        required.add("material.attribute_emission")
+    if any(m.get("emission_halo") for m in style["materials"].values()):
+        required.add("material.emission_halo")
+    if any(s.get("ligand_cutout_mode") == "ellipsoid" for s in style["styles"]):
+        required.add("representation.rounded_cutaway")
     world = style.get("world", {})
     if "gradient_direction" in world:
         required.add("world.directional_gradient")
