@@ -1000,3 +1000,17 @@ reference 0.918; cyan highlight P90 improved from 0.735 to 0.772 versus referenc
 balance is not an exact match: translucent patch boundaries, irregular mesh,
 and the different molecular arrangement remain visible. Preset selectors still
 require adaptation for other structures.
+
+Helix-only follow-up retained the accepted cyan surface materials and styles,
+lights, world and renderer settings. Two sequential 840×650, 128-sample CPU
+renders were inspected against the original reference: fuller rounded ribbons
+and broader satin highlights, then a richer pink and restored gloss. Final
+ribbon width/thickness are 2.35/0.9; roughness 0.27, specular 0.45, coat 0.2.
+Local catalog revision 8 passed schema validation and fresh-process JSON reload;
+its preset render reproduced the direct JSON render pixels exactly. CIF-first
+input and DSS were confirmed. Evidence is in ignored local `helix-*` artifacts.
+Camera settings/orientation stayed fixed, but automatic fit changed translation
+slightly and orthographic scale by about 0.006 percent as ribbon bounds changed.
+Blob appearance is therefore not claimed pixel-identical. Different helix
+placement, underside brightness and highlight positions remain approximate.
+No renderer code or desktop Blender scene was modified.
