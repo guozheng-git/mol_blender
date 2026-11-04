@@ -7,6 +7,8 @@ from datetime import datetime
 import pwd
 import time
 
+from .common import one_line
+
 
 class SubmissionUnknown(RuntimeError):
     """A job may have been accepted. Never resubmit automatically."""
@@ -21,11 +23,29 @@ class Slurm:
 
     def run(self, command):
         # Do not inherit SBATCH_*, APPTAINER_*, Python paths or service credentials.
-        env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+        # PATH holds only the directories of the administrator-configured tools
+        # (module installs often keep helpers beside them) plus the system dirs.
+        env = {'PATH': self.search_path(), 'LANG': 'C.UTF-8'}
         for name in ('HOME', 'USER', 'LOGNAME', 'SLURM_CONF'):
             if name in os.environ:
                 env[name] = os.environ[name]
         return subprocess.run(command, env=env, capture_output=True, text=True, timeout=30, check=True)
+
+    def run_checked(self, command, what):
+        """run() for preflight checks: failures become a ValueError naming the
+        step and carrying the tool's own message."""
+        try:
+            return self.run(command)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(f'{what} timed out after {exc.timeout} seconds') from exc
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(f'{what} failed: ' + (one_line(exc.stderr or exc.stdout) or 'no message')) from exc
+        except OSError as exc:
+            raise ValueError(f'{what} failed: {exc}') from exc
+
+    def search_path(self):
+        directories = [os.path.dirname(getattr(self.config, name)) for name in self.config.EXECUTABLES]
+        return ':'.join(dict.fromkeys(directories + ['/usr/bin', '/bin']))
 
     def container_command(self, directory):
         c = self.config
@@ -34,7 +54,7 @@ class Slurm:
                    '--pwd', '/job']
         if c.gpus:
             command.append('--nv')
-        runtime = str(c.runtime_home or '/opt/studio-runtime')
+        runtime = c.runtime_root
         if c.runtime_home:
             command.extend(['--bind', f'{runtime}:{runtime}:ro',
                             '--env', 'STRUCTURE_STUDIO_HOME=' + runtime,
@@ -53,28 +73,60 @@ class Slurm:
         if self.config.gpus:
             launch += 'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:?Slurm did not assign a GPU}"\n'
         launch += 'exec "$@"'
+        # The step repeats the job's GPU request: with --gpus (per-job TRES)
+        # some Slurm configurations do not hand the device to a step that
+        # does not ask for it, leaving CUDA_VISIBLE_DEVICES unset.
         task = [self.config.srun, '--export=ALL', '--ntasks=1',
-                f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores',
+                f'--cpus-per-task={self.config.cpus}', '--cpu-bind=cores', *self.gpu_options(),
                 '/bin/sh', '-c', launch, 'blender-cluster', *command]
-        return '#!/bin/sh\nset -eu\numask 077\nexec ' + shlex.join(task) + '\n'
+        # Record the compute node's container runtime for acceptance evidence.
+        version = shlex.quote(str(self.config.apptainer)) + ' --version > apptainer.version 2>&1 || true\n'
+        return '#!/bin/sh\nset -eu\numask 077\n' + version + 'exec ' + shlex.join(task) + '\n'
 
-    def submit(self, directory, identifier):
+    def gpu_options(self):
         c = self.config
-        path = directory / 'job.sh'
-        path.write_text(self.script(directory))
-        path.chmod(0o700)
+        if not c.gpus:
+            return []
+        count = (c.gpu_type + ':1') if c.gpu_type else '1'
+        return ['--gres=gpu:' + count] if c.gpu_request == 'gres' else ['--gpus=' + count]
+
+    def batch_options(self, directory, identifier):
+        """Every sbatch option of a real submission; shared with the doctor dry run."""
+        c = self.config
         hours, remainder = divmod(c.walltime_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        command = [c.sbatch, '--parsable', '--export=NIL', '--nodes=1', '--ntasks=1',
+        options = ['--export=NIL', '--nodes=1', '--ntasks=1',
             f'--cpus-per-task={c.cpus}', f'--mem={c.memory_mb}M',
             f'--time={hours:02}:{minutes:02}:{seconds:02}', '--job-name=br-' + identifier,
             '--chdir=' + str(directory), '--output=' + str(directory / 'slurm.log'),
             '--error=' + str(directory / 'slurm.log'), '--open-mode=append']
-        for key in ('partition', 'account', 'qos'):
+        for key in ('partition', 'account', 'qos', 'constraint'):
             if getattr(c, key):
-                command.append('--' + key + '=' + getattr(c, key))
-        if c.gpus:
-            command.append('--gres=gpu:1')
+                options.append('--' + key + '=' + getattr(c, key))
+        return options + self.gpu_options()
+
+    def write_script(self, directory):
+        path = directory / 'job.sh'
+        path.write_text(self.script(directory))
+        path.chmod(0o700)
+        return path
+
+    def dry_run(self, directory):
+        """Ask Slurm to validate the exact request shape without queuing a job."""
+        path = self.write_script(directory)
+        options = self.batch_options(directory, 'doctor')
+        result = self.run_checked([self.config.sbatch, '--test-only', *options, str(path)], 'Slurm dry run')
+        # sbatch --test-only reports the estimated start on stderr.
+        message = one_line(result.stderr or result.stdout)
+        shown = ('--partition', '--account', '--qos', '--constraint', '--gres', '--gpus',
+                 '--cpus-per-task', '--mem', '--time')
+        return {'accepted': True, 'message': message,
+                'options': [o for o in options if o.split('=')[0] in shown]}
+
+    def submit(self, directory, identifier):
+        c = self.config
+        path = self.write_script(directory)
+        command = [c.sbatch, '--parsable', *self.batch_options(directory, identifier)]
         try:
             result = self.run(command + [str(path)])
         except subprocess.TimeoutExpired as exc:

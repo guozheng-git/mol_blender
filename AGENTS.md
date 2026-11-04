@@ -24,6 +24,8 @@ default; Slurm jobs keep one independent Blender process per submitted request.
 - Keep original reference pixels separate from previews. Inspect both before
   claiming visual similarity. Use `.agents/skills/recreate-render-preset/SKILL.md`
   for reference-image-to-preset requests.
+- Use `.agents/skills/cluster-onboarding/SKILL.md` to configure the cluster service
+  for a new Slurm site. Keep site differences in `server.json`, not launcher code.
 - Write manifests and resolved styles; clean temporary source snapshots unless
   debugging retention was requested. Never commit research data or local paths.
 - Saved Blender scenes carry data-only preset editing metadata. Disable embedded

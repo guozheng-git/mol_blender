@@ -65,6 +65,11 @@ def atomic_json(path, value):
         Path(name).unlink(missing_ok=True)
 
 
+def one_line(text, limit=500):
+    """Collapse command output to a single bounded line for error messages."""
+    return ' '.join((text or '').split())[:limit]
+
+
 def digest_file(path):
     digest = hashlib.sha256()
     with Path(path).open('rb') as handle:

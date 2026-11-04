@@ -1062,3 +1062,39 @@ outside the checkout; qualified/unqualified preset lookup, schema validation,
 Gallery JSON/PNG hashes were checked. Relevant schema, reference, local and
 authoring tests passed (101 tests). The retained render/reload checks above
 establish visual behavior; this promotion did not rerun Blender.
+
+# Cluster onboarding preflight (2026-11-03, local only)
+
+Added site-configurable Slurm GPU requests (`gpu_request`, `gpu_type`,
+`constraint`), an Apptainer version floor (1.1; SingularityCE/legacy Singularity
+warn as untested) and an `sbatch --test-only` dry run to `cluster doctor`. Each
+batch script now records the compute node's `apptainer --version`, which
+`validate_cluster_slurm.py` parses (an error message there fails acceptance) into
+`evidence.json`. The acceptance preflight calls `cluster doctor` itself and stores
+its report under `evidence.doctor`. The batch step repeats the job's GPU request,
+scheduler commands search only the configured tool directories plus
+`/usr/bin:/bin`, and the doctor dry run uses a directory inside the spool. The onboarding steps are
+in `.agents/skills/cluster-onboarding/SKILL.md`. Defaults still produce
+`--gres=gpu:1`, so existing `server.json` files are unchanged in behavior.
+
+Mac source tests: **485 passed, 50 skipped** (real PyMOL, browser and built-wheel
+checks were not enabled for this run). The cluster tests use a scheduler
+substitute. **Not yet run on a real cluster:** `cluster doctor` against real
+`apptainer --version` output and real `sbatch --test-only`, `--gpus`/typed-GRES
+jobs, step GPU visibility under `--gpus`, and compute-node version recording in
+`validate_cluster_slurm.py`. The 1.1 floor is provisional; the oldest Apptainer
+compatible with the job flags has not been measured.
+
+## PR #6 integration (2026-11-04)
+
+Reviewed the four cluster-onboarding commits and merged current main_merged
+into the PR branch. The sole conflict appended different validation entries;
+both histories were retained. The combined source suite passed: **490 passed,
+50 skipped**. The first run exposed a stale Structure Studio preset catalog
+from the prior cyan-candy addition; regenerated its JSON/Markdown references
+and reran the full suite successfully. Built and installed the combined wheel
+in a fresh environment outside the checkout; doctor module import, runtime
+version parsing, pinned Python compatibility, typed GPU options and presence
+of the cyan-candy preset passed. No live server was changed or real Slurm job
+submitted in this integration check. The PR author reports real-site CPU/GPU
+acceptance in the PR description; that is distinct from these local checks.
