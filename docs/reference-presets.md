@@ -1,6 +1,6 @@
 # Reference presets
 
-Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 16 choices using actual local Blender renders of public structures.
+Eight additional JSON presets extend the existing renderer. The six original preset identifiers and JSON files remain unchanged. PNG remains the default; `--save-blend` or `output.save_blend=true` explicitly requests a scene. The [example gallery metadata](../examples/presets/gallery.json) shows all 17 choices using actual local Blender renders; source provenance is recorded for each example.
 
 | Reference | Preset / alias | Example | Match and scope |
 |---|---|---|---|
@@ -30,7 +30,7 @@ blender-render render structure.cif --preset neon_duplex_hero --no-preserve-view
 blender-render render pose.pse --style-json edited-style.json -o custom.png
 ```
 
-Named presets preserve the input pose by default. `--no-preserve-view` selects the preset's authored camera; explicit camera overrides and full JSON retain their requested settings. Some styles use `direction_source=pymol`, so the initial orientation still matters. The gallery metadata stores the public example view and exact render dimensions; a preset alone cannot imply the same pose for an unrelated structure. Full JSON and preset-plus-overrides share the same resolver. Objects merge recursively; arrays such as `styles` replace in full.
+Named presets preserve the input pose by default. `--no-preserve-view` selects the preset's authored camera; explicit camera overrides and full JSON retain their requested settings. Some styles use `direction_source=pymol`, so the initial orientation still matters. The gallery metadata stores each example view and exact render dimensions; a preset alone cannot imply the same pose for an unrelated structure. Full JSON and preset-plus-overrides share the same resolver. Objects merge recursively; arrays such as `styles` replace in full.
 
 The same installed PyMOL is used throughout. Its `pymol2` API creates isolated instances for file export; rendering from the running PyMOL application uses `cmd` directly. These changes do not add a second PyMOL dependency or replace the application's session.
 
@@ -58,9 +58,10 @@ All controls use the existing schema and scene builder. Unsupported keys, zero g
 ## Evidence
 
 See [local validation](validation.md) for checks executed on this branch.
-[Gallery metadata](../examples/presets/gallery.json) retains the upstream public
-coordinate URLs/hashes, preset hashes, views, sizes and image hashes. Those gallery
-assets are historical examples, not newly verified renders from this branch.
+[Gallery metadata](../examples/presets/gallery.json) retains source provenance,
+preset hashes, views, sizes and image hashes. Public examples include coordinate
+URLs/hashes; the user-selected STAT previews exclude their molecular source files.
+Validation dates and scope are recorded separately for each addition.
 
 Use the configured Molecular Nodes environment and pinned CCD. A successful
 local render does not by itself verify image display in Claude or Codex.
@@ -91,28 +92,45 @@ The gallery preserves the approved 840×650, 128-sample render. The preset is
 available as `cyan_candy_mesh` or `builtin/cyan_candy_mesh`; it is distinct from
 any personal `user/cyan_candy_mesh` copy.
 
-## Northern Nights
+## Northern Nights: bright ribbons and dark cutaway
 
-`northern_nights` adapts the Northern Nights paper-render look: satin teal,
-midnight-blue, violet and purple ribbon cartoons, luminous mint peptide/sticks,
-and a pale mint/lavender diagonal background. The gallery uses public **1SPS**,
-with its saved example pose; no private research structure or animation is included.
+Two separate presets share the Northern Nights palette and element coloring:
+
+- `northern_nights`: satin teal/blue/violet protein ribbons and a luminous mint
+  peptide on a bright mint/lavender background.
+- `northern_nights_cutaway`: the same molecular colors with a protein surface
+  cutaway, nearby residue sticks and a black background.
+
+The README previews use the user-selected STAT example and the viewing direction
+from its supplied rocking animation, fitted to show the complete complex rather
+than the reference close-up crop. Molecular coordinates, sessions, source
+animations and private paths are not included. The previews replace the earlier
+1SPS demonstration; no public PDB identity is asserted for the selected example.
 
 ```sh
-blender-render render prepared-pose.pse --preset northern_nights -o northern-nights.png
-# Optional rigid turntable, not a molecular trajectory:
-blender-render render prepared-pose.pse --preset northern_nights --animation 360 -o northern-nights.gif
+blender-render render prepared-pose.pse --preset northern_nights -o bright.png
+blender-render render prepared-pose.pse --preset northern_nights_cutaway -o cutaway.png
 ```
 
-In PyMOL, use `blender_render preset=northern_nights`. Chain D is the mint peptide
-in the public example; other protein chains receive the teal-to-purple spatial
-gradient. Phosphoresidues PTR/SEP/TPO are also shown as mint sticks, excluding
-backbone N/C/O. For other complexes, edit both cartoon selection queries to
-choose the intended peptide chain. Colors are encoded for the renderer's linear
-shader inputs; they need not resemble the display palette as hexadecimal swatches.
+In PyMOL, use `blender_render preset=northern_nights` or
+`blender_render preset=northern_nights_cutaway`. Chain B is the mint peptide;
+other protein chains receive the spatial teal-to-purple gradient. Adapt the
+cartoon and surface selections together for another complex. The cutaway needs
+a valid ligand/phosphoresidue anchor and suitable pocket dimensions; it is not
+an automatic identification of a binding site. It cuts only the surface, keeping
+the peptide cartoon intact. A 5 Å neighborhood selects complete pocket residues.
 
-This portable preset uses the shared renderer only. Its spatial gradient and
-native glow approximate the original residue-by-residue coloring and custom
-Gaussian emission halo. It does not add the original scene's computed hydrogen
-bond guides, custom atom-color emission, or paper-specific topology patches.
-It is a reusable style adaptation, not an exact recreation of that scene.
+PTR/SEP/TPO sidechain sticks include Cα but exclude backbone N/C/O. Carbon is
+mint, nitrogen blue, oxygen red, sulfur gold and phosphorus orange. The sticks
+use `ElementColor` without uniform mint emission, preserving their element
+colors; the peptide cartoon retains mint glow. In the selected STAT input,
+PTR B11 has one Cα and both peptide bonds (GLY 10 → PTR 11 → VAL 12).
+The saved Blender atom mesh also retains both bonds, one Cα, and peptide/cartoon
+selection membership for PTR B11. This does not establish rendered continuity for
+every PTR/TPO/SEP input; those residues must remain part of the input chain.
+
+These presets use the shared renderer. The spatial gradient/native glow
+approximate the original residue-by-residue colors/custom Gaussian halo. Custom
+hydrogen-bond dashes, atom-color emission and paper-specific topology patches
+are not included. No molecular coordinates are rearranged. Shader palette values
+are encoded for linear inputs, so the JSON swatches differ from display colors.

@@ -828,30 +828,28 @@
   },
   {
     "preset": "northern_nights",
-    "description": "Satin teal-blue-violet protein with luminous mint peptide, adapted from the Northern Nights look.",
-    "source_id": "1SPS",
-    "coordinate_url": "https://files.rcsb.org/download/1SPS.cif",
-    "coordinate_sha256": "21c2eb56d7f3fec360359de5c525644828fcebbf74d81eb12b6c341efde7bf70",
-    "source_pose": "examples/1sps_pose.pse",
+    "description": "Satin teal-blue-violet ribbons and mint chain B on a bright background.",
+    "source_id": "STAT example (user-selected)",
+    "source_note": "User-selected STAT animation example. No public PDB identity is asserted; molecular coordinates, sessions and original animation are excluded.",
     "view": {
       "pymol_view": [
-        0.7286985516548157,
-        -0.6336627006530762,
-        -0.2597499191761017,
-        0.6036470532417297,
-        0.4151865839958191,
-        0.6806104183197021,
-        -0.32343271374702454,
-        -0.6527570486068726,
-        0.6850544214248657,
+        -0.5775976181030273,
+        -0.7917866706848145,
+        0.19863229990005493,
+        0.7239890694618225,
+        -0.3844592273235321,
+        0.572739839553833,
+        -0.37712177634239197,
+        0.4746206998825073,
+        0.7953076362609863,
         0.0,
         0.0,
-        -142.9575653076172,
-        71.72372436523438,
-        92.1063232421875,
-        30.55997085571289,
-        112.70883178710938,
-        173.206298828125,
+        -146.73036193847656,
+        -0.5775203704833984,
+        0.49017333984375,
+        1.0562095642089844,
+        115.68333435058594,
+        177.7773895263672,
         20.0
       ],
       "fov_deg": 20.0,
@@ -861,17 +859,18 @@
         480
       ]
     },
+    "framing": "Reference viewing direction with automatic fit of the complete complex, rather than its close-up crop.",
     "preset_json": "blender_render/style_preset_northern_nights.json",
-    "preset_file_sha256": "3fc1e0c84b045bd6e6004317e4bb866c86f50a0e9b05f65cf1aa2e4ba0ecdfb0",
-    "resolved_style_sha256": "7e5025aab983ae8d767c23644d0bbac1d8e5febb76d4ee1eadedb8b93a60a853",
+    "preset_file_sha256": "d9c5f0d9449761368e67ed04f3101178bbeacc3690eb27feb75477507f87f729",
+    "resolved_style_sha256": "278901aa32bdd7477eda1f02c5abe275cf2fc8411f294b994cecd20ffba296b4",
     "dimensions": [
       900,
       900
     ],
     "samples": 96,
     "thumbnail": "examples/presets/northern_nights.png",
-    "thumbnail_sha256": "a3e993e0faa8f6f401c4d111d5137f86434a728d664230c12dc15df0823febe2",
-    "full_png_sha256": "a3e993e0faa8f6f401c4d111d5137f86434a728d664230c12dc15df0823febe2",
+    "thumbnail_sha256": "747cf584db29a4001e7636cccc407d70c26482e93bb9e7a0987c8a3771049df3",
+    "full_png_sha256": "747cf584db29a4001e7636cccc407d70c26482e93bb9e7a0987c8a3771049df3",
     "runtime": {
       "blender": "5.0.1",
       "molecularnodes": "4.5.10",
@@ -880,6 +879,61 @@
       "biotite": "1.6.0"
     },
     "scene_requested": false,
-    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen bond guides or topology patches."
+    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen-bond guides or topology patches."
+  },
+  {
+    "preset": "northern_nights_cutaway",
+    "description": "Northern Nights surface cutaway and element-colored pocket sticks on black.",
+    "source_id": "STAT example (user-selected)",
+    "source_note": "User-selected STAT animation example. No public PDB identity is asserted; molecular coordinates, sessions and original animation are excluded.",
+    "view": {
+      "pymol_view": [
+        -0.5775976181030273,
+        -0.7917866706848145,
+        0.19863229990005493,
+        0.7239890694618225,
+        -0.3844592273235321,
+        0.572739839553833,
+        -0.37712177634239197,
+        0.4746206998825073,
+        0.7953076362609863,
+        0.0,
+        0.0,
+        -146.73036193847656,
+        -0.5775203704833984,
+        0.49017333984375,
+        1.0562095642089844,
+        115.68333435058594,
+        177.7773895263672,
+        20.0
+      ],
+      "fov_deg": 20.0,
+      "orthoscopic": true,
+      "viewport_px": [
+        640,
+        480
+      ]
+    },
+    "framing": "Reference viewing direction with automatic fit of the complete complex, rather than its close-up crop.",
+    "preset_json": "blender_render/style_preset_northern_nights_cutaway.json",
+    "preset_file_sha256": "aa595f7e47da9a78521dec65c1f9b3187265d7ffc9d6dc9261ca590848d0d7a9",
+    "resolved_style_sha256": "1bf1f85f742adbab5a23adcefeedec6d31b05f3e09fcb2c73157158a00be1c3b",
+    "dimensions": [
+      900,
+      900
+    ],
+    "samples": 96,
+    "thumbnail": "examples/presets/northern_nights_cutaway.png",
+    "thumbnail_sha256": "b79d3350ea85fde665b7e25d20c36b1499306e1a46893809d2644a59b94d5381",
+    "full_png_sha256": "b79d3350ea85fde665b7e25d20c36b1499306e1a46893809d2644a59b94d5381",
+    "runtime": {
+      "blender": "5.0.1",
+      "molecularnodes": "4.5.10",
+      "python": "3.11.13",
+      "numpy": "1.26.4",
+      "biotite": "1.6.0"
+    },
+    "scene_requested": false,
+    "limitations": "Spatial rather than sequence coloring; native glow rather than custom Gaussian halo; no custom hydrogen-bond guides or topology patches."
   }
 ]

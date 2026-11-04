@@ -1118,3 +1118,36 @@ passed. Refreshed the Structure Studio plugin catalog. Full source tests:
 **492 passed, 50 skipped**. No desktop Blender session or running cluster service
 was modified; no animation execution was newly validated. Local evidence is
 retained in ignored `renders/style-onboarding/northern_nights/` artifacts.
+
+## Northern Nights STAT previews and cutaway (2026-11-04)
+
+Kept two separate presets: bright `northern_nights` ribbons and black
+`northern_nights_cutaway` with an isolated protein surface cut and complete
+nearby residue sticks. Both select chain B as the mint peptide. PTR/SEP/TPO
+sticks now use an explicit element palette and `ElementColor`, with uniform
+mint emission disabled on those sticks. The shared renderer is unchanged.
+
+Replaced the earlier 1SPS gallery example with the user-selected STAT input.
+Inspected the supplied animation frame and its saved scene, then transferred
+its viewing direction relative to the molecule. Corrected a transposed camera
+matrix after inspecting the first renders. Both final 900×900, 96-sample CPU
+renders loaded the built-in preset in fresh Blender processes and were visually
+inspected against the references. Framing fits the whole complex rather than
+copying the reference's close-up crop. Manifests confirm CIF-first export, DSS,
+Blender 5.0.1 and Molecular Nodes 4.5.10; the cutaway manifest confirms a
+camera-oriented cut applied to the isolated surface. The presets approximate
+the source spatial colors/glow and omit its custom hydrogen-bond dashes.
+
+For PTR B11, the selected PyMOL source contains one Cα and both boundary bonds:
+GLY 10 C → PTR 11 N and PTR 11 C → VAL 12 N. Reopening the saved bright Blender
+scene with scripts disabled also confirmed one Cα, peptide/cartoon selection
+membership and both boundary edges in its atom mesh. This is evidence for this
+input, not a general TPO/SEP render-continuity test.
+
+Full source suite: **494 passed, 50 skipped**. Built a wheel and installed it in
+a fresh environment outside the checkout; both preset aliases, JSON equality,
+schema validation, the 17-entry catalog and unchanged default preset passed.
+Refreshed the Structure Studio catalog and gallery hashes. No desktop window
+was launched and no cluster deployment or Slurm execution was changed. Molecular
+coordinates, sessions, source animations and private paths remain outside tracked
+files; only the requested presets and newly rendered previews are included.
