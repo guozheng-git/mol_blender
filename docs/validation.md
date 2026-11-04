@@ -1084,3 +1084,17 @@ substitute. **Not yet run on a real cluster:** `cluster doctor` against real
 jobs, step GPU visibility under `--gpus`, and compute-node version recording in
 `validate_cluster_slurm.py`. The 1.1 floor is provisional; the oldest Apptainer
 compatible with the job flags has not been measured.
+
+## PR #6 integration (2026-11-04)
+
+Reviewed the four cluster-onboarding commits and merged current main_merged
+into the PR branch. The sole conflict appended different validation entries;
+both histories were retained. The combined source suite passed: **490 passed,
+50 skipped**. The first run exposed a stale Structure Studio preset catalog
+from the prior cyan-candy addition; regenerated its JSON/Markdown references
+and reran the full suite successfully. Built and installed the combined wheel
+in a fresh environment outside the checkout; doctor module import, runtime
+version parsing, pinned Python compatibility, typed GPU options and presence
+of the cyan-candy preset passed. No live server was changed or real Slurm job
+submitted in this integration check. The PR author reports real-site CPU/GPU
+acceptance in the PR description; that is distinct from these local checks.

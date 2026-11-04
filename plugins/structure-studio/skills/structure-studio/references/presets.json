@@ -292,5 +292,28 @@
     "chain_selections": [],
     "example_structure": "7PZB",
     "default": false
+  },
+  {
+    "id": "cyan_candy_mesh",
+    "aliases": [],
+    "description": "Glossy cyan surfaces and recessed mesh with vivid pink/yellow helical tubes; A/B surfaces, C/D tubes.",
+    "material": "frosted",
+    "representations": [
+      "cartoon",
+      "sticks",
+      "surface"
+    ],
+    "width": 840,
+    "height": 650,
+    "samples": 128,
+    "chain_specific": true,
+    "chain_selections": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "example_structure": "1QJB",
+    "default": false
   }
 ]
