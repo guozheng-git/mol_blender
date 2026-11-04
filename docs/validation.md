@@ -1027,3 +1027,15 @@ the saved-preset render was pixel-identical to the direct JSON render. Manifest
 checks confirmed CIF-first input and DSS. Evidence is in ignored `curl-*`
 artifacts. Different helix placement/occlusion and slightly lighter/cooler pink
 remain. No renderer code or desktop Blender scene was modified.
+
+On 2026-11-04, two more full-quality helix material comparisons increased pink
+and yellow saturation/emission, then softened overly sharp highlights and
+reduced excessive yellow brightness. Only the two helix materials changed;
+blob settings, geometry, lights, world and actual camera matrix/scale matched
+the preceding spiral render. Colored emission may affect nearby surface pixels.
+Local catalog revision 10 passed schema validation, fresh-process full JSON
+reload and a pixel-identical saved-preset render at 840×650, 128 CPU samples.
+CIF-first input and DSS were verified. Original reference and both candidates
+were visually inspected. Evidence is in ignored `neon-*` artifacts. Different
+helix placement and partial occlusion still limit resemblance to the prominent
+central bundle in the reference. No renderer code or desktop scene changed.
