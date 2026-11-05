@@ -21,9 +21,11 @@ default; Slurm jobs keep one independent Blender process per submitted request.
 - Keep `mint_sky_assembly` as the default, native Molecular Nodes ligand sticks, and rough
   mode limited to performance settings. Reject unsupported JSON fields.
 - Render trusted local files only. PSE files can execute code during loading.
-- Keep original reference pixels separate from previews. Inspect both before
-  claiming visual similarity. Use `.agents/skills/recreate-render-preset/SKILL.md`
-  for reference-image-to-preset requests.
+- Use `.agents/skills/recreate-render-preset/SKILL.md` for reference-image-to-preset
+  requests. Keep the original reference separate and available throughout. Compare
+  the whole image every round, but change one visual feature at a time. Judge each
+  candidate against the reference and the best previous render, and preserve the
+  render and settings for features the user has approved.
 - Use `.agents/skills/cluster-onboarding/SKILL.md` to configure the cluster service
   for a new Slurm site. Keep site differences in `server.json`, not launcher code.
 - Write manifests and resolved styles; clean temporary source snapshots unless

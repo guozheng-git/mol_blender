@@ -61,14 +61,33 @@ match its visible appearance without claiming the original parameters were recov
      --rough -o renders/match-01.png
    ```
 
-   Open the returned PNG and compare it to the original. Keep structure, camera,
-   resolution and seed fixed while adjusting one group of parameters at a time.
-   Use a new output filename for every iteration. Review representation/silhouette,
-   palette, surface opacity/roughness, light direction, shadows, background and crop.
-   Use final-quality settings for the accepted comparison; inspect the PNG plus its
-   `.render/manifest.json` and `resolved-style.json`. Do not report a match when only
-   JSON validation or a subprocess launch succeeded. If Blender is unavailable,
-   deliver the validated draft and state that the visual comparison is unexecuted.
+   Open the first PNG beside the original at the same display size. Keep this
+   render and its full style JSON as the first baseline. For each round:
+
+   - Inspect the whole image. Check framing, silhouette and the shape of each
+     visible component, then its color, highlights, shadows, texture, opacity
+     and glow where applicable. Choose the difference that matters most to
+     the user's brief. Resolve an ambiguous shape before tuning its finish.
+   - Start from the best style so far. Change the settings for one visual
+     feature and save the candidate JSON and PNG under a new name. Keep the
+     pose, resolution, seed and color management fixed unless one is the
+     subject of this comparison. If geometry changes with automatic camera
+     fitting enabled, check the rendered framing for drift.
+   - View the original, previous best and candidate side by side. Use matching
+     detail crops when needed, then inspect the full scene for changes elsewhere.
+     When the user approves a component, keep that render and its settings as
+     a baseline for the component. Check it again after later edits, especially
+     when lighting, emission or framing could affect its appearance.
+   - Record the intended change, what improved or regressed, and which candidate
+     to keep. Use the new style for the next round when it improves the target
+     and preserves approved details. Otherwise continue from the previous best.
+
+   Finish when the render meets the brief or the remaining differences follow
+   from the example structure or an unsupported effect. Keep the native molecular
+   geometry and identify those limits. Render the best style at final quality,
+   repeat the visual comparison and inspect its `.render/manifest.json` and
+   `resolved-style.json`. If Blender is unavailable, deliver the validated draft
+   and mark the visual comparison as pending.
 6. Save the reusable preset and prove it reloads in a fresh process:
 
    ```sh
