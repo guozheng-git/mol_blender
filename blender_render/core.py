@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import datetime as dt
 import json
 import math
@@ -51,6 +52,7 @@ TMP_BRIDGE_ROOT = _default_tmp_bridge_root()
 
 from jsonschema import Draft202012Validator
 from blender_render.presets import PRESET_OUTPUT_FILENAMES, PRESET_STYLE_FILENAMES, preset_path
+from blender_render.renderer_defaults import resolve_renderer
 
 STYLE_SCHEMA_PATH = Path(__file__).resolve().with_name("style.schema.json")
 
@@ -410,8 +412,15 @@ def validate_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
     return style_doc
 
 
+def resolve_style_document(style_doc: dict[str, Any]) -> dict[str, Any]:
+    """Validate authored fields, then materialize shared renderer defaults."""
+    style = copy.deepcopy(validate_style_document(style_doc))
+    style["renderer"] = resolve_renderer(style["renderer"])
+    return style
+
+
 def load_and_validate_style_json(path: Path) -> dict[str, Any]:
-    return validate_style_document(_load_json(path))
+    return resolve_style_document(_load_json(path))
 
 
 def _ensure_suffix_png(name: str) -> str:

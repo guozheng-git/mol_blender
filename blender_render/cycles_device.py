@@ -4,10 +4,12 @@
 import json
 import os
 import bpy
+from blender_render.renderer_defaults import resolve_renderer
 
 
 def _configure_cycles_gpu_for_custom(scene, renderer) -> None:
-    requested = str(renderer.get("compute_device_type", "AUTO")).upper()
+    renderer = resolve_renderer(renderer)
+    requested = str(renderer["compute_device_type"]).upper()
     want_gpu = scene.cycles.device == "GPU"
     addon = bpy.context.preferences.addons.get("cycles")
     candidates = ["METAL", "CUDA", "OPTIX", "HIP", "ONEAPI"] if requested == "AUTO" else [requested]

@@ -1198,3 +1198,33 @@ tests; no new Slurm/Apptainer run or service deployment was performed. All rende
 ran in background processes without opening another desktop Blender window.
 Local manifests, resolved styles, reference decisions and audit results are kept
 in ignored renders/style-onboarding/northern_nights artifacts.
+
+## Shared renderer defaults (2026-11-06)
+
+Centralized existing execution defaults and removed matching values from the 18
+preset JSON files (17 catalog entries plus the reference-exact file). Compared
+each complete resolved document with its `a83fedf` counterpart plus the previous
+runtime defaults: all settings match, including the three explicit CPU choices.
+Appearance fields, denoising overrides, seeds and the dried-paint transparency
+and sampling threshold retain their previous values.
+
+Source checks: `python -m pytest tests/test_renderer_defaults.py
+tests/test_style_schema.py tests/test_reference_presets.py tests/test_developer.py
+tests/test_developer_policy.py tests/test_local.py tests/test_scene_edit.py
+tests/test_cluster_jobs.py -q` — **236 passed, 1 skipped** in **1.70 s**. The skip
+is the optional FastMCP test. Coverage includes compact/full JSON equivalence,
+canonical render hashes, override precedence, invalid authored values, immutable
+inputs, materialized saved presets and reading older sparse saved presets.
+
+Built a wheel with `uv build --wheel`, installed it into a fresh uv environment
+outside the checkout, and ran copied renderer-default, schema, reference-preset
+and engine-package tests against the installed package: **85 passed** in
+**0.83 s**. The installed engine manifest and module locations were checked.
+
+An actual background **Blender 5.0.1** process applied the original renderer
+configuration function and the refactored function to separate fresh scenes for
+all 18 presets. Engine, dimensions, transparency, exposure, gamma, view transform,
+look, samples, adaptive sampling, denoising, seed and device information matched
+exactly. The GPU presets selected **Apple M3 Metal**; the three CPU presets
+remained on CPU. This was a scene-configuration check; no image was rendered or
+visually reviewed, and no Slurm job or desktop Blender window was opened.

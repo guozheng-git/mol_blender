@@ -34,6 +34,28 @@ Named presets preserve the input pose by default. `--no-preserve-view` selects t
 
 The same installed PyMOL is used throughout. Its `pymol2` API creates isolated instances for file export; rendering from the running PyMOL application uses `cmd` directly. These changes do not add a second PyMOL dependency or replace the application's session.
 
+## Shared renderer defaults
+
+Preset JSON keeps the required `renderer.engine` and its explicit appearance
+settings. Optional execution settings inherit from
+[`renderer_defaults.py`](../blender_render/renderer_defaults.py): GPU with AUTO
+backend selection, opaque background, adaptive sampling enabled with threshold
+0.01, denoising disabled, and seed 0. A preset or request can override each value;
+for example, `"denoise": true`, `"seed": 19`, or `"device": "CPU"`.
+
+The loader and request resolver expand these defaults before saving a preset,
+writing the resolved style, or hashing a render request. An explicit default and
+an omitted default resolve identically. Existing saved presets retain their
+stored digest and acquire defaults when resolved for rendering. Unknown fields
+and invalid authored values still fail validation before normalization.
+
+Exposure, gamma, view transform, and look stay explicit in built-in presets.
+Custom styles that omit those fields retain Blender's scene settings. GPU
+selection still falls back to CPU when unavailable, unless `require_gpu` or
+`PRESS_REQUIRE_GPU` requires a GPU. This refactor preserves the explicit CPU
+settings of the cyan candy mesh and Northern Nights presets on `main_merged`;
+changing their device preference is a separate change.
+
 ## Cutaway geometry
 
 The pocket cut operates on two isolated surface meshes. It never Boolean-cuts the shared interior cartoon, ligand or pocket-residue mesh. Native Molecular Nodes sticks remain sphere-free. Residues with an atom within 5 angstrom of the ligand expand to complete residues, so a distance cutoff cannot amputate a side chain. Their carbon is muted cyan, nitrogen blue, oxygen red and sulfur yellow; the ligand remains pink with a restrained compositor fog glow. The pocket sticks use a larger radius so the colored side chains remain legible through the opening.

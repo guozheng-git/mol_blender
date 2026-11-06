@@ -11,8 +11,6 @@
   "renderer": {
     "engine": "CYCLES",
     "device": "CPU",
-    "compute_device_type": "AUTO",
-    "transparent_background": false,
     "view_transform": "Standard",
     "look": "None",
     "exposure": 0,
