@@ -273,6 +273,8 @@ def record(render: dict, assets: dict, *, label: str = "", note: str = "", scene
         doc["camera"] = camera
     if render.get("animation"):
         doc["animation"] = render["animation"]
+    if render.get("device"):
+        doc["device"] = render["device"]
     return doc
 
 

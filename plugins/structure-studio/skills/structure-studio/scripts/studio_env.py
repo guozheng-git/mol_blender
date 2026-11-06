@@ -288,7 +288,12 @@ def doctor() -> dict:
     current = state()
     gpu = platform.system() == "Darwin" or bool(shutil.which("nvidia-smi"))
     running = running_setup()
+    installed, bundled = installed_identity(), bundled_identity()
+    update = ("none" if _render_ready() else
+              "automatic" if _render_installed() and not current.get("external_renderer") and bundled else "setup")
     return {"home": str(home()), "pymol_ready": _pymol_ready(), "render_ready": _render_ready(),
+            "render_installed": _render_installed(), "renderer_update": update,
+            "renderer_identity": installed, "bundled_renderer_identity": bundled,
             "setup_running": bool(running), "setup_log": (running or {}).get("log", ""), "gpu_likely": gpu, "state": current}
 
 
@@ -297,23 +302,143 @@ def _pymol_ready() -> bool:
     return bool(current.get("pymol_python")) and Path(current["pymol_python"]).is_file()
 
 
-def _render_ready() -> bool:
+def _identity(manifest: bytes) -> str | None:
+    try:
+        return json.loads(manifest)["engine_build"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def bundled_identity() -> str | None:
+    """Build identity of the renderer wheel shipped in this plugin (its code, not its zip bytes)."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(wheel()) as archive:
+            return _identity(archive.read("blender_render/engine-manifest.json"))
+    except (SetupError, OSError, KeyError, zipfile.BadZipFile):
+        return None
+
+
+def installed_identity() -> str | None:
+    """Build identity of the renderer installed in Studio's render environment."""
+    python = state().get("render_python")
+    if not python:
+        return None
+    venv = Path(python).parent.parent
+    found = sorted(venv.glob("lib/python*/site-packages/blender_render/engine-manifest.json")) + \
+        sorted(venv.glob("Lib/site-packages/blender_render/engine-manifest.json"))
+    return _identity(found[0].read_bytes()) if found else None
+
+
+def _render_installed() -> bool:
     current = state()
-    if not (current.get("blender_render") and Path(current["blender_render"]).is_file()):
+    return bool(current.get("blender_render")) and Path(current["blender_render"]).is_file()
+
+
+def _render_ready() -> bool:
+    if not _render_installed():
         return False
-    # After a plugin update the bundled renderer changes; `setup` then reinstalls just the wheel.
-    return bool(current.get("external_renderer")) or current.get("wheel_sha256") == hashlib.sha256(wheel().read_bytes()).hexdigest()
+    if state().get("external_renderer"):
+        return True
+    bundled = bundled_identity()
+    # Rebuilding a wheel changes its bytes but not its code: compare the renderer build identity.
+    return bundled is not None and installed_identity() == bundled
+
+
+def _pins(text: str) -> dict:
+    """name==version pins from a hash-locked requirements file."""
+    pins = {}
+    for line in text.splitlines():
+        match = re.match(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)", line.strip())
+        if match:
+            pins[re.sub(r"[-_.]+", "-", match.group(1)).lower()] = match.group(2)
+    return pins
+
+
+def _dependencies_match(python: Path) -> bool:
+    """The render environment already has every pinned dependency at its pinned version."""
+    pinned = _pins((REQUIREMENTS / "render-requirements.txt").read_text())
+    frozen = _pins(_run([uv(), "pip", "freeze", "-p", str(python)], env=_uv_env(), timeout=120).stdout)
+    return all(frozen.get(name) == version for name, version in pinned.items())
+
+
+def refresh_renderer() -> dict:
+    """Swap in this plugin's renderer wheel after a plugin update. Local and offline: no download.
+
+    Only the renderer changes. If the update also changed Blender's pinned dependencies,
+    stop and say so: that needs a real setup (a download), which the user approves.
+    """
+    current = state()
+    python = Path(current["render_python"])
+    if not _dependencies_match(python):
+        raise SetupError("This plugin update changes Blender's pinned dependencies, so it needs a one-time download. "
+                         "Run: studio.py setup --background")
+    renderer = wheel()
+    _log("Updating the renderer from the installed plugin (offline, a few seconds)…")
+    _run([uv(), "pip", "install", "--offline", "--no-deps", "--reinstall", "-p", str(python), str(renderer)],
+         env=_uv_env(), timeout=300)
+    _import_check(python, "import blender_render", "the renderer")
+    if installed_identity() != bundled_identity():
+        raise SetupError("The renderer update did not take effect; run: studio.py setup")
+    return _save_state({"wheel_sha256": hashlib.sha256(renderer.read_bytes()).hexdigest()})
+
+
+def _refresh_once() -> None:
+    """Refresh under the setup lock, so two renders started together update it only once."""
+    other = running_setup()
+    if other and other.get("pid") != os.getpid():
+        _wait_until(lambda: running_setup() is None, "the renderer")
+        if _render_ready():
+            return
+    lock = _lock()
+    home().mkdir(parents=True, exist_ok=True)
+    lock.write_text(json.dumps({"pid": os.getpid(), "components": "renderer-refresh", "log": "",
+                                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+    try:
+        refresh_renderer()
+    finally:
+        try:
+            if json.loads(lock.read_text()).get("pid") == os.getpid():
+                lock.unlink()
+        except (OSError, ValueError):
+            pass
 
 
 def renderer_env() -> tuple[Path, dict]:
     _wait_until(_render_ready, "Blender")
     current = state()
-    if not current.get("blender_render") or not Path(current["blender_render"]).is_file():
-        raise SetupError("Blender is not installed yet. Run: studio.py setup")
+    if not _render_installed():
+        raise SetupError("Blender is not installed yet. Run: studio.py setup --background")
+    if not current.get("external_renderer") and not _render_ready():
+        _refresh_once()  # Never run a renderer older than this plugin's.
+        current = state()
     env = dict(os.environ)
     if current.get("blender_render_home"):
         env["BLENDER_RENDER_HOME"] = current["blender_render_home"]
     return Path(current["blender_render"]), env
+
+
+def shared_cluster_home() -> Path:
+    """Where the terminal's `blender-render cluster` keeps lab profiles (its default folder)."""
+    return Path.home() / ".config" / "blender-render"
+
+
+def cluster_env() -> tuple[Path, dict]:
+    """The installed blender-render with the terminal's config folder, for `cluster` commands only.
+
+    Local renders keep Studio's own BLENDER_RENDER_HOME. Cluster commands drop it, so a
+    lab profile set up in Studio or in a terminal is the same profile. A BLENDER_RENDER_HOME
+    inherited from a shell (for example a checkout's .runtime) is dropped too, so the
+    folder never depends on how the app was launched.
+    """
+    executable, env = renderer_env()
+    env.pop("BLENDER_RENDER_HOME", None)
+    return executable, env
+
+
+def cluster_profiles() -> list[str]:
+    folder = shared_cluster_home() / "clusters"
+    return sorted(p.stem for p in folder.glob("*.json")) if folder.is_dir() else []
 
 
 def pymol_python() -> Path:
