@@ -31,6 +31,22 @@ def parser():
     reconcile = commands.add_parser('reconcile', help='Recover an ambiguous submission without launching another job')
     reconcile.add_argument('--config', required=True)
     reconcile.add_argument('job')
+    connect = commands.add_parser('connect', help="Start or reuse your own gateway on one login node over SSH, open a tunnel and import a private credential")
+    connect.add_argument('--profile', default='lab')
+    connect.add_argument('--ssh-host', help='SSH alias that already logs in without prompts, e.g. mycluster')
+    connect.add_argument('--node', help='Login node to pin the gateway and tunnel to, e.g. login-03.cluster.example')
+    connect.add_argument('--remote-executable', help="Administrator-installed controller's blender-render on that host")
+    connect.add_argument('--server-config', help='Validated site server.json on that host (spool and tokens are per connection)')
+    connect.add_argument('--connection-dir', help='Private per-connection directory on that host (default: next to the config)')
+    connect.add_argument('--remote-user', help='Gateway API identity for this computer (default: client-HOSTNAME)')
+    connect.add_argument('--local-port', type=int)
+    connect.add_argument('--reissue', action='store_true', help='Replace this computer\'s credential; earlier jobs stay visible')
+    disconnect = commands.add_parser('disconnect', help='Close the tunnel and stop the gateway that connect started')
+    disconnect.add_argument('--profile', default='lab')
+    disconnect.add_argument('--keep-gateway', action='store_true')
+    disconnect.add_argument('--revoke', action='store_true', help='Also revoke the credential and forget this connection')
+    connection = commands.add_parser('connection', help='Show the saved SSH connection and whether its tunnel is open')
+    connection.add_argument('--profile', default='lab')
     configure = commands.add_parser('configure', help='Configure credentials or an open cluster URL')
     configure.add_argument('--profile', default='default')
     access = configure.add_mutually_exclusive_group(required=True)
@@ -71,6 +87,13 @@ def parser():
 
 def execute(args):
     from .client import Client, configure
+    if args.command in ('connect', 'disconnect', 'connection'):
+        from . import connect
+        if args.command == 'connection':
+            return connect.status(args.profile)
+        if args.command == 'disconnect':
+            return connect.disconnect(args.profile, keep_gateway=args.keep_gateway, revoke=args.revoke)
+        return connect.connect(args.profile, reissue=args.reissue, **{key: getattr(args, key) for key in connect.SETTINGS})
     if args.command == 'configure':
         return configure(args.profile, args.credential_file, args.ca_file, url=args.url)
     if args.command in ('serve', 'user-add', 'user-revoke', 'doctor', 'reconcile'):

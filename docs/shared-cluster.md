@@ -152,6 +152,43 @@ An explicit rejection or a confirmed missing request can be submitted again with
 a new output name. Downloads never overwrite existing outputs. A failed integrity
 check leaves no partial render in the requested output location.
 
+## Your own gateway over SSH
+
+When you can log in to a Slurm login node with SSH keys and an administrator has
+installed a matching controller and image (see below), one command connects this
+computer without a shared service:
+
+```sh
+blender-render cluster connect --profile lab --ssh-host mycluster --node login-03.cluster.example \
+  --remote-executable /shared/install/controller/bin/blender-render \
+  --server-config /shared/install/server-gpu.json
+blender-render cluster submit structure.cif --profile lab -o renders/first.png
+blender-render cluster disconnect --profile lab
+```
+
+`connect` sends a small helper over SSH stdin to the controller's Python. It
+creates a private per-connection directory beside the site configuration, with
+its own spool and token database; Slurm, image and limits stay as the
+administrator validated them. It starts (or reuses) a gateway bound to
+`127.0.0.1` on the **pinned node**, opens an SSH tunnel to that same node, and
+imports a fresh credential into the ordinary profile. The token is streamed from
+SSH into a private file, imported and deleted; it is never printed. Jobs run under
+**your own** Slurm account. The gateway is always token-authenticated, even if the
+site configuration selects open access, because every user on a login node can
+reach its loopback interface. Before trusting a port, the helper checks with `ss`
+(or `lsof`) that its own gateway process holds it.
+
+Later `connect --profile lab` calls reuse the saved settings, reopen a dead tunnel
+and restart a stopped gateway with the same credential, so receipts of earlier
+jobs still fetch. `disconnect` closes the tunnel and stops the gateway; queued
+Slurm jobs keep running. `--revoke` also revokes the credential and forgets the
+connection. `connection` shows the saved settings and whether the tunnel is open.
+Profiles live in the default `~/.config/blender-render/clusters/` unless
+`BLENDER_RENDER_HOME` is set; Structure Studio's `studio.py lab` and
+`render --lab` use the same default folder, so either can set it up.
+
+Check whether your site permits short-lived user services on login nodes.
+
 ## Build once, reuse the uv environments
 
 Use Linux x86_64. From a clean, committed checkout, build the wheel and staged

@@ -59,7 +59,11 @@ def configure(name, credential_file=None, ca_file=None, *, url=None):
 class Client:
     def __init__(self, profile='default'):
         self.profile = profile
-        config = read_json(private_file(profile_path(profile)), 64 * 1024)
+        path = profile_path(profile)
+        if not path.exists() and not path.is_symlink():
+            raise ValueError(f"No cluster profile '{profile}' in {path.parent}; run `blender-render cluster connect` "
+                             "or `cluster configure` first")
+        config = read_json(private_file(path), 64 * 1024)
         if set(config) - {'url', 'token', 'ca_file', 'authentication'} or 'url' not in config:
             raise ValueError('Invalid cluster profile')
         self.url = validate_url(config['url'])
