@@ -1198,3 +1198,256 @@ tests; no new Slurm/Apptainer run or service deployment was performed. All rende
 ran in background processes without opening another desktop Blender window.
 Local manifests, resolved styles, reference decisions and audit results are kept
 in ignored renders/style-onboarding/northern_nights artifacts.
+
+## Fresh Structure Studio installation (2026-11-05)
+
+Cloned GitHub into a separate directory. The default branch was `main` at
+`1690762888aff97cb3020348ce7befc9a6363da9`, with neither the Claude marketplace
+nor Structure Studio. Switched that new clone to remote `main_merged` at
+`a83fedf34996ef40d2337d7702fbfa04d22197e1`, built both ZIPs and the wheel using
+`build_release.py`, and passed `verify_release.py`.
+
+Tested on Apple Silicon macOS with separate Claude configuration directories,
+Python installations, virtual environments, renderer configuration and empty uv
+caches. Existing Git, system Python, Claude Code and FFmpeg were prerequisites;
+this was not a pristine OS or Linux/claude.ai sandbox test. Existing uv 0.8.22
+could not download pinned Python 3.11.15. An isolated uv 0.13.7 installation
+resolved that prerequisite without updating the user's uv or shell profile.
+
+- Claude Code accepted the source marketplace install, but its installed plugin
+  lacked the renderer wheel. Its wheel lookup failed with the instruction to use
+  a staged release package. Registration alone does not establish render readiness.
+- Extracted the newly built plugin ZIP and registered it through a temporary
+  local marketplace in another empty Claude configuration. Manifest validation
+  passed with missing-description/author warnings. No model invocation was used.
+- Fetched public 1STP. Workspace generation from the bundled public CIF worked
+  before setup and created no runtime. Explicit managed setup then installed
+  Python 3.11.15, PyMOL and bpy in **141.74 s**. Doctor reported both ready.
+- Installed engine identity matched the release manifest; all **17 presets**,
+  including Northern Nights, and **six recipes** were present. No external
+  renderer or existing development runtime was configured.
+- Rendered the downloaded 1STP through the installed plugin with a workspace
+  snapshot: a **384×288, 8-sample** default still took **242.18 s**, and a
+  **320×240, 8-sample**, 16-frame cutaway took **53.13 s**. Both manifests report
+  Apple M3 Metal GPU execution. These are first-run observations, not benchmarks.
+- MP4 decoded completely: 16 frames, 2 seconds. GIF decoded with 16 frames and
+  infinite looping; its duration was 2.01 seconds. An initial exact-2-second GIF
+  assertion failed; the follow-up records and permits the 10 ms timing difference.
+- Restored PSE, Blender scene, MP4, GIF, frame archive and recipe with matching
+  hashes. Reopened PSE in the fresh PyMOL environment and the Blender scene in
+  fresh bpy with embedded scripts disabled. Inspected the mint still and closed/
+  opened cutaway frames; these are small execution previews, not final demo art.
+
+Evidence and packages are retained in the separate fresh-install artifact folder,
+including `fresh-install-evidence.json` and per-step logs. The source clone and
+existing user runtimes were not modified. Live Claude Artifact publication,
+in-chat operation, persistence and cross-chat reopening remain untested. Nothing
+was pushed, published or deployed.
+
+## Cluster onboarding discovery and live preflight (2026-11-06)
+
+Inspected `main_merged` at `a83fedf`, including the PR #6 merge (`982faf1`).
+The cluster client, server and job tests passed: **87 passed**, one existing
+Starlette TestClient deprecation warning, **3.39 s**. CLI help for cluster
+administration, doctor and the real acceptance script also ran successfully.
+
+Connected to the existing authorized Linux x86_64 cluster and found the retained
+onboarding installation from `493eb39`. Its configured private Apptainer is
+**1.5.4**, Python is **3.11.15**, and the current Slurm client reports **25.11.8**.
+The system `singularity` is SingularityCE **4.4.2**; the successful checks used
+the explicitly configured Apptainer, not that system alternative.
+
+Fresh `cluster doctor` runs using that installation passed for CPU,
+`--gres=gpu:1`, and `--gpus=a100:1`, with no warnings (**1.87 s**, **1.93 s**,
+and **1.83 s**, respectively). Each checked the SIF checksum, gateway/container
+identity, Python compatibility and actual Slurm dry run. An exploratory GPU dry
+run with an explicit GPU partition was rejected by the site's submission policy;
+the retained configurations correctly omit the partition and let the site select
+it from the GPU request. No launcher change was needed.
+
+Read the retained November 3 `evidence.json` files: CPU, generic-GPU and typed-GPU
+acceptance all record `passed: true`. They record CPU, **NVIDIA H200 NVL/CUDA**
+and **NVIDIA A100 80GB PCIe/CUDA**, respectively, for both still and rocking
+renders, with saved Blender scenes reopened and compute-node Apptainer **1.5.4**.
+These are historical acceptance results inspected today, not new render runs.
+
+The retained gateway/image pair has engine identity
+`3dc2a7a49f30115c4ac9b23c003d009b96f63d10ae1c87eb3fb9ca295ffc6af2`
+and SIF SHA-256
+`a12a1ff7254dcb0b2b54edaf8e536bb4b1793e9e8ccfc5fd6c72e4ff458c3e73`.
+Current `main_merged` has engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+The fresh preflight therefore establishes readiness of the retained installation,
+not full acceptance of the current renderer. Testing the current revision requires
+a matching gateway and worker release followed by new CPU/GPU acceptance outputs.
+
+Onboarding is currently a repository skill plus CLI workflow. The stdio MCP and
+Structure Studio command parser expose no cluster onboarding command, and the
+plugin packaging script does not include the repository onboarding skill,
+server templates or acceptance script. The two local Structure Studio ZIPs also
+lack these onboarding resources. No new render allocation, persistent service,
+deployment or publication was made during this check. Private cluster connection
+details remain outside version control.
+
+## Current main_merged cluster acceptance (2026-11-06)
+
+Built a fresh release from a clean detached checkout of **`a83fedf`**, preserving
+the working branch and its existing documentation edits. `verify_release.py`
+verified the wheel and both Structure Studio ZIPs against that revision. Installed
+the wheel into a new pinned Linux controller environment outside the checkout;
+**87 cluster tests passed in 8.31 s**, with one existing Starlette TestClient
+deprecation warning.
+
+Verified the existing base SIF's recorded SHA-256 and confirmed unchanged runtime
+contracts and dependency locks before using `Apptainer-update.def`. The update
+installed only the new application wheel offline. Linux environments and the
+reused managed Python remained at their original absolute paths. No Mac runtime
+was copied and no render job installed dependencies. The two-CPU image build ran
+in a real Slurm allocation and completed in **1:46**. The site's debug QoS permits
+only two CPUs per user; an initial four-CPU build allocation was cancelled before
+the image build, and the corrected submission respected that limit. Site-specific
+render settings stayed in private server configurations; no renderer or launcher
+source changes were required.
+
+The new gateway and worker both report engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+The updated SIF SHA-256 is
+`933141132d10e16877a2b526886cac70b0e720864cd44aed5c4ce127c0c81433`.
+
+Ran the unchanged `scripts/validate_cluster_slurm.py` with `--cancel-running`,
+using the installed wheel, fresh private output directories, real PyMOL,
+temporary authenticated loopback gateways, Slurm and Apptainer. All three final
+`evidence.json` files record **`passed: true`**:
+
+- CPU: two CPUs, 8 GiB, no GPU, **64.61 s**.
+- Generic GPU: four CPUs, 8 GiB, `--gres=gpu:1`, **582.38 s**.
+- Typed GPU: four CPUs, 8 GiB, `--gpus=a100:1`, **578.66 s**.
+
+Times include queueing and verification and are not renderer benchmarks. Both GPU
+configurations left partition selection to the site and recorded one **NVIDIA
+A100 80GB PCIe / CUDA** for both still and animation. CPU manifests recorded CPU
+execution. Each preflight checked the new image checksum, matching build identity
+and actual Slurm request. Gateway and compute-node Apptainer were **1.5.4**;
+Slurm was **25.11.8**. Runtime manifests report Python **3.11.15**, Blender
+**5.0.1**, Molecular Nodes **4.5.10**, NumPy **1.26.4** and Biotite **1.6.0**.
+
+Each run rendered public **1STP** as a 192×144 still and four-frame rocking movie
+at four samples, then cancelled a separate probe after observing it running.
+Verified downloads, original-request recovery, idempotency, ownership, token
+revocation and deletion passed. Saved Blender scenes reopened with embedded
+scripts disabled. MP4 decoding, changing frame hashes, four-frame looping GIFs,
+session-bundle restoration and reopening the restored PyMOL/Blender files passed.
+After downloading the evidence locally, all **33 artifact hashes** matched.
+CPU and CUDA stills and sampled rocking frames were visually inspected: the
+mint structure remains in frame against the pale background. These are small
+execution previews, not final-quality figure review.
+
+After a chat daemon restart, the first generic-GPU harness ended before recording
+its final verdict, despite completing both renders. Its `passed: false` evidence
+was preserved. Confirmed its allocations were terminal, retained diagnostics and
+removed its temporary job data. The successful generic-GPU rerun and typed-GPU
+run used detached logging, independent output directories and the same immutable
+release. No interrupted request was silently resubmitted.
+
+Final checks confirmed every acceptance/build allocation had ended, all temporary
+listeners were closed, credentials were removed and test spools contained only
+ownership/idempotency tombstones. Removed the temporary local build checkout.
+Release artifacts, configurations, manifests, rendered outputs and evidence are
+retained in ignored local artifacts and the isolated cluster installation. No
+persistent production service was changed and nothing was pushed or published.
+
+## Cluster configure credential input (2026-11-06)
+
+Inspected the CLI parser, credential importer and administrator credential writer
+on `a83fedf`. `cluster configure` is flag-only: it requires either
+`--credential-file` (JSON containing exactly `url` and `token`) or `--url` (an
+explicitly unauthenticated service). It has no token argument, stdin token reader
+or hidden prompt. Profile naming and a separate CA file are optional flags.
+
+A real CLI smoke check used a synthetic token and an isolated temporary
+`BLENDER_RENDER_HOME`, with stdin closed throughout. File import succeeded,
+stdout contained only profile and URL, the saved profile had mode `0600`, and
+a credential file with mode `0644` was rejected without printing the token.
+Running configure without the required flags exited with usage status `2`.
+The command retains the transfer file after importing it. No real credential
+was read, no existing profile changed and no server connection was attempted.
+The cluster-client tests passed: **18 passed in 3.16 s**.
+
+**Outstanding client reachability gate:** run `blender-render cluster info
+--profile lab` from the actual Studio runtime and configuration, using the lab's
+real endpoint, administrator-issued credential file and CA where required. The
+synthetic import above and real cluster-side loopback acceptance do not establish
+Studio-to-lab connectivity or authentication. This session's default Studio home
+has no configured runtime or cluster profile; no such live client check was run.
+
+## Mac-to-cluster gateway reachability (2026-11-06)
+
+Started a bounded, temporary authenticated loopback gateway from the validated
+`a83fedf` controller and SIF on the authorized cluster. Forwarded a Mac loopback
+port over SSH, keeping gateway startup and forwarding on the same SSH connection
+so a different login-node selection could not redirect the tunnel.
+
+Transferred a real, newly issued mode-0600 credential file over SSH. From the Mac
+CLI, outside the checkout and with an isolated configuration directory, imported
+that file using `cluster configure --credential-file`, with stdin closed. The
+subsequent `cluster info` succeeded and reported token authentication, version
+`0.4.0rc4` and the expected engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+An unauthenticated request returned HTTP 401; after explicit token revocation,
+the imported credential was also rejected with HTTP 401. No token was printed.
+
+Confirmed both the gateway and local tunnel closed, remote credentials were
+removed, the temporary local credential/profile directory was removed, and no
+render jobs were submitted. Redacted evidence is retained in ignored local
+artifacts. This establishes real Mac CLI authentication and API reachability over
+SSH. It does not establish direct HTTPS access, a persistent gateway deployment,
+or execution from the Claude app's installed Structure Studio runtime; that last
+client integration check remains outstanding.
+
+## Mac submit and fetch through a temporary gateway (2026-11-06)
+
+Using the validated `a83fedf` controller and SIF, started a temporary authenticated
+loopback gateway with a fresh private spool. Gateway preflight passed, including
+the matching image identity and real Slurm dry run. Connected the Mac through an
+SSH tunnel on the same SSH connection, imported a newly issued private credential
+file, and verified the gateway identity with `cluster info`.
+
+Submitted exactly one public **1STP** still from the Mac CLI using
+`mint_sky_assembly`, **192×144 pixels and four samples**. Local PyMOL exported
+the CIF with secondary structure assigned; the selection excluded solvent.
+The real Slurm job completed with exit code `0:0` and a **4:02 allocation**.
+The fetched manifest confirms **NVIDIA A100 80GB PCIe / CUDA** execution,
+Blender **5.0.1**, Molecular Nodes **4.5.10**, Python **3.11.15**, NumPy **1.26.4**
+and Biotite **1.6.0**. The Mac submit-through-fetch check took **257.61 s**,
+including queueing, startup, rendering, status polling and download; this is not
+a pure rendering benchmark.
+
+Fetched the PNG, manifest and resolved style through the gateway API. All three
+artifact sizes and SHA-256 hashes matched the gateway's metadata. Decoded and
+visually inspected the PNG: the mint cartoon and ligand are visible and framed
+against the pale background. This is a tiny execution preview, not a final figure.
+
+After verification, deleted the completed remote job data through the API,
+retaining its ownership/idempotency tombstone. Revoked the credential and observed
+HTTP 401, closed the gateway and tunnel, and removed temporary local/remote
+credentials and the local test profile. Slurm accounting confirms the allocation
+ended. Evidence and the fetched image remain in ignored local artifacts. This
+establishes actual Mac CLI submission and fetching through the gateway; it was
+not executed from the Claude app's installed Structure Studio session.
+
+## Saved lab profile submit and fetch (2026-11-06)
+
+Ran the requested Mac CLI submission of `examples/1stp.cif` through the existing
+`lab` profile with the installed PyMOL application's Python interpreter (verified
+that `pymol2` imports). Used `mint_sky_assembly`, 192×144 pixels and four samples,
+with the default selection. One Slurm job, `22967374`, progressed from queued to
+running to completed. The gateway's creation-to-finish interval was **247.05 s**;
+this includes scheduling and startup and is not a rendering-only benchmark.
+
+Fetched `renders/lab-1stp.png`, its manifest and resolved style using the saved
+receipt. Fetch verified all artifact sizes and SHA-256 digests. Decoded the PNG
+as 192×144 RGBA and visually inspected it: the mint cartoon and ligand are visible
+and framed against the pale background. The manifest records Blender 5.0.1,
+Molecular Nodes 4.5.10, Python 3.11.15, NumPy 1.26.4 and Biotite 1.6.0. The existing
+profile, connection and completed job were retained. No renderer code changed;
+this was a real submit/status/wait/fetch runtime check.
