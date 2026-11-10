@@ -21,6 +21,7 @@ import tempfile
 import time
 
 from .common import TERMINAL, atomic_json, one_line, read_json
+from .connect_remote import file_lock, listeners
 
 HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,252}')
 USER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
@@ -106,7 +107,7 @@ def remote(conf, mode, *args, stdout=None, timeout=120):
 
 
 def process_command(pid):
-    result = subprocess.run(['ps', '-o', 'command=', '-p', str(pid)], capture_output=True, text=True)
+    result = subprocess.run(['ps', '-o', 'command=', '-p', str(pid)], capture_output=True, text=True, timeout=5)
     return result.stdout.strip() if result.returncode == 0 else ''
 
 
@@ -114,13 +115,21 @@ def forward_spec(conf):
     return '127.0.0.1:%d:127.0.0.1:%d' % (conf['local_port'], conf['remote_port'])
 
 
-def tunnel_alive(conf):
+def tunnel_process(conf):
     pid = conf.get('tunnel_pid')
-    return bool(pid and conf.get('remote_port')) and forward_spec(conf) in process_command(pid)
+    if not pid or not conf.get('remote_port'):
+        return False
+    command = process_command(pid).split()
+    return all(value in command for value in (forward_spec(conf), 'HostName=' + conf['node'], conf['ssh_host']))
+
+
+def tunnel_alive(conf):
+    return tunnel_process(conf) and conf['tunnel_pid'] in listeners(conf['local_port'])
 
 
 def open_tunnel(conf, log):
     command = [SSH, '-N', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes',
+               '-o', 'ControlPath=none', '-o', 'ForkAfterAuthentication=no',
                '-o', 'ServerAliveInterval=20', '-o', 'ServerAliveCountMax=3',
                '-o', 'HostName=' + conf['node'], '-L', forward_spec(conf), conf['ssh_host']]
     fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -128,24 +137,33 @@ def open_tunnel(conf, log):
     with os.fdopen(fd, 'ab') as handle:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
                                    start_new_session=True)
-    deadline = time.monotonic() + TUNNEL_WAIT
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError('SSH tunnel exited; see ' + str(log))
-        try:
-            socket.create_connection(('127.0.0.1', conf['local_port']), timeout=1).close()
-            return process.pid
-        except OSError:
+    try:
+        deadline = time.monotonic() + TUNNEL_WAIT
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError('SSH tunnel exited; see ' + str(log))
+            # A saved port may now belong to another application. Never send a token
+            # until this dedicated SSH process has actually acquired the listener.
+            if process.pid in listeners(conf['local_port']) and process.poll() is None:
+                return process.pid
             time.sleep(.25)
-    process.terminate()
-    raise RuntimeError('SSH tunnel did not open within %d seconds' % TUNNEL_WAIT)
+        raise RuntimeError('SSH tunnel did not open within %d seconds' % TUNNEL_WAIT)
+    except BaseException:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        raise
 
 
 def close_tunnel(conf):
-    if tunnel_alive(conf):
+    if tunnel_process(conf):
         os.kill(conf['tunnel_pid'], 15)
         deadline = time.monotonic() + 5
-        while tunnel_alive(conf) and time.monotonic() < deadline:
+        while tunnel_process(conf) and time.monotonic() < deadline:
             time.sleep(.1)
         return True
     return False
@@ -171,8 +189,24 @@ def info(profile):
 
 
 def connect(profile='lab', *, reissue=False, **given):
+    with file_lock(state_path(profile, create=True).with_suffix('.lock')):
+        return _connect(profile, reissue=reissue, **given)
+
+
+def _connect(profile, *, reissue, **given):
     from .client import profile_path, RemoteError
+    saved = load_state(profile)
     conf = settings(profile, given)
+    if saved and any(saved.get(key) != conf.get(key) for key in SETTINGS):
+        close_tunnel(saved)
+        # Stop on the old host before moving the shared spool to another node.
+        # On the same node, the replacement controller can stop an old gateway
+        # even when an administrator has removed the previous installation.
+        stopping = dict(saved)
+        if saved['node'] == conf['node']:
+            stopping['remote_executable'] = conf['remote_executable']
+        remote(stopping, 'stop', saved['connection_dir'])
+        conf.pop('tunnel_pid', None)
     reused_tunnel = tunnel_alive(conf)
     if reused_tunnel and profile_path(profile).exists() and not reissue:
         try:
@@ -180,10 +214,12 @@ def connect(profile='lab', *, reissue=False, **given):
             return summary(profile, conf, details, gateway_started=False, tunnel_reused=True)
         except (RemoteError, OSError, ValueError):
             close_tunnel(conf)
+            reused_tunnel = False
     ports = random.SystemRandom().sample(range(20000, 60000), 3)
     gateway = remote(conf, 'ensure', conf['server_config'], conf['connection_dir'], *ports)
     if conf.get('remote_port') != gateway['port']:
         close_tunnel(conf)
+        reused_tunnel = False
     conf.update(remote_port=gateway['port'], gateway_pid=gateway['pid'])
     atomic_json(state_path(profile, create=True), conf)
     if not tunnel_alive(conf):
@@ -199,7 +235,7 @@ def connect(profile='lab', *, reissue=False, **given):
             raise
         import_credential(profile, conf)  # A gateway restart with a stale or revoked token.
         details = info(profile)
-    return summary(profile, conf, details, gateway_started=gateway['started'], tunnel_reused=False)
+    return summary(profile, conf, details, gateway_started=gateway['started'], tunnel_reused=reused_tunnel)
 
 
 def summary(profile, conf, details, **extra):
@@ -217,6 +253,11 @@ def active_jobs(profile):
 
 
 def disconnect(profile='lab', *, keep_gateway=False, revoke=False):
+    with file_lock(state_path(profile, create=True).with_suffix('.lock')):
+        return _disconnect(profile, keep_gateway=keep_gateway, revoke=revoke)
+
+
+def _disconnect(profile, *, keep_gateway, revoke):
     from .client import profile_path
     conf = load_state(profile)
     if not conf:

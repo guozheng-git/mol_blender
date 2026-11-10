@@ -1451,3 +1451,36 @@ and framed against the pale background. The manifest records Blender 5.0.1,
 Molecular Nodes 4.5.10, Python 3.11.15, NumPy 1.26.4 and Biotite 1.6.0. The existing
 profile, connection and completed job were retained. No renderer code changed;
 this was a real submit/status/wait/fetch runtime check.
+
+## Lab connection review fixes (2026-11-10)
+
+Validated the connection and Studio recovery fixes in an isolated editable
+installation on macOS with Python 3.11.5 and the optional cluster dependencies.
+The relevant suite passed **215 tests, with one skipped**, in **36.13 seconds**:
+
+```sh
+python -m pytest tests/test_cluster_connect.py tests/test_cluster_client.py \
+  tests/test_cluster_jobs.py tests/test_cluster_server.py \
+  tests/test_structure_studio_cluster.py tests/test_structure_studio.py \
+  tests/test_structure_studio_animation.py -q
+```
+
+Connection tests ran real helper and gateway processes plus local TCP forwarding
+through `tests/fake_ssh.py`. New regressions verify that an occupied local port is
+never contacted or sent a credential; changed node/controller settings replace
+the old connection; simultaneous connections create one gateway and tunnel;
+and stopped gateways accept validated site-config updates without deleting the
+job spool or, without revocation, changing the credential or local port.
+Invalid updates preserve the last valid configuration.
+
+Studio tests simulate lost, timed-out and malformed submission responses after
+receipt creation, then recover the existing request without a second submit.
+They also verify pending-context reservation and atomic updates, preservation of
+successful submission results when disconnect times out, and cleanup of temporary
+animation inputs. The cluster-client suite additionally exercises receipt
+recovery and artifact downloads over real local HTTP with a simulated scheduler.
+
+`git diff --check` passed. The only warning was Starlette's existing deprecation
+of the httpx-backed test client. No real SSH login, Slurm allocation, Blender
+render or visual acceptance check was performed for these fixes; these tests do
+not establish lab-host or GPU integration.
