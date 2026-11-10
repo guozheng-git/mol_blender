@@ -46,8 +46,8 @@ def studio_installed(tmp_path, monkeypatch):
     executable.write_text("")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("BLENDER_RENDER_HOME", "/shell/.runtime")  # e.g. a checkout's activate script
-    monkeypatch.setattr(studio_env, "state", lambda: {"blender_render": str(executable), "blender_render_home": STUDIO_HOME})
-    monkeypatch.setattr(studio_env, "_render_ready", lambda: True)
+    monkeypatch.setattr(studio_env, "state", lambda: {"blender_render": str(executable), "blender_render_home": STUDIO_HOME,
+                                                     "external_renderer": True})
     monkeypatch.setattr(studio_env, "pymol_python", lambda: Path("/studio/pymol/bin/python"))
     monkeypatch.setattr(studio_env, "doctor", lambda: {"gpu_likely": False})  # A CPU-only laptop.
     return tmp_path
@@ -264,17 +264,17 @@ def test_disconnect_timeout_does_not_hide_submission_receipt(studio_installed, m
 def test_pending_context_cannot_be_overwritten_by_another_render_or_failed_update(tmp_path, monkeypatch):
     path = tmp_path / "render.lab.json"
     context = {"receipt": "render.cluster.json", "profile": "lab"}
-    studio.save_lab_context(context, path, reserve=True)
+    studio.artifact_files.write_json(context, path, exclusive=True)
     with pytest.raises(FileExistsError):
-        studio.save_lab_context({"receipt": "other.cluster.json"}, path, reserve=True)
+        studio.artifact_files.write_json({"receipt": "other.cluster.json"}, path, exclusive=True)
     assert json.loads(path.read_text()) == context
 
     def fail_replace(*args):
         raise OSError("update failed")
 
-    monkeypatch.setattr(studio.os, "replace", fail_replace)
+    monkeypatch.setattr(studio.artifact_files.os, "replace", fail_replace)
     with pytest.raises(OSError, match="update failed"):
-        studio.save_lab_context({**context, "job_id": "a" * 32}, path)
+        studio.artifact_files.write_json({**context, "job_id": "a" * 32}, path)
     assert json.loads(path.read_text()) == context
     assert list(tmp_path.iterdir()) == [path]
 
@@ -294,6 +294,25 @@ def test_lab_passthrough_uses_shared_profiles(studio_installed, monkeypatch):
     assert command[1:] == ["cluster", "connection", "--profile", "lab"] and "BLENDER_RENDER_HOME" not in env
     assert result == {"profile": "lab", "connection": None}
     assert studio.cmd_lab(studio.parser().parse_args(["lab"]))["profiles"] == []
+
+
+@pytest.mark.parametrize("response, expected", [("", {}), ("[]", []), ('{"jobs": []}', {"jobs": []})])
+def test_cluster_passthrough_and_internal_commands_share_response_handling(studio_installed, monkeypatch, response, expected):
+    run = Recorder({"cluster list": response})
+    monkeypatch.setattr(studio.subprocess, "run", run)
+    assert studio.cmd_lab(studio.parser().parse_args(["lab", "list"])) == expected
+    assert studio.run_cluster("list") == expected
+
+
+def test_lab_profiles_can_be_listed_without_an_installed_renderer(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    lab_profile(tmp_path)
+
+    def no_runtime():
+        pytest.fail("listing profiles must not resolve or install a renderer")
+
+    monkeypatch.setattr(studio_env, "cluster_env", no_runtime)
+    assert studio.cmd_lab(studio.parser().parse_args(["lab"]))["profiles"] == ["lab"]
 
 
 def test_a_queued_lab_job_reserves_its_output_name(tmp_path):
@@ -416,7 +435,21 @@ def renderer_layout(tmp_path, monkeypatch):
 
 def test_a_rebuilt_wheel_with_the_same_code_is_ready(renderer_layout):
     renderer_layout("same", "same", wheel_bytes=b"rebuild 2")
-    assert studio_env._render_ready() and studio_env.doctor()["renderer_update"] == "none"
+    assert studio_env.doctor()["render_ready"] and studio_env.doctor()["renderer_update"] == "none"
+
+
+@pytest.mark.parametrize("operation", [studio_env.doctor, studio_env.renderer_env])
+def test_readiness_uses_one_consistent_snapshot(renderer_layout, monkeypatch, operation):
+    from unittest.mock import Mock
+
+    renderer_layout("same", "same")
+    reads = []
+    for name in ("state", "installed_identity", "bundled_identity"):
+        reader = Mock(wraps=getattr(studio_env, name))
+        monkeypatch.setattr(studio_env, name, reader)
+        reads.append(reader)
+    operation()
+    assert [reader.call_count for reader in reads] == [1, 1, 1]
 
 
 def test_new_renderer_code_is_refreshed_offline_before_use(renderer_layout, monkeypatch):
@@ -440,7 +473,7 @@ def test_new_renderer_code_is_refreshed_offline_before_use(renderer_layout, monk
     studio_env.renderer_env()
     install = next(c for c in commands if "install" in c)
     assert {"--offline", "--no-deps", "--reinstall"} <= set(install)
-    assert studio_env._render_ready()
+    assert studio_env.renderer_status()["render_ready"]
 
 
 def test_changed_dependencies_stop_instead_of_rendering_with_old_code(renderer_layout, monkeypatch):

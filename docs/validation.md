@@ -1484,3 +1484,37 @@ recovery and artifact downloads over real local HTTP with a simulated scheduler.
 of the httpx-backed test client. No real SSH login, Slurm allocation, Blender
 render or visual acceptance check was performed for these fixes; these tests do
 not establish lab-host or GPU integration.
+
+## Lab connection consolidation (2026-11-10)
+
+Validated the shared installer guard, listener startup supervision, cluster
+command runner, atomic JSON writers and readiness snapshots in the isolated
+macOS Python 3.11.5 environment. With the optional cluster and FastMCP dependencies
+installed and `STRUCTURE_STUDIO_TEST_WHEEL` pointing to the newly staged wheel,
+the full `python -m pytest -q` suite passed **571 tests, with 49 skipped**, in
+**54.89 seconds**. An initial run lacked FastMCP and failed eight hosted-adapter
+tests; installing the repository's pinned optional dependency resolved them.
+
+New regression checks use real competing Python processes to verify that setup,
+background setup and renderer refresh share exclusive ownership even before
+progress metadata is available. A waiting refresher rechecks readiness and does
+not install twice. The installation callbacks only write test markers; no
+PyMOL or Blender runtime was installed. Failed installation releases the guard.
+Readiness checks read state and both build identities once per operation.
+
+Listener-probe timeouts and failed gateway-record publication terminate and reap
+real child processes. Failed publication leaves no partial record or temporary
+file. Existing tests continue to cover private file modes, exclusive Studio
+recovery-record reservation, failed atomic updates and ambiguous submissions.
+
+Built the wheel and Studio plugin/skill archives with `scripts/build_plugin.py`.
+Installed the wheel into a separate environment, copied the connection tests and
+their fixtures outside the checkout, and passed **all 23 connection tests** in
+**27.48 seconds** against the installed package. These tests run real local
+gateway/helper processes and fake SSH forwarding. The staged Studio `doctor`
+and `lab` profile-listing commands also passed outside the checkout in a temporary
+home with Python isolation enabled.
+
+`git diff --check` passed. The full suite emitted dependency deprecation warnings
+and the expected warning from its deliberately duplicated ZIP member. No real
+SSH login, Slurm job, GPU render or desktop-app acceptance test was performed.

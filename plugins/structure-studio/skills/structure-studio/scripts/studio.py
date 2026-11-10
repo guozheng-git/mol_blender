@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import subprocess
 import sys
 import time
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import TemporaryDirectory
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -261,7 +260,7 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
         # The CPU caps protect this computer; a lab GPU gets the requested quality.
         adjusted = {} if lab else cpu_defaults(args)
     if lab:
-        command = [str(executable), "cluster", "submit", str(source), "-o", str(output), "--profile", lab,
+        command = ["submit", str(source), "-o", str(output), "--profile", lab,
                    "--pymol-python", str(studio_env.pymol_python())]
     else:
         command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
@@ -289,7 +288,7 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
                "args": {k: getattr(args, k, "") for k in ("workspace", "url", "job", "label", "note", "scene", "view")}}
     if lab:
         print(f"[structure-studio] Submitting {source.name} with {label} to lab profile {lab}…", file=sys.stderr, flush=True)
-        return submit_lab(command, env, args, context)
+        return submit_lab(command, (executable, env), args, context)
     print(f"[structure-studio] Rendering {source.name} with {label}…", file=sys.stderr, flush=True)
     result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
     if result.returncode:
@@ -297,39 +296,18 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
     return finish_render(json.loads(result.stdout), context)
 
 
-def save_lab_context(context: dict, path: Path, *, reserve: bool = False) -> str:
-    """Durably reserve or atomically update a pending render's recovery record."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode="w", prefix=".lab-", dir=path.parent, delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
-            json.dump(context, handle, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
-            if reserve:
-                os.link(temporary, path)  # A concurrent render must not replace this context.
-            else:
-                os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
-    return str(path)
-
-
-def submit_lab(command: list[str], env: dict, args, context: dict) -> dict:
+def submit_lab(command: list[str], runtime: tuple[Path, dict], args, context: dict) -> dict:
     """Save Studio's recovery context before the client can upload a request."""
     opened = open_lab(args.lab)
     output = Path(context["output"]).resolve()
     pending_path = output.with_suffix(".lab.json")
     context.update(output=str(output), profile=args.lab, receipt=str(output.with_suffix(".cluster.json")))
     try:
-        pending = save_lab_context(context, pending_path, reserve=True)
+        pending = artifact_files.write_json(context, pending_path, exclusive=True)
         try:
-            result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
-            if result.returncode:
-                raise RuntimeError(lab_error(result.stderr or result.stdout))
-            submitted = json.loads(result.stdout)
+            submitted = run_cluster(*command, runtime=runtime, timeout=args.timeout + 120)
             context.update(receipt=submitted["receipt"], job_id=submitted.get("job_id"))
-            save_lab_context(context, pending_path)
+            artifact_files.write_json(context, pending_path)
         except (RuntimeError, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
             if not Path(context["receipt"]).is_file():
                 pending_path.unlink(missing_ok=True)  # The client never reached its upload step.
@@ -392,8 +370,9 @@ def lab_error(text: str) -> str:
     return "Lab submission failed:\n" + text
 
 
-def run_cluster(*command, timeout: float = 900) -> dict:
-    executable, env = studio_env.cluster_env()
+def run_cluster(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None) -> dict | list:
+    """One subprocess boundary for submission, recovery, and cluster passthrough."""
+    executable, env = runtime if runtime is not None else studio_env.cluster_env()
     result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=timeout)
     if result.returncode:
         raise RuntimeError(lab_error(result.stderr or result.stdout))
@@ -471,16 +450,12 @@ def _fetch_when_ready(args, context: dict) -> dict:
 
 def cmd_lab(args):
     """Run `blender-render cluster ARGS` with the terminal's shared lab profiles."""
-    executable, env = studio_env.cluster_env()
     command = list(args.cluster_args)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
         return {"profiles": studio_env.cluster_profiles(), "folder": str(studio_env.shared_cluster_home() / "clusters")}
-    result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=900)
-    if result.returncode:
-        raise RuntimeError(lab_error(result.stderr or result.stdout))
-    return json.loads(result.stdout) if result.stdout.strip() else {"status": "ok"}
+    return run_cluster(*command)
 
 
 def _workspace_steps(args, payload: dict, output: Path) -> dict:

@@ -21,6 +21,8 @@ import sys
 import tempfile
 import time
 
+from blender_render.cluster.common import atomic_json
+
 SERVE_WAIT = 30
 LOCK_WAIT = 10
 
@@ -61,13 +63,6 @@ def file_lock(path):
         os.close(fd)
 
 
-def write_private_json(path, value):
-    fd, name = tempfile.mkstemp(prefix='.write-', dir=Path(path).parent)
-    with os.fdopen(fd, 'w') as handle:
-        json.dump(value, handle, indent=2)
-    os.replace(name, path)
-
-
 def derived_config(base, connection):
     """The administrator's site config with this connection's own spool and tokens.
 
@@ -98,7 +93,7 @@ def derived_config(base, connection):
     private_dir(connection / 'jobs')
     tokens = connection / 'users.json'
     if not tokens.exists():
-        write_private_json(tokens, {'users': {}})  # serve requires an existing private database.
+        atomic_json(tokens, {'users': {}})  # serve requires an existing private database.
     ServerConfig.load(target)
     return target
 
@@ -130,6 +125,35 @@ def listeners(port):
     return listening(port)[1]
 
 
+class ListenerStartError(RuntimeError):
+    """The child exited or failed to acquire its listener before the deadline."""
+
+
+@contextmanager
+def starting_listener(process, port, timeout, *, label, log):
+    """Own a new child until its listener and the caller's startup work succeed."""
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            if process.poll() is not None:
+                raise ListenerStartError(label + ' exited; see ' + str(log))
+            if time.monotonic() >= deadline:
+                raise ListenerStartError(label + ' did not open within %g seconds; see %s' % (timeout, log))
+            if process.pid in listeners(port) and process.poll() is None:
+                break
+            time.sleep(.25)
+        yield
+    except BaseException:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        raise
+
+
 def alive(pid):
     try:
         os.kill(pid, 0)
@@ -154,20 +178,18 @@ def ensure(base, connection, *ports):
     for port in map(int, ports):
         if listening(port)[0]:
             continue
-        log = open(connection / 'gateway.log', 'ab')
-        process = subprocess.Popen([executable, 'cluster', 'serve', '--config', str(config),
-                                    '--bind', '127.0.0.1', '--port', str(port)],
-                                   cwd=connection, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
-        log.close()
-        deadline = time.monotonic() + SERVE_WAIT
-        while time.monotonic() < deadline and process.poll() is None:
-            if process.pid in listeners(port):
-                write_private_json(record, {'pid': process.pid, 'port': port, 'started_at': time.time()})
+        log_path = connection / 'gateway.log'
+        with log_path.open('ab') as log:
+            process = subprocess.Popen([executable, 'cluster', 'serve', '--config', str(config),
+                                        '--bind', '127.0.0.1', '--port', str(port)],
+                                       cwd=connection, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                       start_new_session=True)
+        try:
+            with starting_listener(process, port, SERVE_WAIT, label='Gateway', log=log_path):
+                atomic_json(record, {'pid': process.pid, 'port': port, 'started_at': time.time()})
                 return emit({'config': str(config), 'pid': process.pid, 'port': port, 'started': True})
-            time.sleep(.5)
-        if process.poll() is None:
-            process.terminate()
+        except ListenerStartError:
+            continue
     raise RuntimeError('The gateway did not start; see gateway.log in the connection directory')
 
 

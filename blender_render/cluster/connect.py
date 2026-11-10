@@ -21,7 +21,7 @@ import tempfile
 import time
 
 from .common import TERMINAL, atomic_json, one_line, read_json
-from .connect_remote import file_lock, listeners
+from .connect_remote import file_lock, listeners, starting_listener
 
 HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,252}')
 USER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
@@ -137,26 +137,8 @@ def open_tunnel(conf, log):
     with os.fdopen(fd, 'ab') as handle:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
                                    start_new_session=True)
-    try:
-        deadline = time.monotonic() + TUNNEL_WAIT
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise RuntimeError('SSH tunnel exited; see ' + str(log))
-            # A saved port may now belong to another application. Never send a token
-            # until this dedicated SSH process has actually acquired the listener.
-            if process.pid in listeners(conf['local_port']) and process.poll() is None:
-                return process.pid
-            time.sleep(.25)
-        raise RuntimeError('SSH tunnel did not open within %d seconds' % TUNNEL_WAIT)
-    except BaseException:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        raise
+    with starting_listener(process, conf['local_port'], TUNNEL_WAIT, label='SSH tunnel', log=log):
+        return process.pid
 
 
 def close_tunnel(conf):

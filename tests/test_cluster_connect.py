@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import stat
 import socket
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -82,6 +83,8 @@ def test_connect_starts_gateway_tunnels_and_never_prints_the_token(site, capsys)
     assert {k for k in derived if derived[k] != base.get(k)} == {'spool', 'tokens_file', 'authentication'}
     assert derived['authentication'] == 'token'
     assert stat.S_IMODE(connection.stat().st_mode) == 0o700
+    for name in ('users.json', 'gateway.json'):
+        assert stat.S_IMODE((connection / name).stat().st_mode) == 0o600
 
     # The ordinary client works through the tunnel.
     assert Client('lab').api('GET', '/v1/jobs') == []
@@ -293,3 +296,56 @@ def test_tunnel_log_is_private(site):
     connect.connect('lab', **options)
     log = connect.state_path('lab').with_suffix('.tunnel.log')
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize('endpoint', ['gateway', 'tunnel'])
+def test_listener_probe_failure_reaps_the_started_child(site, tmp_path, monkeypatch, endpoint):
+    options, _, _ = site
+    process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    try:
+        monkeypatch.setattr(connect_remote.subprocess, 'Popen', lambda *a, **k: process)
+        monkeypatch.setattr(connect_remote, 'listening', lambda port: (False, set()))
+
+        def timeout(port):
+            raise subprocess.TimeoutExpired(['lsof'], 5)
+
+        monkeypatch.setattr(connect_remote, 'listeners', timeout)
+        connection = tmp_path / 'connection'
+        with pytest.raises(subprocess.TimeoutExpired):
+            if endpoint == 'gateway':
+                connect_remote.ensure(options['server_config'], connection, 30000)
+            else:
+                connect.open_tunnel(dict(options, local_port=30000, remote_port=30001), tmp_path / 'tunnel.log')
+        assert process.returncode is not None  # wait(), not just a termination request.
+        assert not (connection / 'gateway.json').exists()
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+
+
+def test_failed_gateway_record_write_cleans_child_and_temporary_file(site, tmp_path, monkeypatch):
+    options, _, _ = site
+    process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    replace = os.replace
+
+    def fail_record(source, target):
+        if Path(target).name == 'gateway.json':
+            raise OSError('record write failed')
+        return replace(source, target)
+
+    try:
+        monkeypatch.setattr(connect_remote.subprocess, 'Popen', lambda *a, **k: process)
+        monkeypatch.setattr(connect_remote, 'listening', lambda port: (False, set()))
+        monkeypatch.setattr(connect_remote, 'listeners', lambda port: {process.pid})
+        monkeypatch.setattr(os, 'replace', fail_record)
+        connection = tmp_path / 'connection'
+        with pytest.raises(OSError, match='record write failed'):
+            connect_remote.ensure(options['server_config'], connection, 30000)
+        assert process.returncode is not None
+        assert not (connection / 'gateway.json').exists()
+        assert not list(connection.glob('.write-*'))
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
