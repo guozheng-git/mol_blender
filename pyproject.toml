@@ -18,15 +18,19 @@ dev = ["pytest>=8,<10", "numpy==1.26.4", "build>=1.2,<2", "playwright>=1.50,<2"]
 mcp = ["fastmcp==2.14.7"]
 hosted = ["fastmcp==2.14.7"]
 cluster = ["starlette==1.10.0", "uvicorn==0.54.0"]
+# Installed into PyMOL's own Python for the co_pymol MCP server.
+pymol = ["mcp~=1.27.1", "anyio>=4.0", "numpy>=1.24", "gemmi>=0.6"]
 
 [project.scripts]
 blender-render = "blender_render.cli:main"
 
 [tool.setuptools]
-packages = ["blender_render", "blender_render.hosted", "blender_render.cluster"]
+packages = ["blender_render", "blender_render.hosted", "blender_render.cluster",
+            "co_pymol", "co_pymol.core", "co_pymol.tools", "co_pymol.utils", "co_pymol.utils.pymol"]
 
 [tool.setuptools.package-data]
 blender_render = ["*.json", "*.txt"]
+co_pymol = ["instructions.md", "core/render_notifier.m", "skills/**/*"]
 
 [project.urls]
 Homepage = "https://github.com/magnusbauer/blender_render"

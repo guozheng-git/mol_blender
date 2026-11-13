@@ -16,7 +16,7 @@ import zipfile
 
 CONTROLS = ('animation', 'duration', 'fps', 'rock_angle', 'gif')
 PATH_VIEW_LENGTH = 18  # one PyMOL get_view() per frame
-MAX_RGBA = 1024**3
+MAX_RGBA = 10 * 1024**3
 MAX_ARCHIVE = 512 * 1024**2
 MAX_FRAMES = 360
 
@@ -47,7 +47,7 @@ def normalize(value, output):
     if not math.isclose(frames, fps * duration, abs_tol=1e-8) or not 4 <= frames <= MAX_FRAMES:
         raise ValueError('Animation must contain an integral number of frames from 4 to 360')
     if frames * output['width'] * output['height'] * 4 > MAX_RGBA:
-        raise ValueError('Animation exceeds 1 GiB of decoded RGBA frames; reduce resolution or duration')
+        raise ValueError('Animation exceeds 10 GiB of decoded RGBA frames; reduce resolution or duration')
     gif = value.get('gif', False)
     if type(gif) is not bool:
         raise ValueError('gif must be a boolean')
@@ -93,7 +93,7 @@ def _normalize_path(value, output):
     if duration > 15:
         raise ValueError('Animation duration must be at most 15 seconds')
     if len(path) * output['width'] * output['height'] * 4 > MAX_RGBA:
-        raise ValueError('Animation exceeds 1 GiB of decoded RGBA frames; reduce resolution or duration')
+        raise ValueError('Animation exceeds 10 GiB of decoded RGBA frames; reduce resolution or duration')
     gif = value.get('gif', False)
     if type(gif) is not bool:
         raise ValueError('gif must be a boolean')
@@ -196,6 +196,8 @@ def encode(frames, metadata, destination, *, executable=None, deadline=None, can
     white = 'split[fg][bg];[bg]lutrgb=r=255:g=255:b=255,lut=a=255[white];[white][fg]overlay=shortest=1:format=auto'
     filters = (white + ',pad=ceil(iw/2)*2:ceil(ih/2)*2:color=white[v]' if destination.suffix.lower() == '.mp4'
                else white + ',split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a[v]')
+    # YUV 4:2:0 is intentional: macOS can accept RGB H.264 but decode its
+    # colours incorrectly. Keep the original PNG archive for lossless pixels.
     codec = ['-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart'] if destination.suffix.lower() == '.mp4' else ['-loop', '0']
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.movie-export-', dir=destination.parent) as directory:

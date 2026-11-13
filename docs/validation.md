@@ -1451,3 +1451,478 @@ and framed against the pale background. The manifest records Blender 5.0.1,
 Molecular Nodes 4.5.10, Python 3.11.15, NumPy 1.26.4 and Biotite 1.6.0. The existing
 profile, connection and completed job were retained. No renderer code changed;
 this was a real submit/status/wait/fetch runtime check.
+
+## co-pymol merged into the repository (2026-11-09)
+
+Merged co-pymol's history into this repository as the top-level `co_pymol`
+package, beside `blender_render` so the renderer's engine inventory is unchanged.
+Its Blender tools now use this checkout's renderer: `backend="local"` calls
+`blender_render.local.render_payload`; `backend="cluster"` (alias `lab`) uses the
+saved `blender-render cluster` profile through `blender_render.cluster.client`.
+The separate pinned backend checkout and its setup skill were removed.
+
+Ran both paths from the installed PyMOL application's Python (3.10, `pymol2`)
+using `examples/2trx.cif` as a cartoon with chain A coloured salmon,
+`mint_sky_assembly`, 480 px wide and eight samples, captured with `capture_scene`
+and submitted with `BlenderBridge.submit`:
+
+- **Local:** the detached helper rendered on the Apple M3 GPU (Metal) in 13 s.
+  The PNG was visually inspected: PyMOL colours were kept and the scene was framed
+  as captured. The completion notification was sent.
+- **Lab:** after `blender-render cluster connect --profile lab` (the gateway was
+  already running), job `55280959b09f60677a4f724cc5e6c1cd` completed in 250 s
+  including Slurm scheduling. The fetched manifest records an NVIDIA A100 80GB PCIe
+  (CUDA). The download was digest-verified by the cluster client and notified.
+
+## Lab reconnection guidance (2026-11-09)
+
+Updated repository and PyMOL MCP instructions to check the saved cluster
+connection before an authorized lab submission and attempt one noninteractive
+reconnect before asking the user to sign in. Local receipts, gateway acceptance
+and GPU execution remain distinct; reconnecting must not duplicate submissions.
+
+Real runtime observation: the configured profile reported `tunnel_open=false`.
+Invoking the existing `connect('lab')` implementation returned `connected`,
+`gateway_started=false` and `tunnel_reused=false`: it opened a new local tunnel
+to the existing gateway without interactive authentication. The accumulated SSH
+log contained timeouts, broken pipes and unreachable-host errors, but did not
+establish the exact cause or time of this disconnect. This check establishes
+reconnection only, not successful rendering or visual correctness.
+
+Using PyMOL's Python, `python -m pytest tests/co_pymol/test_blender.py
+tests/co_pymol/test_skills.py` passed all **89 tests** (one Pydantic forward-reference
+warning). No renderer or transport code changed.
+
+## Cutaway fade regression and decoded-frame limit (2026-11-09)
+
+Raised the decoded animation-frame allowance from 1 GiB to 10 GiB; frame-count,
+archive-size and duration bounds remain unchanged. Boundary tests exercise both
+camera-orbit and camera-path inputs at exactly 10 GiB and one row beyond it. A
+276-frame, 1280 x 1115 request now passes normalization (about 1.47 GiB decoded).
+A wheel containing only the limit change was installed outside the checkout and
+verified with `EngineSeal`. A corresponding staged lab image passed the worker
+identity check and cluster doctor, including Slurm dry-run submission. It has
+**not been activated**; those checks do not establish a GPU render with that image.
+
+Reproduced the reported cutaway artifact using the saved public 8EA6 payload and
+Cyan Mint Cutaway colours. The lid's Boolean intersection included cut-plane caps
+coincident with the permanent cutaway caps. Its initial zero-opacity still also
+left the lid render-visible, unlike subsequent zero-opacity frames. A fresh
+400 x 357, 16-sample Apple Metal render showed the dark/jagged planes immediately
+before the lid disappeared, even after filling its empty material slots.
+
+The fix marks caps using a private cutter copy and removes only those faces from
+the baked fading shell; it also initializes visibility consistently with frame
+updates. The original cutter and material assignments are preserved. Recipe
+camera paths, palette and timing are unchanged. A fresh four-frame render took
+23.68 s including the isolated runner. Visually inspected opacity 0.1, 0.0001,
+and two zero-opacity frames: the overlapping planes were absent. The anchor and
+next identical-view frame differed by mean 0.086 channel levels (0-255), with no
+pixel differing by more than 30; near-zero versus hidden was 1.558, versus 10.669
+before cap removal. Low-sample transparency noise remains in that comparison.
+
+With `BLENDER_RENDER_TEST_BLENDER` selecting the real Blender executable,
+`python -m pytest` on animation, animation-path, lid, cutout-plane, cluster-client,
+cluster-server, cluster-jobs, cluster-connect and Structure Studio animation tests
+passed **222 tests** in 17.94 s (two existing warnings). The real Blender geometry
+regression checks a half cube has five exterior faces and no cut-plane cap,
+including when the original cutter shares the surface material; it verifies
+initial/frame visibility and that temporary cutter objects/materials are removed.
+
+History inspection found the original recipe's lid algorithm unchanged since
+its October introduction/refactor. The retained older validation preview uses
+1STP at 160 x 120 and 12 frames; it does not establish why a deleted earlier user
+render appeared correct. Evidence is retained under ignored
+`.validation/indigo-lynx-cutaway/`. The lab cutaway update is held for user review
+of the corrected fade video; no existing completed job has been resubmitted.
+
+For user review, rendered the unchanged original path from 4.5 through 7.5 s:
+73 frames at 24 fps, 400 x 357, 16 samples, in 109.86 s including the runner.
+Inspected closed, mid-fade, near-zero and adjacent open frames. Encoded review
+video is 3.041667 s (73 frames); the side-by-side comparison uses the corresponding
+original frames on the left and corrected frames on the right. Review files are
+under the original render's ignored `review/` directory. The two-module candidate
+wheel (limit and lid only) was installed into an isolated environment outside the
+checkout and passed `EngineSeal`; it is staged locally, not deployed to the lab.
+
+### Follow-up: back-wall pop during the reviewed fade
+
+User review found a remaining defect around the end of the three-second clip.
+Adjacent frames had a distinct jump at clip frame 60 (2.5 s), despite an identical
+camera: the zero-opacity lid was switched to `hide_render=True`. Diagnostic
+renders of the same saved Blender scene separated sample count, transparent-ray
+depth and visibility. With 256 samples and an entirely transparent lid still
+present, Cycles' default depth of eight left dark patches at the back of the
+cutaway. Raising only that depth to 64 removed the localized dark patches:
+compared with hiding the lid, maximum channel difference fell from 72 to 24,
+and pixels with a channel difference over 30 fell from 222 to zero. Increasing
+samples alone did not remove them. These are actual Apple Metal renders, not
+mock-based evidence.
+
+The revised fix raises transparent depth to at least 64 only when constructing
+an animated cutaway lid, preserves an already-higher value, and keeps the fully
+transparent shell render-visible through the end of the fade. This supersedes
+the earlier initialization/hide fix above; there is no visibility switch at zero.
+The original cap removal remains. The review sample count is raised from 16 to
+64 as a preview-quality choice; preset defaults, recipe camera path and timing
+are unchanged. Relevant animation/path/lid/cutout/recipe tests passed **122 tests**
+in 1.95 s with the real Blender executable enabled (one existing zip warning).
+The real Blender test now checks the depth floor, preservation of a depth of 96,
+and consistent visibility at zero opacity. The updated two-module candidate wheel
+passed an installed `EngineSeal` check outside the checkout. Deployment remains
+on hold for user review.
+
+The revised 73-frame review completed in 301.17 s including the isolated runner,
+at 400 x 357, 64 samples, Apple Metal. Visually inspected the rear wall from
+1.67 through 2.54 s. The adjacent-frame mean change at 2.5 s fell from 1.571 in
+the first review to 0.094 channel levels; its maximum per-channel change was 15
+with no pixels over 30. Changes immediately before/after were 0.104 and 0.063,
+so the earlier isolated jump is absent in this check. The revised MP4 and a
+previous-preview/revised-preview comparison are saved in the ignored `review/`
+folder. FFprobe verified 73 frames, 24 fps and 3.041667 s; the MP4 is padded to
+400 x 358. No lab renderer configuration or existing job was changed.
+
+### Approved lab deployment and GPU acceptance
+
+After the user approved the revised video, activated the two-module update on
+the existing lab gateway and Slurm image. The installed controller and container
+both report engine `08e4c3729725c8c3b95b5d15b976c0599865b5d8afb5a01a22f8ab924c1a1f2e`.
+Only `animation.py` and `animation_blender.py` changed relative to the previous lab
+wheel, plus regenerated package identity/RECORD metadata. The pinned Linux
+runtime stayed at its original absolute path. The image passed worker identity,
+cluster doctor and Slurm dry-run checks. A staging helper initially used the
+wrong scheduler class name; correcting the helper and rerunning doctor passed
+before any live configuration changed.
+
+No jobs were active at the gateway switch. Backed up the previous wheel and both
+server configurations, updated the controller and both image/checksum settings,
+then reconnected the existing profile with the same credentials and private spool.
+The old image and rollback files are retained. The active controller confirms a
+10,737,418,240-byte decoded-frame limit and accepts a 276-frame, 1280 x 1115,
+11.5-second path. Earlier notes that deployment is pending are now superseded.
+
+Real acceptance job `3b0c5967db48d05aaedfcc262c2897e1` (Slurm `25467384`) completed
+in **272.53 s including scheduling**, rendering four diagnostic fade frames from
+the saved 8EA6 payload at 400 x 357 and 64 samples. Its manifest records an
+**NVIDIA A100 80GB PCIe (CUDA)**, Blender 5.0.1, Molecular Nodes 4.5.10, Python
+3.11.15, NumPy 1.26.4 and Biotite 1.6.0. Downloads passed client digest checks.
+Visually inspected the frames. Near-zero versus zero opacity differed by mean
+0.134 channel levels, maximum 20, with zero pixels over 30. Reopened the fetched
+Blender scene in a background process with embedded script execution disabled:
+transparent depth is 64, both lids remain render-visible at full transparency,
+their exterior face counts are 11,716 and 11,038, and no marker material remains.
+This was a new bounded acceptance job; no previous full render was resubmitted.
+
+## Follow-up report after deployment (2026-11-10)
+
+The user reported another back-wall artifact in a subsequent render. The newest
+local animation, `golden-seal`, records the deployed `08e4c3729725...` engine;
+its actually loaded `animation_blender.py` SHA-256 equals the current source
+(`150bf3d0eeab9fbe1b7536699ee53eba1c001d22a4040ba9d825e72e3b015315`). The live
+gateway still reports that engine. This rules out an older lid implementation
+for that saved video. It uses a different framing (800 x 925, 32 samples) from
+the approved short preview. Inspecting its complete frame sequence did not yet
+establish the exact remaining defect reported by the user; a timestamp was
+requested. The near-zero/zero fade transition is small in this video as well.
+
+Rendered a four-view local diagnostic from this exact saved payload at 400 x 463,
+16 samples, in 25.68 s, then inspected its evaluated cut faces. The two permanent
+back caps are coplanar within floating-point precision and overlap in projection.
+A bounded diagnostic offset of one cutter changed some overlap pixels, but this
+alone does not establish the cause of the reported glitch. No additional
+production code or lab renderer changes were made. Evidence is under ignored
+`.validation/golden-seal-cutaway/`; do not treat this investigation as a confirmed
+third fix. The previous GPU acceptance covered a small fade sample, not all
+camera positions in the full recipe.
+
+### Rear-wall depth refinement
+
+The user's clarification identified thin, jagged shapes in the fully open still,
+not only a fade transition. In a background Blender diagnostic, hiding the
+combined interior mesh removed the small ribbon fragments; a narrow irregular
+surface gap remained. Moving the rear plane forward concealed these background
+features. A prototype convex backing extended outside the molecular silhouette
+and was rejected. No backing mesh or additional Boolean algorithm was added.
+
+Changed Cyan Mint Cutaway's `ligand_cutout_plane_scales.back` from 0.9 to 0.35
+on both surface layers. Compared 0.6, 0.35 and 0.2 using fresh shared-pipeline
+stills at 640 x 740, 64 samples, Apple M3 Metal. The 0.6 setting retained a pointed
+background fragment; 0.2 obscured more of the ligand. Inspected the 0.35 close-up:
+the rear plane covers the thin background fragments while retaining the central
+ligand and main ribbons. This deliberately reduces visible pocket depth; it does
+not alter atomic coordinates or the native interior mesh. The manifest confirms
+0.35 for both surfaces. `tests/test_reference_presets.py`, `tests/test_style_schema.py`
+and `tests/test_animation_path.py`: **82 passed**.
+
+Full motion validation remains pending at this entry. A 400 x 463, 32-sample
+local diagnostic is rendering the entire 276-frame path. The final lab request,
+`smooth-mint-cutaway`, reuses the saved scene and original path at 800 x 925,
+32 samples, 24 fps and 11.5 seconds. Slurm accepted job `25552525` (gateway job
+`ed300c713a02b79a1979af534c6ad451`); the persistent CoPyMOL worker handles retrieval
+and the configured macOS completion notification. The earlier 0.6 lab preview
+is a separate diagnostic, not this final request. Local clients resolve the
+revised preset and send its complete style to the existing lab renderer; its
+bundled preset and engine image have not been redeployed for this data change.
+
+### Depth workaround rejected; direct comparison with main
+
+The final 0.35 lab animation completed on the A100 and was downloaded and
+digest-verified; its notification was submitted to macOS. The user reported
+that the blue side now looked broken. Inspection of the open still and rocking
+frames confirms that the prior depth refinement is not an accepted fix. Restored
+both back scales to 0.9 and restored the reference documentation. The preset file
+again has SHA-256 `98e8d06f73bdbf5122548ec15425c7a92f05457c42e514f265b19377d05025d1`,
+exactly matching both `main` and the gallery's recorded preset hash. The depth
+refinement entry above records a rejected experiment, not a shipping change.
+
+Fetched `origin/main` and compared commit `1690762888aff97cb3020348ce7befc9a6363da9`
+in an isolated detached worktree. Plane construction, frame axes, cap materials,
+Boolean modifier setup and coordinate mapping functions are unchanged between
+main and this branch. The plane-cut application adds the later optional fading
+lid hook. All shared renderer modules actually loaded by the local 0.35 still
+and the completed lab job have matching SHA-256 hashes; this does not mean that
+the animation implementation is identical to main, which only supports camera
+rock/360 animation.
+
+Rendered two controls directly from main using the same saved 8EA6 payload,
+64 samples, Apple M3 Metal, with no animation or fading shell. At the gallery's
+recorded orthographic view, the 640 x 429 image reproduces its composition and
+cutaway appearance (13.66 s). At the user's saved perspective close-up, the
+640 x 740 image still contains the rear fragments (18.73 s). Thus those static
+features also occur with main's original code at this view: the camera-aligned
+cut crosses a different part of the molecule. A smooth wall at every viewing
+angle is not established by the gallery example. The two controls, manifests
+and source comparison are retained in ignored validation output.
+
+The earlier local full-motion diagnostic resolved to 400 x 925, not the intended
+400 x 463: its copied output overrides retained the original height. It is not
+evidence of matching full-frame composition. No additional lab image or animation
+was submitted during this comparison, and the live PyMOL view was not changed.
+
+### Animation from the approved main-gallery view
+
+The user approved the main-gallery preview as the basis for another cutaway
+animation. Prepared a frozen copy of its full style and gallery view, preserving
+the original 0.9 back depth, orthographic camera, materials, lights and surface
+selections. The recipe's fully open anchor is exactly that view. Its overview is
+15% wider, followed by the existing cutaway timing and a 12-degree rock. A private
+headless PyMOL saved a PSE with the gallery orientation; the live session stayed
+unchanged. Full output is 276 frames, 24 fps, 11.5 seconds, 800 x 536, 64 samples.
+
+A five-frame check sampled the closed shell, mid-fade, fully open anchor and both
+rocking extrema. Slurm initially held job `25577723` for `MaxGRESPerAccount`, then
+allocated one A100 on a GPU node. While it was pending, the identical local check
+completed in 30.96 s on Metal. The Slurm check subsequently completed and its
+downloads passed digest checks. Inspected its PNGs: the anchor reproduces the
+approved view, with no reported blue-wall defect visible at either sampled rock
+extreme. Camera matrix and orthographic scale match the approved main render
+within 1e-6; style selections and camera configuration match exactly. Mean RGB
+channel difference from the approved still is 0.350/255 (Metal check: 0.218/255).
+This establishes these sampled frames, not complete temporal verification.
+
+After inspecting the Slurm check, submitted the full `gallery-cutaway` request
+through the persistent worker, with the same frozen style and saved scene. Output
+and recovery receipts are in the user's ignored `pymol/gallery-cutaway/` folder;
+an alias in the configured PyMOL render directory makes it discoverable there too.
+The complete movie remains pending at this entry. No renderer or preset source
+was changed for this new request.
+
+### Frame-preserving MP4 export
+
+The user reported flashing in the complete gallery animation despite the sampled
+previews looking correct, and specifically asked to investigate the MP4 export.
+The full Slurm render had completed on an A100. Decoded and compared all 276 MP4
+frames against their matching, checksum-verified archived PNGs. Frame count,
+ordering and 11.5-second timing are correct. The original lossy YUV 4:2:0 encode
+has mean rear-region error 2.642/255 during the rock, and maximum channel error
+85. These differences alone do not establish that encoding caused every reported
+flash; five representative images also cannot prove complete temporal stability.
+
+Tested an all-intra CRF-8 YUV encode and a lossless RGB encode from the same
+archive, with no new rendering. The former still changes colour pixels; the
+latter decodes exactly to every original RGB pixel in all 276 frames. macOS
+AVFoundation's native decoder successfully read all 276 frames of the RGB MP4
+with completed status and no error. Diagnostic renders that hid the transparent
+lid or slightly offset a back cutter were not adopted as geometry fixes.
+
+Changed shared MP4 encoding to lossless `libx264rgb`, CRF 0, all-intra RGB, while
+retaining white alpha compositing and odd-dimension padding. Added a real FFmpeg
+round-trip test containing moving one-pixel colour detail, verifying every
+decoded pixel and frame plus padding. Relevant animation, path and local API
+tests: **98 passed**. Re-exported the actual archive through this changed shared
+function and verified all 276 decoded frames byte for byte; native macOS decoding
+also passes for that exported file. The full movie is about 61 MiB rather than
+562 KiB. Geometry, camera, palette and timing are unchanged.
+
+Promoted the verified export to the user's existing `render.mp4`, preserving the
+original as `render-original-compressed.mp4` and recording a separate local
+re-encoding receipt with both hashes. The original remote manifest is retained.
+The source change is in the working tree. Built an encoder-only wheel from the
+previously deployed lab wheel, replacing only `animation.py` and generated
+integrity metadata. Verified its engine seal outside the checkout; runtime pins
+and the existing geometry implementation are unchanged. In the candidate Linux
+image, encoded and decoded four moving RGB-detail frames and verified every
+pixel exactly. Worker identity, image digest, cluster doctor and Slurm submission
+dry-run checks passed. With no active gateway render jobs, activated the new
+controller and image, then verified the reconnected gateway reports engine
+`8c0b6d562449c3b093770cdf2b79abdfc70cbe6e0eb4b54a8df589fec3c2cba5`.
+The previous image, wheel and server configurations remain available for rollback.
+No additional GPU render was needed for this encoding-only change.
+This proves PNG-to-video pixel preservation, not a visual guarantee that the
+underlying rendered frame sequence contains no temporal artifact.
+
+### Rejected RGB export and coincident rear caps
+
+The user reported that the 10:31 replacement still flashes and displays wrong
+colours. Its timestamp and digest confirmed it was the replacement, not a stale
+file. The native decoder check above only counted frames: extracting its actual
+BGRA pixels revealed a severe colour conversion error (mean channel error
+32.30/255 at frame 184, versus 2.63 for the compatible YUV export). FFmpeg's exact
+RGB round trip did not establish native playback colour correctness. Restored a
+YUV 4:2:0 export, rolled the lab controller and image back to the previous engine,
+and replaced the RGB regression with a real AVFoundation colour-patch check.
+The 10 GiB frame budget and the preceding lid fixes remain intact.
+
+Inspected the actual saved scene's Boolean cap polygons. The blue and mint rear
+caps overlap, with depths differing only by floating-point noise. A material-ID
+render makes their competing intersections visible as red/green speckles. Across
+23 sampled rocking frames, moving one rear plane forward by 0.0001 world units
+removes the interior mixed-colour patches. This diagnoses coincident geometry,
+rather than MP4 compression. The earlier whole-region mean error obscured this
+small but visible defect.
+
+Added deterministic separation for repeated cut planes in the shared renderer:
+the first surface retains its requested plane, later matching planes move inward
+by 0.1% of the cut radius. Only coincident plane equations are adjusted; requested
+and resolved equations are saved on the objects, and actual insets are recorded
+in the manifest. Both the permanent cut and fading lid use the same cutter. A
+real Blender Boolean test checks three overlapping surfaces have distinct,
+ordered cap depths and an unrelated plane stays unchanged. Relevant tests pass
+(105 initial passes plus the corrected runtime-configured geometry test).
+The new source rendered all 108 frames from the open anchor through the full rock
+at 640 x 429 / 64 samples on Metal (320.5 s). The manifest records zero inset for
+the first surface and 0.00011058 world units for the second. Its anchor differs
+from the approved main-gallery still by mean 0.385/255 across RGB channels.
+Rendered material-ID diagnostics for all 107 subsequent frames from that saved
+scene: the broad mixed-colour patches are absent, leaving at most ten mixed
+interior-mask pixels along antialiased material junctions. The original diagnostic
+had 114–1579 such pixels across its 23 sampled frames. Native AVFoundation decoded
+all 108 preview frames; the first frame's mean RGB error against the PNG is
+0.775/255, and its cyan/mint colours were visually inspected.
+
+Built a wheel containing only the shared cut-plane correction and the compatible
+encoder comment relative to the prior deployed renderer. Verified its engine seal
+outside the checkout; runtime pins are unchanged. The Linux image passes worker
+identity, YUV 4:2:0 encoding, cluster doctor and Slurm submission dry-run checks.
+Activated controller and image engine
+`ff8b33faf71dd3e30a982b4d40b26dfab178b7519ea8c217832dee07a22642e1`, retaining
+rollback files. Submitted a new full 276-frame animation with the original saved
+scene, camera path, palette and dimensions. Its result uses a separate output
+folder to distinguish it from the rejected 10:31 video.
+The user viewed the new rocking preview and confirmed: "Rear wall looks stable."
+Full Slurm job `25609712` reports CUDA on an NVIDIA A100 80GB PCIe and is still
+rendering at this entry. The persistent worker will retrieve its existing job;
+a separate bounded local verifier waits for that receipt and then checks all
+276 native-decoded frames, frame timing, exact preset/camera provenance and the
+resolved cap separation. It writes a verification receipt beside the movie and
+never submits or cancels jobs. Full-movie verification is pending, not claimed
+by the successful preview checks above.
+
+The full Slurm render subsequently completed and was retrieved successfully.
+Its background verifier passed all 276 native-decoded frames at 24 fps / 11.5 s,
+confirmed the original resolved preset and camera were unchanged, and verified
+the same cap separation as the user-approved preview. Mean native RGB error
+against the PNGs is 2.514/255 (maximum frame mean 2.766/255), consistent with the
+compatible lossy export. Inspected the delivered rear-wall frame and its cyan/mint
+colours. Final MP4 SHA-256:
+`53cea286e7311743b33a5e489665f4bd42cc7f49b76d46f2b7356549db143850`.
+The live lab gateway still reports the corrected engine above. Source and tests
+remain uncommitted in the `pymol-merge` working tree; the user requires confirming
+the commit destination before any commit or push.
+
+### Reveal, Rock and States recipe checks
+
+The user clarified that the cutaway now looks correct and asked to validate the
+remaining templates. Prepared Reveal (9.5 s) and Rock (6 s) from the saved 8EA6
+scene, with Cyan Mint Cutaway colours. A real Reveal preparation exposed NumPy
+`float32` clipping planes escaping into the strict JSON request. Added native
+float conversion at the PyMOL framing boundary. A regression using real headless
+PyMOL failed for Reveal and Cutaway before the fix; all four tested recipe views
+(Reveal, Cutaway, States, Rock) now serialize correctly.
+
+Preparing a 360-state example also exposed repeated/skipped states at floating-
+point frame boundaries (`13/360*360` falls just below 13). Added a small rounding
+tolerance before taking the state index. The regression now requires exactly
+states 1 through 360, once each. Relevant recipe, real PyMOL and path-validation
+tests: **50 passed** using PyMOL's Python. Test-only dependencies were read from
+the existing development environment; neither renderer runtime pins nor the lab
+image changed for these client-side recipe fixes.
+
+For the requested adenylate-kinase example, downloaded 4AKE and 1AKE mmCIF files
+from RCSB, retained their hashes, selected chain A and alternate location A, and
+matched all 1,656 protein heavy atoms across 214 residues. Fitted 133 CORE C-alpha
+atoms (residues 1–29, 68–117, 161–214; RMSD 1.551 Å). Prepared 360 cosine-eased
+Cartesian interpolations for a 15-second open → closed → open visualization.
+State 1 equals the open coordinates; state 181 equals the fitted closed ones.
+This is an interpolated visualization, not a simulation. The inhibitor remains
+in the disabled experimental closed reference; the animated object is protein-
+only because the open structure lacks it. Experimental references, the PSE,
+endpoint CIFs and interpolation provenance are in ignored local outputs.
+
+The States request passes cluster schema/size validation (13.15 MB) and maps one
+conformation to each frame. A real local Blender check rendered open, halfway,
+closed and return states in 15.53 s on Metal; inspected distinct conformations,
+stable domain colours and framing. Full lab outputs are pending; these sampled
+checks do not establish complete rendered temporal quality. All recipe fixes
+and their tests remain uncommitted, as requested.
+
+## PyMOL merge review fixes (2026-11-12)
+
+Fixed local cancellation through the shared renderer's fresh-process preview,
+remote cancellation confirmation, SSE write-failure recovery, animation backend
+selection, custom renderer configuration roots, confidence classification,
+residue identifiers and half-turn camera interpolation. Consolidated the receipt
+writer and session validation, removed the unused operation key, updated the
+merged-package installation guide and refreshed `uv.lock`. The existing staged
+and unstaged merge work was preserved; no commit or push was made.
+
+Validation performed against this working tree:
+
+- PyMOL's Python 3.10: `python -m pytest tests/co_pymol -q` — **212 passed**
+  in **54.28 s**, with one existing Pydantic settings warning. The real headless
+  export/PSE preservation check now uses the current exporter signature and runs
+  whenever `pymol2` is installed. Regressions cover cancellation of one batch
+  child without cancelling its sibling, disconnected and ambiguous cluster
+  cancellation, proxy reconnection with outstanding calls, explicit backend
+  selection, custom configuration handoff, experimental B-factors, numbered and
+  insertion-coded residues across chains, and exact/near-180-degree rotations.
+- Renderer Python 3.11: `python -m pytest tests --ignore=tests/co_pymol -q`,
+  with the native Blender executable/runtime configured for the two geometry
+  checks — **552 passed, 50 skipped** in **42.39 s**. Skips were optional browser,
+  generated-wheel and additional Structure Studio PyMOL checks. The generated
+  wheel check was subsequently enabled and passed separately. Four existing
+  dependency/fixture warnings remained.
+- Real local cancellation: exported a synthetic six-alanine peptide with
+  headless PyMOL, submitted it through `BlenderBridge`, waited for the actual
+  Blender child of the isolated runner, then cancelled. Both runner and Blender
+  stopped before the worker reported `cancelled`; no success PNG was published.
+  The complete probe took **0.92 s**. A real-process regression also checks that
+  cancellation removes the private source snapshot.
+- A subsequent **192 × 144, four-sample** render of that peptide completed in
+  **10.99 s**. The manifest confirmed **Metal / Apple M3 GPU**; result hash
+  verification passed. Visually inspected the PNG: the peptide was present,
+  framed and unobstructed. This was a runtime smoke check, not figure-quality
+  validation. No desktop editor window or live PyMOL session was changed.
+- Built the wheel from an isolated source copy including the custom build hook,
+  installed it into a separate target outside the checkout, and verified module
+  locations, packaged notification resources and the shared receipt helper.
+  All **212 PyMOL tests passed again** against the installed package in
+  **54.53 s**. The wheel's renderer inventory and bytes matched the source.
+- With the newly locked **MCP 1.27.2** in an isolated dependency directory, the
+  hosted adapter, local MCP render and editor MCP checks reported **11 passed**
+  in **1.01 s**. `uv lock --check` and `git diff --check` passed.
+
+Cluster cancellation behavior was exercised with controlled transport failures;
+no live lab job was submitted. Test renders, installed-package targets and
+temporary source snapshots were removed after validation. Renderer runtime pins
+and the lab image were not changed.

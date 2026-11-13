@@ -75,7 +75,7 @@ and 32 samples. Set `--width`, `--height` and `--samples` explicitly for finals.
 `--full-quality` retains preset samples; `--rough` changes performance settings
 only. Duration rescales the full timeline while preserving its order. FPS must
 be 1–60; duration × FPS must be an integer from 4–360 and duration at most 15 s.
-Every state must appear at least once. Decoded frames are capped at 1 GiB and
+Every state must appear at least once. Decoded frames are capped at 10 GiB and
 the frame archive at 512 MiB. Reduce dimensions, duration or FPS if needed.
 
 Start with a short low-resolution preview and inspect the motion, focus and

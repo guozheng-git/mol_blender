@@ -2536,6 +2536,41 @@ def _delete_object_if_present(obj: bpy.types.Object | None) -> None:
         pass
 
 
+def _separate_cutout_planes(*, target_obj, cut_center, axes, radius_world,
+                           planes_enabled, plane_scales):
+    """Give coincident cut caps a stable depth order across overlapping surfaces.
+
+    Independently generated molecular surfaces can overlap. Cutting both at
+    exactly the same plane leaves competing coloured faces; Cycles then changes
+    which face it hits as the camera moves. Inset only repeated planes by 0.1%
+    of the cut radius, and record both requested and resolved plane equations.
+    """
+    previous = []
+    for obj in bpy.context.scene.objects:
+        if obj != target_obj and obj.get("bridge_cutout_planes"):
+            previous.extend(json.loads(obj["bridge_cutout_planes"]))
+    normals = {"left": -axes[0], "right": axes[0], "back": -axes[1],
+               "bottom": -axes[2], "top": axes[2]}
+    separation = max(1e-5, radius_world * 1e-3)
+    insets, records = {}, []
+    for name, normal in normals.items():
+        if not planes_enabled.get(name, True):
+            continue
+        extent = max(0.02, plane_scales.get(name, 1.) * radius_world)
+        requested = float(normal.dot(cut_center)) + extent
+        matches = [p for p in previous
+                   if normal.dot(Vector(p["normal"])) > 1. - 1e-6
+                   and abs(p["requested"] - requested) < separation * .01]
+        resolved = min([requested] + [p["resolved"] - separation for p in matches])
+        inset = requested - resolved
+        if inset >= extent * .5:
+            raise ValueError("Too many coincident cutaway planes to separate safely")
+        insets[name] = inset
+        records.append({"normal": list(normal), "requested": requested,
+                        "resolved": resolved})
+    return insets, records
+
+
 def _create_plane_cutout_prism(
     *,
     cut_center: Vector,
@@ -2546,6 +2581,7 @@ def _create_plane_cutout_prism(
     scene_radius: float,
     planes_enabled: dict[str, bool],
     plane_scales: dict[str, float],
+    plane_insets: dict[str, float] | None = None,
 ) -> tuple[bpy.types.Object | None, dict[str, float]]:
     guard = max(0.5, max(float(radius_world), float(scene_radius)) * 8.0)
     front_extent = max(0.5, max(float(radius_world), float(scene_radius)) * 10.0)
@@ -2562,6 +2598,13 @@ def _create_plane_cutout_prism(
     z_max = top if bool(planes_enabled.get("top", True)) else guard
     y_min = (-back) if bool(planes_enabled.get("back", True)) else (-guard)
     y_max = front_extent
+
+    insets = plane_insets or {}
+    x_min += insets.get("left", 0.)
+    x_max -= insets.get("right", 0.)
+    y_min += insets.get("back", 0.)
+    z_min += insets.get("bottom", 0.)
+    z_max -= insets.get("top", 0.)
 
     local_center = Vector(
         (
@@ -3178,7 +3221,13 @@ def _apply_surface_ligand_cutout_planes(
 
     cutters: list[bpy.types.Object] = []
     plane_bounds: dict[str, float] = {}
+    plane_records = []
+    plane_inset_records = []
     for center in cut_centers:
+        insets, records = _separate_cutout_planes(
+            target_obj=target_obj, cut_center=center, axes=(axis_x, axis_y, axis_z),
+            radius_world=radius_world, planes_enabled=planes_enabled, plane_scales=plane_scales,
+        )
         cutter, bounds = _create_plane_cutout_prism(
             cut_center=center,
             axis_x=axis_x,
@@ -3188,9 +3237,12 @@ def _apply_surface_ligand_cutout_planes(
             scene_radius=scene_radius,
             planes_enabled=planes_enabled,
             plane_scales=plane_scales,
+            plane_insets=insets,
         )
         if cutter is not None:
             cutters.append(cutter)
+            plane_records.extend(records)
+            plane_inset_records.append(insets)
             if not plane_bounds:
                 plane_bounds = dict(bounds)
     if not cutters:
@@ -3223,6 +3275,8 @@ def _apply_surface_ligand_cutout_planes(
     if not applied:
         _delete_object_if_present(merged_cutter)
         return False
+
+    target_obj["bridge_cutout_planes"] = json.dumps(plane_records)
 
     seal_mode_norm = str(seal_mode or "boundary_fill").strip().lower()
     if seal_mode_norm not in {"boundary_fill", "trimmed_panel", "none"}:
@@ -3265,6 +3319,7 @@ def _apply_surface_ligand_cutout_planes(
 
     if runtime_info is not None:
         runtime_info["applied"] = True
+        runtime_info["ligand_cutout_plane_insets_world"] = plane_inset_records
         runtime_info["ligand_cutout_seal_mode"] = seal_mode_norm
         runtime_info["ligand_cutout_boundary_loops_total"] = int(seal_info.get("boundary_loops_total", 0))
         runtime_info["ligand_cutout_boundary_loops_near_ligand"] = int(seal_info.get("boundary_loops_near_ligand", 0))

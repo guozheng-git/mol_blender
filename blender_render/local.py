@@ -26,10 +26,12 @@ def runtime_settings(*, blender='', runtime_paths=None, ccd='', runtime_wheels='
 
 def render_payload(payload, *, output, options=None, blender='', runtime_paths=None,
                    ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False,
-                   open_blender=False, gui_blender='', edit_bridge=False):
+                   open_blender=False, gui_blender='', edit_bridge=False, cancelled=None):
     from .core import validate_payload_document
     from .authoring import resolve_authored
     from .developer import preview
+    if warm and cancelled is not None:
+        raise ValueError('Cancellation callbacks require a fresh local render')
     payload = validate_payload_document(payload)
     options = dict(options or {})
     open_blender = open_blender or edit_bridge
@@ -70,7 +72,8 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         bundle.write_text(json.dumps(payload, allow_nan=False))
         result = preview(checkout=Path(__file__).resolve().parent.parent,
                          bundle=bundle, options=options, catalog_dir=catalog_dir,
-                         output=artifacts, timeout=timeout, keep_source=keep_temp, **settings, **runner_options)
+                         output=artifacts, timeout=timeout, keep_source=keep_temp,
+                         cancelled=cancelled, **settings, **runner_options)
     for name in names:
         if not (artifacts / name).is_file():
             raise RuntimeError('Render artifact missing: ' + name)

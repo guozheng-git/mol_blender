@@ -18,7 +18,7 @@ bridge and stdio MCP. No queue, paid service or remote runtime is required.
 | `--animation none` | `animation=none` | Disable animation embedded in a preset |
 
 Duration × FPS must be an integer from 4 to 360. Decoded frames are limited to
-1 GiB and their lossless archive to 512 MiB. Lower the dimensions, duration or FPS
+10 GiB and their lossless archive to 512 MiB. Lower the dimensions, duration or FPS
 if the limit is exceeded. Raw-view rendering is incompatible with animation.
 `--rough` retains motion and style while lowering render quality. GIF timing is
 quantized to 10 ms; use MP4 when precise frame timing matters.
@@ -46,6 +46,8 @@ on macOS. On Linux or a cluster, install/load an FFmpeg build with these encoder
 alongside the configured native Blender runtime. This branch does not build an
 Apptainer image. Encoder availability is checked before launching Blender.
 Rendering and encoding share the request deadline (600 seconds by default).
+MP4 uses standard YUV 4:2:0 H.264 for native player compatibility. Keep the PNG
+archive when exact rendered pixels are needed; the MP4 is a lossy presentation.
 MP4 pads odd dimensions to even values without cropping. Both movie formats use
 white behind transparent pixels; lossless PNGs retain the rendered alpha.
 

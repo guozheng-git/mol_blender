@@ -57,6 +57,19 @@ def test_invalid_style_never_launches_blender(local_runtime, monkeypatch):
         local.render_payload(bundle(), output=local_runtime/'bad.png', options={'preset':'absent'})
 
 
+def test_local_cancellation_reaches_preview(local_runtime, monkeypatch):
+    from blender_render.errors import RenderCancelled
+    cancelled = lambda: True
+    def preview(**kwargs):
+        assert kwargs['cancelled'] is cancelled
+        raise RenderCancelled('cancelled')
+    monkeypatch.setattr(developer, 'preview', preview)
+    out = local_runtime / 'cancelled.png'
+    with pytest.raises(RenderCancelled):
+        local.render_payload(bundle(), output=out, cancelled=cancelled)
+    assert not out.exists()
+
+
 def test_failed_preview_has_no_success_png(local_runtime, monkeypatch):
     def fail(**kw):
         kw['output'].mkdir()

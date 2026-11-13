@@ -254,6 +254,33 @@ Apptainer usage. Each Slurm render request still gets a separate job; an animati
 keeps its frames within that job. Choose either `warm=1` or `cluster=lab`.
 Legacy service/profile/remote arguments are unsupported.
 
+## PyMOL agent (co_pymol)
+
+`co_pymol` runs an MCP server inside PyMOL. Claude Code, Codex or Cursor can then
+drive the live session: `run`, pLDDT colouring, metrics, triage and PyMOL images.
+The same server renders the current view with this checkout's Blender renderer:
+`blender_render`, `blender_render_batch`, `blender_status`, `blender_result`,
+`blender_cancel` and `blender_presets`. Renders run in the background and save
+`scene.pse` beside each PNG.
+
+Install it into PyMOL's own Python, then configure a client:
+
+```sh
+/Applications/PyMOL.app/Contents/bin/python -m pip install --user -e ".[pymol]" --ignore-requires-python
+/Applications/PyMOL.app/Contents/bin/python -m co_pymol setup claude
+```
+
+Optional settings live in `~/.config/co-pymol/blender.json`:
+
+```json
+{"backend": "cluster", "cluster_profile": "lab", "output_directory": "/absolute/renders"}
+```
+
+`backend` is `local` (default) or `cluster`. In chat, ask for "on the lab GPU" or
+"locally" to override the default for a single render. Lab renders use the
+`blender-render cluster connect --profile lab` connection. Run that in a terminal
+first, since SSH and MFA prompts stay with you.
+
 ## Claude Code and Codex
 
 Open this checkout in either agent and use the CLI above. The repository includes
