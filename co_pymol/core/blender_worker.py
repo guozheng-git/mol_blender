@@ -64,7 +64,7 @@ def _render_cluster(directory: Path, request: dict, state: dict, update, recover
     from urllib.error import URLError
 
     from blender_render.cluster.client import Client, RemoteError
-    from blender_render.cluster.common import TERMINAL
+    from blender_render.cluster.protocol import stop_waiting
 
     cfg = request["config"]
     cancelled = directory / "cancel.request"
@@ -114,7 +114,7 @@ def _render_cluster(directory: Path, request: dict, state: dict, update, recover
         if observed["status"] == "completed":
             update(status="downloading")
             return client.fetch(job_id, directory / "render.png")
-        if observed["status"] in TERMINAL or observed["status"] == "submission_unknown":
+        if stop_waiting(observed["status"]):
             update(
                 status="cancelled" if observed["status"] == "cancelled" else "failed",
                 error=observed.get("error") or observed["status"],

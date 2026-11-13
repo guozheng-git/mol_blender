@@ -18,7 +18,7 @@ import pytest
 
 from blender_render.cluster import connect, connect_remote
 from blender_render.cluster.client import Client, profile_path
-from blender_render.cluster.common import atomic_json
+from blender_render.cluster.jsonio import atomic_json
 from test_cluster_jobs import config  # noqa: F401  (fixture)
 
 FAKE_SSH = Path(__file__).with_name('fake_ssh.py')

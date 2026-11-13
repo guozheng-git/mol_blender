@@ -14,8 +14,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 from .auth import private_file
-from .common import (ARTIFACTS, MAX_ARTIFACT, PROTOCOL, TERMINAL, Limits, atomic_json,
-                     decode_json, job_id, json_bytes, read_json, validate_request, validate_url)
+from .config import Limits
+from .jsonio import atomic_json, decode_json, json_bytes, read_json
+from .. import outputs
+from .protocol import PROTOCOL, JobStatus, job_id, stop_waiting, validate_request, validate_url
 
 
 class RemoteError(RuntimeError):
@@ -121,7 +123,7 @@ class Client:
             Limits(**info['limits']))
         output.parent.mkdir(parents=True, exist_ok=True)
         record = {'protocol': PROTOCOL, 'profile': self.profile, 'url': self.url,
-                  'request_id': document['request_id'], 'output': str(output), 'status': 'prepared'}
+                  'request_id': document['request_id'], 'output': str(output), 'status': JobStatus.PREPARED}
         # Persist recovery identity before uploading. No coordinates or tokens in this receipt.
         fd = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'wb') as handle:
@@ -138,7 +140,7 @@ class Client:
             result = self.wait(result['job_id'], timeout=timeout)
             record.update(result)
             atomic_json(receipt, record)
-            if result['status'] == 'completed':
+            if result['status'] == JobStatus.COMPLETED:
                 result = self.fetch(result['job_id'], output)
         return {**result, 'receipt': str(receipt)}
 
@@ -159,7 +161,7 @@ class Client:
         deadline = time.monotonic() + timeout
         while True:
             result = self.status(identifier)
-            if result['status'] in TERMINAL or result['status'] == 'submission_unknown':
+            if stop_waiting(result['status']):
                 return result
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -169,16 +171,14 @@ class Client:
     def fetch(self, identifier, output):
         from PIL import Image
         result = self.status(identifier)
-        if result['status'] != 'completed':
+        if result['status'] != JobStatus.COMPLETED:
             raise RemoteError('Job is ' + result['status'] + '; fetch after completion')
         files = result['artifacts']
-        if not files or set(files) - ARTIFACTS or 'render.png' not in files:
+        if not files or set(files) - outputs.NAMES or 'render.png' not in files:
             raise RemoteError('Invalid artifact manifest')
         output = Path(output).expanduser().absolute().with_suffix('.png')
-        artifacts = output.with_suffix('.render')
-        suffixes = {'render.png': '.png', 'render.mp4': '.mp4', 'render.gif': '.gif', 'frames.zip': '.frames.zip'}
-        destinations = {name: output.with_suffix(suffixes[name]) if name in suffixes else artifacts / name
-                        for name in files}
+        artifacts = outputs.folder(output)
+        destinations = {name: outputs.destination(output, name) for name in files}
         if artifacts.exists() or any(p.exists() or p.is_symlink() for p in destinations.values()):
             raise ValueError('Output already exists; choose a new filename')
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +186,7 @@ class Client:
             stage = Path(temporary)
             for name, meta in files.items():
                 size, expected = meta['bytes'], meta['sha256']
-                if (type(size) is not int or not 0 < size <= MAX_ARTIFACT or
+                if (type(size) is not int or not 0 < size <= Limits().max_artifact_bytes or
                         not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected)):
                     raise RemoteError('Invalid artifact size or digest')
                 digest, count = hashlib.sha256(), 0

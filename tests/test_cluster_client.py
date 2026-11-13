@@ -12,7 +12,8 @@ import pytest
 import uvicorn
 
 from blender_render.cluster.client import Client, NoRedirect, RemoteError, configure, profile_path
-from blender_render.cluster.common import atomic_json, digest_file, read_json, validate_url
+from blender_render.cluster.jsonio import atomic_json, digest_file, read_json
+from blender_render.cluster.protocol import validate_url
 from blender_render.cluster.server import create_app
 from test_cluster_jobs import Scheduler, config, payload
 

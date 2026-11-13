@@ -192,6 +192,15 @@ def _state_coordinate_errors(states: Any) -> list[str]:
     return []
 
 
+#: Top-level fields of an exported structure payload. The cluster rejects anything else,
+#: so a request can never carry sessions, paths or scripts.
+PAYLOAD_KEYS = frozenset({
+    "version", "generated_at_utc", "selection", "state", "run_id", "structure_summary",
+    "view", "dss", "ss_hints", "cif_text", "pdb_text", "color_hints", "provenance",
+    "state_coordinates", "polar_contacts",
+})
+
+
 def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
 

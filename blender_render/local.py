@@ -50,15 +50,15 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         if animation['states'][animation.get('anchor', 0)] != coordinates['base']:
             raise ValueError('The anchor animation state must be the exported state')
     from .animation import encoder, required_names
+    from .outputs import beside_png, destination, folder
     if resolved['style_doc']['output'].get('animation'):
         encoder()  # Fail before allocating a Blender process.
     names = required_names(resolved['style_doc'])
     settings = runtime_settings(blender=blender, runtime_paths=runtime_paths, ccd=ccd, runtime_wheels=runtime_wheels)
     output = Path(output).expanduser().resolve().with_suffix('.png')
-    artifacts = output.with_suffix('.render')
-    destinations = {'render.png': output, 'render.mp4': output.with_suffix('.mp4'),
-                    'render.gif': output.with_suffix('.gif'), 'frames.zip': output.with_suffix('.frames.zip')}
-    if artifacts.exists() or any(destinations[name].exists() for name in names if name in destinations):
+    artifacts = folder(output)
+    published = {name: destination(output, name) for name in names if beside_png(name)}
+    if artifacts.exists() or any(path.exists() for path in published.values()):
         raise ValueError(f'Output already exists; choose a new filename: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     runner_options = {}
@@ -78,13 +78,13 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         if not (artifacts / name).is_file():
             raise RuntimeError('Render artifact missing: ' + name)
     for name in names:
-        if name in destinations:
-            shutil.copyfile(artifacts / name, destinations[name])
+        if name in published:
+            shutil.copyfile(artifacts / name, published[name])
     outputs = {'render.png': str(output), 'manifest.json': str(artifacts / 'manifest.json'),
                'style.json': str(artifacts / 'resolved-style.json')}
     for name in names:
-        if name in destinations:
-            outputs[name] = str(destinations[name])
+        if name in published:
+            outputs[name] = str(published[name])
     if (artifacts / 'render.blend').is_file():
         outputs['render.blend'] = str(artifacts / 'render.blend')
     result = {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),

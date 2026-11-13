@@ -21,7 +21,7 @@ import sys
 import tempfile
 import time
 
-from blender_render.cluster.common import atomic_json
+from blender_render.cluster.jsonio import atomic_json
 
 SERVE_WAIT = 30
 LOCK_WAIT = 10

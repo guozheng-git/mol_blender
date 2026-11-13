@@ -77,7 +77,7 @@ view = (1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, 0)
 assert len(pymol_animation.frames_for('rock', pymol_animation.Keys(overview=view))) == 160
 
 from blender_render import animation, core, export
-from blender_render.cluster.common import Limits
+from blender_render.cluster.config import Limits
 from blender_render.spec import resolve_options
 resolved = resolve_options({'animation': 'rock', 'width': 160, 'height': 120}, {})
 assert resolved['preset'] == 'northern_nights'

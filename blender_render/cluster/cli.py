@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from .common import read_json
+from .jsonio import read_json
 
 
 def parser():

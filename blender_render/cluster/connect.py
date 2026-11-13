@@ -20,7 +20,8 @@ import subprocess
 import tempfile
 import time
 
-from .common import TERMINAL, atomic_json, one_line, read_json
+from .jsonio import atomic_json, one_line, read_json
+from .protocol import is_terminal
 from .connect_remote import file_lock, listeners, starting_listener
 
 HOST = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,252}')
@@ -229,7 +230,7 @@ def summary(profile, conf, details, **extra):
 def active_jobs(profile):
     from .client import Client
     try:
-        return [job['job_id'] for job in Client(profile).api('GET', '/v1/jobs') if job.get('status') not in TERMINAL]
+        return [job['job_id'] for job in Client(profile).api('GET', '/v1/jobs') if not is_terminal(job.get('status'))]
     except Exception:
         return None
 

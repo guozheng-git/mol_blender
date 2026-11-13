@@ -128,8 +128,9 @@ def fake_repo(tmp_path, monkeypatch):
         "presets.py": "def catalog(): return " + repr(CATALOG) + "\n",
         "cluster/__init__.py": "",
         "cluster/client.py": FAKE_CLUSTER_CLIENT,
-        "cluster/common.py": (
-            "TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'expired'})\n"
+        "cluster/protocol.py": (
+            "def stop_waiting(status):\n"
+            "    return status in {'completed', 'failed', 'cancelled', 'expired', 'submission_unknown'}\n"
         ),
     }
     for name, content in files.items():
