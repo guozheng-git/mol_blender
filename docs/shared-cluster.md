@@ -176,16 +176,33 @@ SSH into a private file, imported and deleted; it is never printed. Jobs run und
 **your own** Slurm account. The gateway is always token-authenticated, even if the
 site configuration selects open access, because every user on a login node can
 reach its loopback interface. Before trusting a port, the helper checks with `ss`
-(or `lsof`) that its own gateway process holds it.
+(or `lsof`) that its own gateway process holds it. The client also requires `ss`
+or `lsof` to verify that its dedicated SSH process owns the local forwarding port
+before sending credentials. The tunnel does not use a shared SSH ControlMaster.
 
 Later `connect --profile lab` calls reuse the saved settings, reopen a dead tunnel
 and restart a stopped gateway with the same credential, so receipts of earlier
 jobs still fetch. `disconnect` closes the tunnel and stops the gateway; queued
 Slurm jobs keep running. `--revoke` also revokes the credential and forgets the
 connection. `connection` shows the saved settings and whether the tunnel is open.
+Changing the saved host, node, controller or site-config path stops the old
+connection before opening the new one; it cannot silently reuse the old tunnel.
+Local profile changes and remote gateway lifecycle operations are serialized.
+If another operation is still running after ten seconds, retry once it finishes.
+
+After a site-config update, run `disconnect` without `--keep-gateway`, then
+`connect` again. A stopped gateway's derived configuration is validated and
+refreshed while keeping its job spool, credentials and local port, so existing
+receipts still work. Revocation is not needed. Invalid configuration updates
+leave the previous derived configuration intact.
+
 Profiles live in the default `~/.config/blender-render/clusters/` unless
 `BLENDER_RENDER_HOME` is set; Structure Studio's `studio.py lab` and
 `render --lab` use the same default folder, so either can set it up.
+Studio saves its `.lab.json` recovery context before submission. If a response is
+lost or times out after the client has written a receipt, Studio returns
+`submission_unknown` with that receipt and a `lab-fetch` command; `lab-pending`
+also finds it. Recover that request before considering another submission.
 
 Check whether your site permits short-lived user services on login nodes.
 

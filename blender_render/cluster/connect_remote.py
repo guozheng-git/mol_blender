@@ -5,19 +5,26 @@ controller Python (`python -I - MODE ...`). It uses only the standard library
 and that controller's own `blender_render.cluster`, so nothing is installed on
 the cluster. Every gateway it starts is token-authenticated and loopback-only:
 a login node's 127.0.0.1 is shared by all users on that node.
+The local connector also reuses this module's listener checks and file locks.
 """
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 
+from blender_render.cluster.common import atomic_json
+
 SERVE_WAIT = 30
+LOCK_WAIT = 10
 
 
 def emit(value):
@@ -34,11 +41,26 @@ def private_dir(path):
     return path
 
 
-def write_private_json(path, value):
-    fd, name = tempfile.mkstemp(prefix='.write-', dir=Path(path).parent)
-    with os.fdopen(fd, 'w') as handle:
-        json.dump(value, handle, indent=2)
-    os.replace(name, path)
+@contextmanager
+def file_lock(path):
+    """Serialize lifecycle changes without replacing or unlinking the lock inode."""
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError('Connection lock must be a private regular file owned by this account')
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Another connection operation is still running; retry after it finishes')
+                time.sleep(.1)
+        yield
+    finally:
+        os.close(fd)
 
 
 def derived_config(base, connection):
@@ -52,16 +74,26 @@ def derived_config(base, connection):
     document = json.loads(Path(base).read_text())
     document.update(spool=str(connection / 'jobs'), tokens_file=str(connection / 'users.json'),
                     authentication='token')
-    if target.exists():
-        if json.loads(target.read_text()) != document:
-            raise ValueError('The site configuration changed since this connection was created; '
-                             'disconnect with --revoke and connect again')
-    else:
-        write_private_json(target, document)
+    if not target.exists() or json.loads(target.read_text()) != document:
+        record = connection / 'gateway.json'
+        state = json.loads(record.read_text()) if record.exists() else None
+        if ours(state):
+            raise ValueError('The site configuration changed while the gateway is running; '
+                             'disconnect without --keep-gateway, then connect again (no revocation needed)')
+        # Validate before replacing the last usable configuration. Jobs and credentials
+        # survive this refresh; submitted jobs already carry their own execution settings.
+        fd, name = tempfile.mkstemp(prefix='.server-', dir=connection)
+        try:
+            with os.fdopen(fd, 'w') as handle:
+                json.dump(document, handle)
+            ServerConfig.load(name)
+            os.replace(name, target)
+        finally:
+            Path(name).unlink(missing_ok=True)
     private_dir(connection / 'jobs')
     tokens = connection / 'users.json'
     if not tokens.exists():
-        write_private_json(tokens, {'users': {}})  # serve requires an existing private database.
+        atomic_json(tokens, {'users': {}})  # serve requires an existing private database.
     ServerConfig.load(target)
     return target
 
@@ -73,12 +105,12 @@ def listening(port):
     """
     port = str(port)
     if shutil.which('ss'):
-        out = subprocess.run(['ss', '-Hltnp', 'sport', '=', ':' + port], capture_output=True, text=True).stdout
+        out = subprocess.run(['ss', '-Hltnp', 'sport', '=', ':' + port], capture_output=True, text=True, timeout=5).stdout
         lines = [line for line in out.splitlines() if re.search(r'(127\.0\.0\.1|\*|0\.0\.0\.0|\[::\]):' + port + r'\b', line)]
         return bool(lines), {int(pid) for line in lines for pid in re.findall(r'pid=(\d+)', line)}
     if shutil.which('lsof'):
         out = subprocess.run(['lsof', '-nP', '-iTCP:' + port, '-sTCP:LISTEN', '-Fpu'],
-                             capture_output=True, text=True).stdout
+                             capture_output=True, text=True, timeout=5).stdout
         pids, current = set(), None
         for line in out.splitlines():
             if line.startswith('p'):
@@ -91,6 +123,35 @@ def listening(port):
 
 def listeners(port):
     return listening(port)[1]
+
+
+class ListenerStartError(RuntimeError):
+    """The child exited or failed to acquire its listener before the deadline."""
+
+
+@contextmanager
+def starting_listener(process, port, timeout, *, label, log):
+    """Own a new child until its listener and the caller's startup work succeed."""
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            if process.poll() is not None:
+                raise ListenerStartError(label + ' exited; see ' + str(log))
+            if time.monotonic() >= deadline:
+                raise ListenerStartError(label + ' did not open within %g seconds; see %s' % (timeout, log))
+            if process.pid in listeners(port) and process.poll() is None:
+                break
+            time.sleep(.25)
+        yield
+    except BaseException:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        raise
 
 
 def alive(pid):
@@ -117,20 +178,18 @@ def ensure(base, connection, *ports):
     for port in map(int, ports):
         if listening(port)[0]:
             continue
-        log = open(connection / 'gateway.log', 'ab')
-        process = subprocess.Popen([executable, 'cluster', 'serve', '--config', str(config),
-                                    '--bind', '127.0.0.1', '--port', str(port)],
-                                   cwd=connection, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
-        log.close()
-        deadline = time.monotonic() + SERVE_WAIT
-        while time.monotonic() < deadline and process.poll() is None:
-            if process.pid in listeners(port):
-                write_private_json(record, {'pid': process.pid, 'port': port, 'started_at': time.time()})
+        log_path = connection / 'gateway.log'
+        with log_path.open('ab') as log:
+            process = subprocess.Popen([executable, 'cluster', 'serve', '--config', str(config),
+                                        '--bind', '127.0.0.1', '--port', str(port)],
+                                       cwd=connection, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                       start_new_session=True)
+        try:
+            with starting_listener(process, port, SERVE_WAIT, label='Gateway', log=log_path):
+                atomic_json(record, {'pid': process.pid, 'port': port, 'started_at': time.time()})
                 return emit({'config': str(config), 'pid': process.pid, 'port': port, 'started': True})
-            time.sleep(.5)
-        if process.poll() is None:
-            process.terminate()
+        except ListenerStartError:
+            continue
     raise RuntimeError('The gateway did not start; see gateway.log in the connection directory')
 
 
@@ -181,7 +240,10 @@ def revoke(connection, user):
 def main(argv):
     modes = {'ensure': ensure, 'issue': issue, 'stop': stop, 'revoke': revoke}
     try:
-        modes[argv[0]](*argv[1:])
+        mode = argv[0]
+        connection = private_dir(argv[2] if mode == 'ensure' else argv[1])
+        with file_lock(connection / '.connection.lock'):
+            modes[mode](*argv[1:])
     except Exception as exc:  # Reported to the client as one line; no traceback paths.
         sys.stderr.write(type(exc).__name__ + ': ' + str(exc) + '\n')
         return 1

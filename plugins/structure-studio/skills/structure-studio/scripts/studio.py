@@ -257,17 +257,11 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
     lab = getattr(args, "lab", None)
     if recipe:
         source, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
-        if lab:  # The animation bundle lives in a temporary folder; keep it for the upload.
-            kept = output.with_suffix(".bundle.json")
-            kept.write_bytes(source.read_bytes())
-            kept_overrides = output.with_suffix(".overrides.json")
-            kept_overrides.write_bytes(overrides.read_bytes())
-            source, overrides = kept, kept_overrides
     else:
         # The CPU caps protect this computer; a lab GPU gets the requested quality.
         adjusted = {} if lab else cpu_defaults(args)
     if lab:
-        command = [str(executable), "cluster", "submit", str(source), "-o", str(output), "--profile", lab,
+        command = ["submit", str(source), "-o", str(output), "--profile", lab,
                    "--pymol-python", str(studio_env.pymol_python())]
     else:
         command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
@@ -295,26 +289,39 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
                "args": {k: getattr(args, k, "") for k in ("workspace", "url", "job", "label", "note", "scene", "view")}}
     if lab:
         print(f"[structure-studio] Submitting {source.name} with {label} to lab profile {lab}…", file=sys.stderr, flush=True)
-        opened = open_lab(lab)
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
-        finally:
-            closed = close_lab(lab) if opened and not args.keep_connected else None
-        if result.returncode:
-            raise RuntimeError(lab_error(result.stderr or result.stdout))
-        submitted = json.loads(result.stdout)
-        context.update(profile=lab, receipt=submitted["receipt"], job_id=submitted.get("job_id"))
-        pending = artifact_files.write_json(context, str(output.with_suffix(".lab.json")))
-        return {"status": "queued", "job_id": submitted.get("job_id"), "slurm_id": submitted.get("slurm_id"),
-                "receipt": submitted["receipt"], "pending_file": pending, "preset": label,
-                "connection": "closed" if closed and closed.get("status") == "disconnected" else
-                              "left open (it was already open)" if not opened else "kept open",
-                "next": [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", pending])]}
+        return submit_lab(command, (executable, env), args, context)
     print(f"[structure-studio] Rendering {source.name} with {label}…", file=sys.stderr, flush=True)
     result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
     if result.returncode:
         raise RuntimeError("Render failed:\n" + (result.stderr or result.stdout)[-4000:])
     return finish_render(json.loads(result.stdout), context)
+
+
+def submit_lab(command: list[str], runtime: tuple[Path, dict], args, context: dict) -> dict:
+    """Save Studio's recovery context before the client can upload a request."""
+    opened = open_lab(args.lab)
+    output = Path(context["output"]).resolve()
+    pending_path = output.with_suffix(".lab.json")
+    context.update(output=str(output), profile=args.lab, receipt=str(output.with_suffix(".cluster.json")))
+    try:
+        pending = artifact_files.write_json(context, pending_path, exclusive=True)
+        try:
+            submitted = run_cluster(*command, runtime=runtime, timeout=args.timeout + 120)
+            context.update(receipt=submitted["receipt"], job_id=submitted.get("job_id"))
+            artifact_files.write_json(context, pending_path)
+        except (RuntimeError, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
+            if not Path(context["receipt"]).is_file():
+                pending_path.unlink(missing_ok=True)  # The client never reached its upload step.
+                raise
+            submitted = {"status": "submission_unknown",
+                         "message": str(exc) + "\nDo not submit again; use lab-fetch to recover this request."}
+    finally:
+        closed = close_lab(args.lab) if opened and not args.keep_connected else None
+    return {**submitted, "status": submitted.get("status", "queued"),
+            "job_id": submitted.get("job_id"), "slurm_id": submitted.get("slurm_id"),
+            "receipt": context["receipt"], "pending_file": pending, "preset": context["preset"],
+            "connection": connection_summary(opened, closed),
+            "next": [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", pending])]}
 
 
 def finish_render(payload: dict, context: dict) -> dict:
@@ -359,14 +366,14 @@ def lab_error(text: str) -> str:
     if "Style JSON validation failed" in text or "HTTP 400" in text or "HTTP 422" in text:
         return "The lab server rejected this render; this style may need a newer lab server.\n" + text
     if "Cluster connection failed" in text or "Connection refused" in text:
-        # The CLI's own hint is about resubmitting; for a queued job the receipt is already the recovery.
         return ("The lab server is not reachable (disconnected, or the tunnel closed). Reconnect with "
-                "`python3 studio.py lab connect`; queued jobs keep running and their receipts still fetch.")
+                "`python3 studio.py lab connect`; queued jobs keep running and their receipts still fetch.\n" + text)
     return "Lab submission failed:\n" + text
 
 
-def run_cluster(*command, timeout: float = 900) -> dict:
-    executable, env = studio_env.cluster_env()
+def run_cluster(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None) -> dict | list:
+    """One subprocess boundary for submission, recovery, and cluster passthrough."""
+    executable, env = runtime if runtime is not None else studio_env.cluster_env()
     result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=timeout)
     if result.returncode:
         raise RuntimeError(lab_error(result.stderr or result.stdout))
@@ -392,8 +399,14 @@ def close_lab(profile: str) -> dict:
     """Close what open_lab started. Queued Slurm jobs keep running; their receipts still fetch."""
     try:
         return run_cluster("disconnect", "--profile", profile, timeout=180)
-    except RuntimeError as exc:  # Never hide a finished render behind a cleanup problem.
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
         return {"status": "disconnect_failed", "message": str(exc)}
+
+
+def connection_summary(opened: bool, closed: dict | None) -> str:
+    if closed:
+        return "closed" if closed.get("status") == "disconnected" else closed.get("message", "disconnect failed")
+    return "kept open" if opened else "left open (it was already open)"
 
 
 def cmd_lab_pending(args):
@@ -413,8 +426,7 @@ def cmd_lab_fetch(args):
         result = _fetch_when_ready(args, context)
     finally:
         closed = close_lab(profile) if opened and not args.keep_connected else None
-    result["connection"] = "closed" if closed and closed.get("status") == "disconnected" else (
-        closed.get("message") if closed else "left open (it was already open)" if not opened else "kept open")
+    result["connection"] = connection_summary(opened, closed)
     return result
 
 
@@ -439,16 +451,12 @@ def _fetch_when_ready(args, context: dict) -> dict:
 
 def cmd_lab(args):
     """Run `blender-render cluster ARGS` with the terminal's shared lab profiles."""
-    executable, env = studio_env.cluster_env()
     command = list(args.cluster_args)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
         return {"profiles": studio_env.cluster_profiles(), "folder": str(studio_env.shared_cluster_home() / "clusters")}
-    result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=900)
-    if result.returncode:
-        raise RuntimeError(lab_error(result.stderr or result.stdout))
-    return json.loads(result.stdout) if result.stdout.strip() else {"status": "ok"}
+    return run_cluster(*command)
 
 
 def _workspace_steps(args, payload: dict, output: Path) -> dict:

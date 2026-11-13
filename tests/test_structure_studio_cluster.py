@@ -3,6 +3,7 @@
 Every subprocess is replaced: no local render, no PyMOL, no network.
 """
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,8 +46,8 @@ def studio_installed(tmp_path, monkeypatch):
     executable.write_text("")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("BLENDER_RENDER_HOME", "/shell/.runtime")  # e.g. a checkout's activate script
-    monkeypatch.setattr(studio_env, "state", lambda: {"blender_render": str(executable), "blender_render_home": STUDIO_HOME})
-    monkeypatch.setattr(studio_env, "_render_ready", lambda: True)
+    monkeypatch.setattr(studio_env, "state", lambda: {"blender_render": str(executable), "blender_render_home": STUDIO_HOME,
+                                                     "external_renderer": True})
     monkeypatch.setattr(studio_env, "pymol_python", lambda: Path("/studio/pymol/bin/python"))
     monkeypatch.setattr(studio_env, "doctor", lambda: {"gpu_likely": False})  # A CPU-only laptop.
     return tmp_path
@@ -172,6 +173,110 @@ def test_server_rejection_says_the_lab_server_may_be_too_old(studio_installed, m
                                        "--out-dir", str(studio_installed / "out")])
     with pytest.raises(RuntimeError, match="(?s)may need a newer lab server.*materials.ptm"):
         studio.cmd_render(args)
+    assert not list((studio_installed / "out").glob("*.lab.json"))
+
+
+@pytest.mark.parametrize("failure", ["lost_response", "timeout", "invalid_response"])
+def test_ambiguous_submission_is_discoverable_and_recovers_without_resubmitting(studio_installed, monkeypatch, failure):
+    lab_profile(studio_installed)
+    out = studio_installed / "out"
+    receipts = []
+
+    def submit(command):
+        output = Path(command[command.index("-o") + 1])
+        receipt = output.with_suffix(".cluster.json")
+        # This is exactly where Client.submit persists identity before POST /v1/jobs.
+        context = json.loads(output.with_suffix(".lab.json").read_text())
+        assert context["receipt"] == str(receipt)
+        receipt.write_text(json.dumps({"profile": "lab", "request_id": "b" * 32, "output": str(output)}))
+        receipts.append(receipt)
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, 30)
+        if failure == "invalid_response":
+            return "truncated JSON"
+        return (1, "Cluster connection failed; recover the existing request before submitting again. "
+                   "Recover with: blender-render cluster status " + str(receipt))
+
+    run = Recorder({"cluster submit": submit})
+    monkeypatch.setattr(studio.subprocess, "run", run)
+    result = studio.cmd_render(studio.parser().parse_args(
+        ["render", str(structure(studio_installed)), "--lab", "--out-dir", str(out)]))
+    assert result["status"] == "submission_unknown" and "Do not submit again" in result["message"]
+    assert result["receipt"] == str(receipts[0]) and "lab-fetch" in result["next"][0]
+    pending = studio.cmd_lab_pending(studio.parser().parse_args(["lab-pending", "--out-dir", str(out)]))
+    assert pending["pending"] == [result["pending_file"]]
+
+    def recover(command):
+        assert command[-1] == str(receipts[0])
+        return {"status": "completed", "job_id": "a" * 32}
+
+    run.replies.update({"cluster status": recover,
+                        "cluster fetch": {"status": "completed", "job_id": "a" * 32,
+                                          "outputs": {"render.png": str(receipts[0].with_suffix(".png"))}}})
+    fetched = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", result["pending_file"]]))
+    assert Path(fetched["result_file"]).is_file()
+    assert run.commands().count("cluster submit") == 1
+    assert studio.cmd_lab_pending(studio.parser().parse_args(["lab-pending", "--out-dir", str(out)]))["pending"] == []
+
+
+def test_lab_animation_upload_uses_temporary_inputs_and_cleans_them(studio_installed, monkeypatch):
+    lab_profile(studio_installed)
+    source = structure(studio_installed)
+    monkeypatch.setattr(studio, "run_pymol_session", lambda command: {"session": str(source)})
+
+    def prepare(args, source, recipe, staging):
+        bundle, overrides = staging / "bundle.json", staging / "overrides.json"
+        bundle.write_text('{"cif_text":"test"}')
+        overrides.write_text('{}')
+        return bundle, overrides, {"template": recipe}, {}
+
+    monkeypatch.setattr(studio, "prepare_animation", prepare)
+    inputs = []
+
+    def submit(command):
+        inputs.extend([Path(command[3]), Path(command[command.index("--overrides-json") + 1])])
+        assert all(path.is_file() for path in inputs)
+        return {"status": "queued", "receipt": "r.cluster.json", "job_id": "a" * 32}
+
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster submit": submit}))
+    out = studio_installed / "out"
+    studio.cmd_render(studio.parser().parse_args(
+        ["render", str(source), "--lab", "--recipe", "rock", "--out-dir", str(out)]))
+    assert all(not path.exists() for path in inputs)
+    assert not list(out.glob("*.bundle.json")) and not list(out.glob("*.overrides.json"))
+
+
+def test_disconnect_timeout_does_not_hide_submission_receipt(studio_installed, monkeypatch):
+    lab_profile(studio_installed)
+
+    def timeout(command):
+        raise subprocess.TimeoutExpired(command, 180)
+
+    run = Recorder({"cluster submit": {"status": "queued", "receipt": "r.cluster.json", "job_id": "a" * 32},
+                    "cluster disconnect": timeout})
+    monkeypatch.setattr(studio.subprocess, "run", run)
+    result = studio.cmd_render(studio.parser().parse_args(
+        ["render", str(structure(studio_installed)), "--lab", "--out-dir", str(studio_installed / "out")]))
+    assert result["receipt"] == "r.cluster.json" and Path(result["pending_file"]).is_file()
+    assert "timed out" in result["connection"]
+
+
+def test_pending_context_cannot_be_overwritten_by_another_render_or_failed_update(tmp_path, monkeypatch):
+    path = tmp_path / "render.lab.json"
+    context = {"receipt": "render.cluster.json", "profile": "lab"}
+    studio.artifact_files.write_json(context, path, exclusive=True)
+    with pytest.raises(FileExistsError):
+        studio.artifact_files.write_json({"receipt": "other.cluster.json"}, path, exclusive=True)
+    assert json.loads(path.read_text()) == context
+
+    def fail_replace(*args):
+        raise OSError("update failed")
+
+    monkeypatch.setattr(studio.artifact_files.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="update failed"):
+        studio.artifact_files.write_json({**context, "job_id": "a" * 32}, path)
+    assert json.loads(path.read_text()) == context
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_local_device_summary(tmp_path):
@@ -189,6 +294,25 @@ def test_lab_passthrough_uses_shared_profiles(studio_installed, monkeypatch):
     assert command[1:] == ["cluster", "connection", "--profile", "lab"] and "BLENDER_RENDER_HOME" not in env
     assert result == {"profile": "lab", "connection": None}
     assert studio.cmd_lab(studio.parser().parse_args(["lab"]))["profiles"] == []
+
+
+@pytest.mark.parametrize("response, expected", [("", {}), ("[]", []), ('{"jobs": []}', {"jobs": []})])
+def test_cluster_passthrough_and_internal_commands_share_response_handling(studio_installed, monkeypatch, response, expected):
+    run = Recorder({"cluster list": response})
+    monkeypatch.setattr(studio.subprocess, "run", run)
+    assert studio.cmd_lab(studio.parser().parse_args(["lab", "list"])) == expected
+    assert studio.run_cluster("list") == expected
+
+
+def test_lab_profiles_can_be_listed_without_an_installed_renderer(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    lab_profile(tmp_path)
+
+    def no_runtime():
+        pytest.fail("listing profiles must not resolve or install a renderer")
+
+    monkeypatch.setattr(studio_env, "cluster_env", no_runtime)
+    assert studio.cmd_lab(studio.parser().parse_args(["lab"]))["profiles"] == ["lab"]
 
 
 def test_a_queued_lab_job_reserves_its_output_name(tmp_path):
@@ -211,8 +335,9 @@ def test_next_commands_quote_paths_with_spaces(studio_installed, monkeypatch):
 
 
 def test_unreachable_lab_message_fits_a_fetch():
-    message = studio.lab_error("blender-render: Cluster connection failed; recover the existing request before submitting again")
-    assert "lab connect" in message and "submitting again" not in message and "still fetch" in message
+    detail = "Cluster connection failed; recover the existing request before submitting again. Recover with: cluster status r.cluster.json"
+    message = studio.lab_error(detail)
+    assert "lab connect" in message and "still fetch" in message and detail in message
 
 
 def test_render_record_keeps_the_device(tmp_path):
@@ -310,7 +435,21 @@ def renderer_layout(tmp_path, monkeypatch):
 
 def test_a_rebuilt_wheel_with_the_same_code_is_ready(renderer_layout):
     renderer_layout("same", "same", wheel_bytes=b"rebuild 2")
-    assert studio_env._render_ready() and studio_env.doctor()["renderer_update"] == "none"
+    assert studio_env.doctor()["render_ready"] and studio_env.doctor()["renderer_update"] == "none"
+
+
+@pytest.mark.parametrize("operation", [studio_env.doctor, studio_env.renderer_env])
+def test_readiness_uses_one_consistent_snapshot(renderer_layout, monkeypatch, operation):
+    from unittest.mock import Mock
+
+    renderer_layout("same", "same")
+    reads = []
+    for name in ("state", "installed_identity", "bundled_identity"):
+        reader = Mock(wraps=getattr(studio_env, name))
+        monkeypatch.setattr(studio_env, name, reader)
+        reads.append(reader)
+    operation()
+    assert [reader.call_count for reader in reads] == [1, 1, 1]
 
 
 def test_new_renderer_code_is_refreshed_offline_before_use(renderer_layout, monkeypatch):
@@ -334,7 +473,7 @@ def test_new_renderer_code_is_refreshed_offline_before_use(renderer_layout, monk
     studio_env.renderer_env()
     install = next(c for c in commands if "install" in c)
     assert {"--offline", "--no-deps", "--reinstall"} <= set(install)
-    assert studio_env._render_ready()
+    assert studio_env.renderer_status()["render_ready"]
 
 
 def test_changed_dependencies_stop_instead_of_rendering_with_old_code(renderer_layout, monkeypatch):

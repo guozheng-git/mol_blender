@@ -8,11 +8,15 @@ import json
 import os
 from pathlib import Path
 import stat
+import socket
+import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 
-from blender_render.cluster import connect
+from blender_render.cluster import connect, connect_remote
 from blender_render.cluster.client import Client, profile_path
 from blender_render.cluster.common import atomic_json
 from test_cluster_jobs import config  # noqa: F401  (fixture)
@@ -79,6 +83,8 @@ def test_connect_starts_gateway_tunnels_and_never_prints_the_token(site, capsys)
     assert {k for k in derived if derived[k] != base.get(k)} == {'spool', 'tokens_file', 'authentication'}
     assert derived['authentication'] == 'token'
     assert stat.S_IMODE(connection.stat().st_mode) == 0o700
+    for name in ('users.json', 'gateway.json'):
+        assert stat.S_IMODE((connection / name).stat().st_mode) == 0o600
 
     # The ordinary client works through the tunnel.
     assert Client('lab').api('GET', '/v1/jobs') == []
@@ -128,15 +134,124 @@ def test_open_mode_site_config_is_still_token_authenticated(site):
     assert 'token' in json.loads(profile_path('lab').read_text())
 
 
-def test_changed_site_config_is_refused(site):
+@pytest.mark.parametrize('revoke', [False, True])
+def test_changed_site_config_refreshes_after_disconnect_without_losing_jobs(site, revoke):
     options, install, _ = site
     connect.connect('lab', **options)
-    connect.disconnect('lab')
+    saved = connect.load_state('lab')
+    connection = Path(saved['connection_dir'])
+    job = connection / 'jobs' / 'keep.txt'
+    job.write_text('existing job data')
+    token = json.loads(profile_path('lab').read_text())['token']
     document = json.loads((install / 'server-gpu.json').read_text())
     document['cpus'] = 2
     (install / 'server-gpu.json').write_text(json.dumps(document))
-    with pytest.raises(RuntimeError, match='site configuration changed'):
+    with pytest.raises(RuntimeError, match='site configuration changed.*disconnect without'):
+        connect.remote(saved, 'ensure', saved['server_config'], saved['connection_dir'], connect.free_port())
+    connect.disconnect('lab', revoke=revoke)
+    assert connect.connect('lab', **options)['gateway_started']
+    assert json.loads((connection / 'server.json').read_text())['cpus'] == 2
+    assert job.read_text() == 'existing job data'
+    if not revoke:
+        assert json.loads(profile_path('lab').read_text())['token'] == token
+        assert connect.load_state('lab')['local_port'] == saved['local_port']
+
+
+def test_invalid_config_refresh_preserves_last_valid_config(site):
+    options, install, _ = site
+    connect.connect('lab', **options)
+    target = Path(connect.load_state('lab')['connection_dir']) / 'server.json'
+    original = target.read_bytes()
+    connect.disconnect('lab')
+    document = json.loads((install / 'server-gpu.json').read_text())
+    document['cpus'] = 0
+    (install / 'server-gpu.json').write_text(json.dumps(document))
+    with pytest.raises(RuntimeError, match='cpus must be positive'):
         connect.connect('lab')
+    assert target.read_bytes() == original
+
+
+def test_occupied_local_port_is_not_trusted_or_sent_credentials(site):
+    options, _, log = site
+    with socket.socket() as occupied:
+        occupied.bind(('127.0.0.1', 0))
+        occupied.listen()
+        with pytest.raises(RuntimeError, match='SSH tunnel exited'):
+            connect.connect('lab', **options, local_port=occupied.getsockname()[1])
+        assert not profile_path('lab').exists()
+        assert not any(' issue ' in call[-1] for call in ssh_calls(log))
+        occupied.settimeout(.1)
+        with pytest.raises(TimeoutError):
+            occupied.accept()  # Even the readiness check must not contact this service.
+
+
+def test_changing_node_replaces_the_tunnel_and_saves_the_new_identity(site):
+    options, _, log = site
+    connect.connect('lab', **options)
+    before = connect.load_state('lab')
+    calls = len(ssh_calls(log))
+    result = connect.connect('lab', node='login-04.cluster.example')
+    after = connect.load_state('lab')
+    assert result['node'] == after['node'] == 'login-04.cluster.example'
+    assert not result['tunnel_reused'] and after['tunnel_pid'] != before['tunnel_pid']
+    assert not connect.tunnel_process(before)
+    new_calls = ssh_calls(log)[calls:]
+    assert 'HostName=login-03.cluster.example' in new_calls[0]  # Stop on the original node.
+    assert all('HostName=login-04.cluster.example' in call for call in new_calls[1:])
+
+
+def test_replacement_controller_can_stop_gateway_after_old_install_is_removed(site):
+    options, _, _ = site
+    connect.connect('lab', **options)
+    saved = connect.load_state('lab')
+    original_pid = saved['gateway_pid']
+    saved['remote_executable'] = '/removed/controller/bin/blender-render'
+    atomic_json(connect.state_path('lab'), saved)
+    result = connect.connect('lab', remote_executable=options['remote_executable'])
+    assert result['gateway_started'] and not result['tunnel_reused']
+    assert not connect_remote.alive(original_pid)
+    assert connect.load_state('lab')['remote_executable'] == options['remote_executable']
+
+
+def test_concurrent_remote_ensure_starts_exactly_one_gateway(site):
+    options, _, _ = site
+    conf = connect.settings('lab', options)
+    barrier = Barrier(2)
+
+    def ensure():
+        ports = [connect.free_port() for _ in range(3)]
+        barrier.wait()
+        return connect.remote(conf, 'ensure', conf['server_config'], conf['connection_dir'], *ports)
+
+    results = []
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: ensure(), range(2)))
+        assert len({r['pid'] for r in results}) == 1
+        assert sum(r['started'] for r in results) == 1
+        assert connect.remote(conf, 'stop', conf['connection_dir'])['stopped']
+        assert all(not connect_remote.alive(r['pid']) for r in results)
+    finally:
+        connect.remote(conf, 'stop', conf['connection_dir'])
+        # Also clean up an unrecorded gateway if the serialization assertion fails.
+        for result in results:
+            if connect_remote.ours(result):
+                os.killpg(result['pid'], 15)
+
+
+def test_concurrent_local_connects_share_one_tunnel_and_credential(site):
+    options, _, log = site
+    barrier = Barrier(2)
+
+    def start():
+        barrier.wait()
+        return connect.connect('lab', **options)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: start(), range(2)))
+    assert sum(r['tunnel_reused'] for r in results) == 1
+    assert sum('-N' in call for call in ssh_calls(log)) == 1
+    assert Client('lab').api('GET', '/v1/jobs') == []
 
 
 @pytest.mark.parametrize('field,value,message', [
@@ -181,3 +296,56 @@ def test_tunnel_log_is_private(site):
     connect.connect('lab', **options)
     log = connect.state_path('lab').with_suffix('.tunnel.log')
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize('endpoint', ['gateway', 'tunnel'])
+def test_listener_probe_failure_reaps_the_started_child(site, tmp_path, monkeypatch, endpoint):
+    options, _, _ = site
+    process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    try:
+        monkeypatch.setattr(connect_remote.subprocess, 'Popen', lambda *a, **k: process)
+        monkeypatch.setattr(connect_remote, 'listening', lambda port: (False, set()))
+
+        def timeout(port):
+            raise subprocess.TimeoutExpired(['lsof'], 5)
+
+        monkeypatch.setattr(connect_remote, 'listeners', timeout)
+        connection = tmp_path / 'connection'
+        with pytest.raises(subprocess.TimeoutExpired):
+            if endpoint == 'gateway':
+                connect_remote.ensure(options['server_config'], connection, 30000)
+            else:
+                connect.open_tunnel(dict(options, local_port=30000, remote_port=30001), tmp_path / 'tunnel.log')
+        assert process.returncode is not None  # wait(), not just a termination request.
+        assert not (connection / 'gateway.json').exists()
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+
+
+def test_failed_gateway_record_write_cleans_child_and_temporary_file(site, tmp_path, monkeypatch):
+    options, _, _ = site
+    process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    replace = os.replace
+
+    def fail_record(source, target):
+        if Path(target).name == 'gateway.json':
+            raise OSError('record write failed')
+        return replace(source, target)
+
+    try:
+        monkeypatch.setattr(connect_remote.subprocess, 'Popen', lambda *a, **k: process)
+        monkeypatch.setattr(connect_remote, 'listening', lambda port: (False, set()))
+        monkeypatch.setattr(connect_remote, 'listeners', lambda port: {process.pid})
+        monkeypatch.setattr(os, 'replace', fail_record)
+        connection = tmp_path / 'connection'
+        with pytest.raises(OSError, match='record write failed'):
+            connect_remote.ensure(options['server_config'], connection, 30000)
+        assert process.returncode is not None
+        assert not (connection / 'gateway.json').exists()
+        assert not list(connection.glob('.write-*'))
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)

@@ -1452,6 +1452,73 @@ Molecular Nodes 4.5.10, Python 3.11.15, NumPy 1.26.4 and Biotite 1.6.0. The exis
 profile, connection and completed job were retained. No renderer code changed;
 this was a real submit/status/wait/fetch runtime check.
 
+## Lab connection review fixes (2026-11-10)
+
+Validated the connection and Studio recovery fixes in an isolated editable
+installation on macOS with Python 3.11.5 and the optional cluster dependencies.
+The relevant suite passed **215 tests, with one skipped**, in **36.13 seconds**:
+
+```sh
+python -m pytest tests/test_cluster_connect.py tests/test_cluster_client.py \
+  tests/test_cluster_jobs.py tests/test_cluster_server.py \
+  tests/test_structure_studio_cluster.py tests/test_structure_studio.py \
+  tests/test_structure_studio_animation.py -q
+```
+
+Connection tests ran real helper and gateway processes plus local TCP forwarding
+through `tests/fake_ssh.py`. New regressions verify that an occupied local port is
+never contacted or sent a credential; changed node/controller settings replace
+the old connection; simultaneous connections create one gateway and tunnel;
+and stopped gateways accept validated site-config updates without deleting the
+job spool or, without revocation, changing the credential or local port.
+Invalid updates preserve the last valid configuration.
+
+Studio tests simulate lost, timed-out and malformed submission responses after
+receipt creation, then recover the existing request without a second submit.
+They also verify pending-context reservation and atomic updates, preservation of
+successful submission results when disconnect times out, and cleanup of temporary
+animation inputs. The cluster-client suite additionally exercises receipt
+recovery and artifact downloads over real local HTTP with a simulated scheduler.
+
+`git diff --check` passed. The only warning was Starlette's existing deprecation
+of the httpx-backed test client. No real SSH login, Slurm allocation, Blender
+render or visual acceptance check was performed for these fixes; these tests do
+not establish lab-host or GPU integration.
+
+## Lab connection consolidation (2026-11-10)
+
+Validated the shared installer guard, listener startup supervision, cluster
+command runner, atomic JSON writers and readiness snapshots in the isolated
+macOS Python 3.11.5 environment. With the optional cluster and FastMCP dependencies
+installed and `STRUCTURE_STUDIO_TEST_WHEEL` pointing to the newly staged wheel,
+the full `python -m pytest -q` suite passed **571 tests, with 49 skipped**, in
+**54.89 seconds**. An initial run lacked FastMCP and failed eight hosted-adapter
+tests; installing the repository's pinned optional dependency resolved them.
+
+New regression checks use real competing Python processes to verify that setup,
+background setup and renderer refresh share exclusive ownership even before
+progress metadata is available. A waiting refresher rechecks readiness and does
+not install twice. The installation callbacks only write test markers; no
+PyMOL or Blender runtime was installed. Failed installation releases the guard.
+Readiness checks read state and both build identities once per operation.
+
+Listener-probe timeouts and failed gateway-record publication terminate and reap
+real child processes. Failed publication leaves no partial record or temporary
+file. Existing tests continue to cover private file modes, exclusive Studio
+recovery-record reservation, failed atomic updates and ambiguous submissions.
+
+Built the wheel and Studio plugin/skill archives with `scripts/build_plugin.py`.
+Installed the wheel into a separate environment, copied the connection tests and
+their fixtures outside the checkout, and passed **all 23 connection tests** in
+**27.48 seconds** against the installed package. These tests run real local
+gateway/helper processes and fake SSH forwarding. The staged Studio `doctor`
+and `lab` profile-listing commands also passed outside the checkout in a temporary
+home with Python isolation enabled.
+
+`git diff --check` passed. The full suite emitted dependency deprecation warnings
+and the expected warning from its deliberately duplicated ZIP member. No real
+SSH login, Slurm job, GPU render or desktop-app acceptance test was performed.
+
 ## co-pymol merged into the repository (2026-11-09)
 
 Merged co-pymol's history into this repository as the top-level `co_pymol`
@@ -1977,3 +2044,17 @@ Validation of the final implementation:
   `git diff --check` passed. PyYAML is a build/development dependency; runtime
   pins and the lab image are unchanged. No live lab job was submitted.
   Temporary build, installation and synthetic preparation targets were removed.
+
+### Integration with the current lab-connect base
+
+Merged the two existing lab connection commits into `pymol-merge`, preserving
+both branches' appended validation records. The only textual conflict was in
+this document; Studio's render path merged without conflicts.
+
+- Reran the renderer/Studio suite with native Blender geometry checks:
+  **584 passed, 50 skipped** in **74.38 s**, with the same four existing warnings.
+- Built the merged source into a fresh wheel outside the checkout. The wheel
+  inventory check passed, shared defaults matched, and removed notification
+  resources remained absent. The temporary build directory was removed.
+- Generated-default checks, `uv lock --check` and Git whitespace checks passed.
+  These integration checks did not submit a live lab job or add visual evidence.

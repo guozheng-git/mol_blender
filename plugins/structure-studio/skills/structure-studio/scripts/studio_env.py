@@ -9,6 +9,7 @@ Everything lives under STRUCTURE_STUDIO_HOME (default ~/.cache/structure-studio)
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -19,6 +20,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+import artifact_files
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 WHEELS = SKILL_ROOT / "assets" / "wheels"
@@ -95,8 +98,7 @@ def _save_state(update: dict) -> dict:
     data = state()
     data.update(update)
     path = home() / "state.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    artifact_files.write_json(data, path)
     return data
 
 
@@ -168,21 +170,66 @@ def running_setup() -> dict | None:
         info = json.loads(_lock().read_text())
     except (OSError, ValueError):
         return None
-    return info if _alive(int(info.get("pid", 0))) else None
+    pid = info.get("pid") if isinstance(info, dict) else None
+    return info if type(pid) is int and pid > 0 and _alive(pid) else None
 
 
-def _wait_until(ready, what: str, timeout: float = 2400) -> None:
-    """Wait for a background setup to provide something; returns as soon as it is ready."""
-    started, last = time.time(), 0.0
-    while not ready():
+@contextmanager
+def _setup_guard(components: str, *, wait: bool = True, timeout: float = 2400):
+    """Serialize installers; setup.lock is progress metadata, never the mutex."""
+    import fcntl  # Installation is supported on macOS/Linux; viewing needs no fcntl.
+
+    home().mkdir(parents=True, exist_ok=True)
+    fd = os.open(home() / "setup.guard", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                info = running_setup()
+                if not info or info["pid"] == os.getpid():
+                    break
+                # A background launcher reserved work for its child. Let that
+                # child acquire the guard rather than overtaking its reservation.
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            if not wait:
+                yield None
+                return
+            if time.monotonic() >= deadline:
+                raise SetupError("Timed out waiting for another Studio installer")
+            time.sleep(.1)
+        info = {"pid": os.getpid(), "components": components,
+                "log": "" if components == "renderer-refresh" else str(home() / "setup.log"),
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        artifact_files.write_json(info, _lock())
+        try:
+            yield info
+        finally:
+            current = running_setup()
+            if current and current["pid"] == os.getpid():
+                _lock().unlink(missing_ok=True)
+    finally:
+        os.close(fd)  # The guard inode remains in place; closing releases ownership.
+
+
+def _wait_until(inspect, ready, what: str, timeout: float = 2400) -> dict:
+    """Return the latest snapshot once ready, or when no installer is running."""
+    started, last = time.monotonic(), 0.0
+    while True:
+        current = inspect()
+        if ready(current):
+            return current
         info = running_setup()
         if not info or info.get("pid") == os.getpid():
-            return
-        if time.time() - started > timeout:
+            return current
+        if time.monotonic() - started > timeout:
             raise SetupError(f"Timed out waiting for the background setup ({info.get('log')})")
-        if time.time() - last > 30:
+        if time.monotonic() - last > 30:
             _log(f"Waiting for the background setup to finish installing {what} (log: {info.get('log')})…")
-            last = time.time()
+            last = time.monotonic()
         time.sleep(3)
 
 
@@ -248,26 +295,18 @@ def use_existing(executable: str, config_home: str | None) -> dict:
 
 def setup(components: str = "all", background: bool = False) -> dict:
     if background:
-        info = running_setup()
-        if info:
-            return {**doctor(), "background": True, "already_running": True}
-        home().mkdir(parents=True, exist_ok=True)
-        log = home() / "setup.log"
-        with log.open("w") as handle:
-            process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("studio.py")), "setup", "--only", components],
-                                       stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
-        _lock().write_text(json.dumps({"pid": process.pid, "components": components, "log": str(log),
-                                       "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
-        return {**doctor(), "background": True, "pid": process.pid, "log": str(log)}
-    other = running_setup()
-    if other and other.get("pid") != os.getpid():
-        _wait_until(lambda: running_setup() is None, "everything")
+        with _setup_guard(components, wait=False) as info:
+            if info is None:
+                return {**doctor(), "background": True, "already_running": True}
+            log = Path(info["log"])
+            with log.open("w") as handle:
+                process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("studio.py")), "setup", "--only", components],
+                                           stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+            info["pid"] = process.pid
+            artifact_files.write_json(info, _lock())  # Transfer the reservation to the child.
+            return {**doctor(), "background": True, "pid": process.pid, "log": str(log)}
     started = time.time()
-    lock = _lock()
-    home().mkdir(parents=True, exist_ok=True)
-    lock.write_text(json.dumps({"pid": os.getpid(), "components": components, "log": str(home() / "setup.log"),
-                                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
-    try:
+    with _setup_guard(components):
         interpreter = setup_pymol() if components in {"pymol", "all"} else None
         if components in {"render", "all"}:
             current = state()
@@ -275,30 +314,18 @@ def setup(components: str = "all", background: bool = False) -> dict:
                 _log("Using the configured external renderer: " + current["blender_render"])
             else:
                 setup_render(interpreter or setup_pymol())
-    finally:
-        try:
-            if json.loads(lock.read_text()).get("pid") == os.getpid():
-                lock.unlink()
-        except (OSError, ValueError):
-            pass
     return {**doctor(), "seconds": round(time.time() - started, 1)}
 
 
 def doctor() -> dict:
-    current = state()
+    status = renderer_status()
     gpu = platform.system() == "Darwin" or bool(shutil.which("nvidia-smi"))
     running = running_setup()
-    installed, bundled = installed_identity(), bundled_identity()
-    update = ("none" if _render_ready() else
-              "automatic" if _render_installed() and not current.get("external_renderer") and bundled else "setup")
-    return {"home": str(home()), "pymol_ready": _pymol_ready(), "render_ready": _render_ready(),
-            "render_installed": _render_installed(), "renderer_update": update,
-            "renderer_identity": installed, "bundled_renderer_identity": bundled,
-            "setup_running": bool(running), "setup_log": (running or {}).get("log", ""), "gpu_likely": gpu, "state": current}
+    return {"home": str(home()), **status, "setup_running": bool(running),
+            "setup_log": (running or {}).get("log", ""), "gpu_likely": gpu}
 
 
-def _pymol_ready() -> bool:
-    current = state()
+def _pymol_ready(current: dict) -> bool:
     return bool(current.get("pymol_python")) and Path(current["pymol_python"]).is_file()
 
 
@@ -319,9 +346,9 @@ def bundled_identity() -> str | None:
         return None
 
 
-def installed_identity() -> str | None:
+def installed_identity(current: dict) -> str | None:
     """Build identity of the renderer installed in Studio's render environment."""
-    python = state().get("render_python")
+    python = current.get("render_python")
     if not python:
         return None
     venv = Path(python).parent.parent
@@ -330,19 +357,17 @@ def installed_identity() -> str | None:
     return _identity(found[0].read_bytes()) if found else None
 
 
-def _render_installed() -> bool:
+def renderer_status() -> dict:
+    """One per-operation snapshot; never cache across a wait or an installation."""
     current = state()
-    return bool(current.get("blender_render")) and Path(current["blender_render"]).is_file()
-
-
-def _render_ready() -> bool:
-    if not _render_installed():
-        return False
-    if state().get("external_renderer"):
-        return True
-    bundled = bundled_identity()
-    # Rebuilding a wheel changes its bytes but not its code: compare the renderer build identity.
-    return bundled is not None and installed_identity() == bundled
+    installed = bool(current.get("blender_render")) and Path(current["blender_render"]).is_file()
+    installed_build, bundled_build = installed_identity(current), bundled_identity()
+    external = current.get("external_renderer")
+    ready = installed and (bool(external) or bundled_build is not None and installed_build == bundled_build)
+    update = "none" if ready else "automatic" if installed and not external and bundled_build else "setup"
+    return {"state": current, "pymol_ready": _pymol_ready(current), "render_installed": installed,
+            "render_ready": ready, "renderer_update": update,
+            "renderer_identity": installed_build, "bundled_renderer_identity": bundled_build}
 
 
 def _pins(text: str) -> dict:
@@ -362,13 +387,12 @@ def _dependencies_match(python: Path) -> bool:
     return all(frozen.get(name) == version for name, version in pinned.items())
 
 
-def refresh_renderer() -> dict:
+def refresh_renderer(current: dict) -> dict:
     """Swap in this plugin's renderer wheel after a plugin update. Local and offline: no download.
 
     Only the renderer changes. If the update also changed Blender's pinned dependencies,
     stop and say so: that needs a real setup (a download), which the user approves.
     """
-    current = state()
     python = Path(current["render_python"])
     if not _dependencies_match(python):
         raise SetupError("This plugin update changes Blender's pinned dependencies, so it needs a one-time download. "
@@ -378,40 +402,28 @@ def refresh_renderer() -> dict:
     _run([uv(), "pip", "install", "--offline", "--no-deps", "--reinstall", "-p", str(python), str(renderer)],
          env=_uv_env(), timeout=300)
     _import_check(python, "import blender_render", "the renderer")
-    if installed_identity() != bundled_identity():
-        raise SetupError("The renderer update did not take effect; run: studio.py setup")
     return _save_state({"wheel_sha256": hashlib.sha256(renderer.read_bytes()).hexdigest()})
 
 
-def _refresh_once() -> None:
+def _refresh_once() -> dict:
     """Refresh under the setup lock, so two renders started together update it only once."""
-    other = running_setup()
-    if other and other.get("pid") != os.getpid():
-        _wait_until(lambda: running_setup() is None, "the renderer")
-        if _render_ready():
-            return
-    lock = _lock()
-    home().mkdir(parents=True, exist_ok=True)
-    lock.write_text(json.dumps({"pid": os.getpid(), "components": "renderer-refresh", "log": "",
-                                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
-    try:
-        refresh_renderer()
-    finally:
-        try:
-            if json.loads(lock.read_text()).get("pid") == os.getpid():
-                lock.unlink()
-        except (OSError, ValueError):
-            pass
+    with _setup_guard("renderer-refresh"):
+        status = renderer_status()
+        if not status["render_ready"]:
+            refresh_renderer(status["state"])
+            status = renderer_status()
+            if not status["render_ready"]:
+                raise SetupError("The renderer update did not take effect; run: studio.py setup")
+        return status
 
 
 def renderer_env() -> tuple[Path, dict]:
-    _wait_until(_render_ready, "Blender")
-    current = state()
-    if not _render_installed():
+    status = _wait_until(renderer_status, lambda s: s["render_ready"], "Blender")
+    if not status["render_installed"]:
         raise SetupError("Blender is not installed yet. Run: studio.py setup --background")
-    if not current.get("external_renderer") and not _render_ready():
-        _refresh_once()  # Never run a renderer older than this plugin's.
-        current = state()
+    if not status["render_ready"]:
+        status = _refresh_once()  # Never run a renderer older than this plugin's.
+    current = status["state"]
     env = dict(os.environ)
     if current.get("blender_render_home"):
         env["BLENDER_RENDER_HOME"] = current["blender_render_home"]
@@ -442,8 +454,7 @@ def cluster_profiles() -> list[str]:
 
 
 def pymol_python() -> Path:
-    _wait_until(_pymol_ready, "PyMOL")
-    current = state()
-    if current.get("pymol_python") and Path(current["pymol_python"]).is_file():
+    current = _wait_until(state, _pymol_ready, "PyMOL")
+    if _pymol_ready(current):
         return Path(current["pymol_python"])
     raise SetupError("PyMOL is not installed yet. Run: studio.py setup --only pymol")
