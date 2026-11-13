@@ -11,7 +11,7 @@ from co_pymol.core.metrics import StructureRecord
 from co_pymol.core.metrics import find_low_confidence as find_low
 from co_pymol.core.session import AppSession
 from co_pymol.tools.errors import error_wrapper
-from co_pymol.utils.pymol.helper import pymol_session
+from co_pymol.scene.session import pymol_session
 
 
 def loaded_objects() -> list[str]:

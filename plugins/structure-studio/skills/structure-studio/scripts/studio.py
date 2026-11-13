@@ -22,7 +22,7 @@ import scene as scenes  # noqa: E402
 import studio_env  # noqa: E402
 import structure_io  # noqa: E402
 studio_env.use_bundled_helpers()
-from co_pymol.core import animation as animation_recipes  # noqa: E402
+from co_pymol.scene import animation as animation_recipes  # noqa: E402
 from render_defaults import ANIMATION, IMAGE  # noqa: E402
 
 PRESETS = HERE.parent / "references" / "presets.json"

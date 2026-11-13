@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 from importlib.machinery import PathFinder
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from co_pymol.defaults import ANIMATION
@@ -24,20 +22,6 @@ def capture_pse(cmd) -> bytes:
     return cPickle.dumps(session, 1)
 
 
-@contextmanager
-def open_session(path: Path) -> Iterator:
-    """Yield the cmd of a private headless PyMOL holding a saved session.
-
-    PSE files are pickles: only open sessions the user trusts. The instance is
-    separate from any GUI PyMOL, so callers need not hold pymol_lock.
-    """
-    import pymol2
-
-    with pymol2.PyMOL() as instance:
-        instance.cmd.load(str(path))
-        yield instance.cmd
-
-
 def capture_scene(
     cmd, selection: str, state: int, *, all_states: bool = False
 ) -> dict:
@@ -45,7 +29,7 @@ def capture_scene(
 
     all_states adds every state's coordinates, for state animations.
     """
-    path = Path(__file__).parents[3] / "blender_render"
+    path = Path(__file__).parents[2] / "blender_render/scene"
     # PathFinder supports both installed files and Studio's bundled wheel.
     # Load the standalone exporter without importing the renderer package.
     spec = PathFinder.find_spec("export", [str(path)])
@@ -95,7 +79,7 @@ def set_animation_frame(cmd, frame) -> None:
 
 def capture_animation(cmd, recipe: str, frames, fps: int, *, gif: bool = ANIMATION["gif"]) -> tuple[dict, dict]:
     """Export at the recipe's anchor while preserving the caller's view and states."""
-    from co_pymol.core.animation import animation_payload
+    from co_pymol.scene.animation import animation_payload
 
     animation = animation_payload(recipe, frames, fps, gif=gif)
     anchor = frames[animation.get("anchor", 0)]

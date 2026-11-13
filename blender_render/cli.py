@@ -87,7 +87,7 @@ def parser():
 def execute(args):
     from .config import config_root
     if args.command == 'open':
-        from .scene_edit import open_scene
+        from .scene.edit import open_scene
         return open_scene(args.scene, blender=args.blender, **({'edit_bridge': True} if args.edit_bridge else {}))
     if args.command == 'worker':
         from . import warm_worker

@@ -36,7 +36,7 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     options = dict(options or {})
     open_blender = open_blender or edit_bridge
     if open_blender:
-        from .scene_edit import blender_executable
+        from .scene.edit import blender_executable
         editor = blender_executable(gui_blender or load_config().get('gui_blender') or blender, gui=True)
         options['save_blend'] = True
     catalog_dir = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
@@ -91,7 +91,7 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
             'source_sha256': result['sha256'], 'png_sha256': result['png_sha256'],
             **({'worker': result['worker']} if 'worker' in result else {})}
     if open_blender:
-        from .scene_edit import open_scene
+        from .scene.edit import open_scene
         try:
             result['editor'] = open_scene(outputs['render.blend'], blender=editor, **({'edit_bridge': True} if edit_bridge else {}))
         except (OSError, ValueError, RuntimeError) as exc:

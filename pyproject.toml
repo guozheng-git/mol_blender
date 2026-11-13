@@ -25,8 +25,8 @@ pymol = ["mcp~=1.27.1", "anyio>=4.0", "numpy>=1.24", "gemmi>=0.6"]
 blender-render = "blender_render.cli:main"
 
 [tool.setuptools]
-packages = ["blender_render", "blender_render.hosted", "blender_render.cluster",
-            "co_pymol", "co_pymol.core", "co_pymol.tools", "co_pymol.utils", "co_pymol.utils.pymol"]
+packages = ["blender_render", "blender_render.scene", "blender_render.hosted", "blender_render.cluster",
+            "co_pymol", "co_pymol.core", "co_pymol.scene", "co_pymol.render", "co_pymol.tools", "co_pymol.utils"]
 
 [tool.setuptools.package-data]
 blender_render = ["*.json", "*.txt"]

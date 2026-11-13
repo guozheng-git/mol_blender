@@ -6,9 +6,10 @@ from pathlib import Path
 import pytest
 
 from co_pymol import cli
-from co_pymol.core.animation import RECIPES, Frame
+from co_pymol.scene.animation import RECIPES, Frame
 from co_pymol.defaults import ANIMATION
-from co_pymol.utils.pymol.blender import capture_animation, open_session
+from co_pymol.scene.capture import capture_animation
+from co_pymol.scene.session import open_session
 
 SCRIPTS = Path(os.environ.get(
     "STRUCTURE_STUDIO_TEST_SCRIPTS",
@@ -106,9 +107,9 @@ def test_clients_prepare_the_same_scene_and_animation(session, recipe, timing, m
 
 @pytest.mark.parametrize("pinned", [True, False])
 def test_failed_animation_capture_restores_pinned_states_and_camera(session, monkeypatch, pinned):
-    from co_pymol.utils.pymol import blender
-    from co_pymol.core.animation import frames_for
-    from co_pymol.utils.pymol.animate import keys_for
+    from co_pymol.scene import capture as blender
+    from co_pymol.scene.animation import frames_for
+    from co_pymol.scene.camera import keys_for
 
     def fail(*args, **kwargs):
         raise RuntimeError("export failed")
@@ -125,7 +126,7 @@ def test_failed_animation_capture_restores_pinned_states_and_camera(session, mon
 
 
 def test_preview_maps_shared_opacity_to_ghost_shell_and_applies_object_states(session, monkeypatch, tmp_path):
-    from co_pymol.utils.pymol import animate
+    from co_pymol.scene import preview as animate
 
     monkeypatch.setattr(animate.shutil, "which", lambda name: "ffmpeg")
     monkeypatch.setattr(animate.subprocess, "run", lambda *args, **kwargs: None)

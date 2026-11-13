@@ -251,7 +251,7 @@ FINISHED = {"completed", "failed", "cancelled", "needs_attention"}
 
 def blender_bridge(args: argparse.Namespace):
     # Deferred import, like proxy: keeps setup runnable without the deps.
-    from co_pymol.core.blender import BlenderBridge
+    from co_pymol.render.client import BlenderBridge
 
     bridge = BlenderBridge()
     if args.config:
@@ -270,7 +270,8 @@ def wait_for_render(bridge, request_id: str, interval: float = 5) -> dict:
 
 
 def cmd_render(args: argparse.Namespace) -> int:
-    from co_pymol.utils.pymol.blender import capture_scene, open_session
+    from co_pymol.scene.capture import capture_scene
+    from co_pymol.scene.session import open_session
 
     session = saved_session_path(args.session)
     bridge = blender_bridge(args)
@@ -311,13 +312,13 @@ def saved_session_path(path: str) -> Path:
 
 
 def open_saved_session(path: str):
-    from co_pymol.utils.pymol.blender import open_session
+    from co_pymol.scene.session import open_session
 
     return open_session(saved_session_path(path))
 
 
 def cmd_inspect(args: argparse.Namespace) -> None:
-    from co_pymol.utils.pymol.animate import scene_facts
+    from co_pymol.scene.session import scene_facts
 
     with open_saved_session(args.session) as cmd:
         print(json.dumps(scene_facts(cmd), indent=2))
@@ -328,7 +329,7 @@ CUTAWAY_PRESET = IMAGE["cutaway_preset"]
 
 def submit_blender_animation(args: argparse.Namespace, cmd, recipe: str, frames) -> int:
     """Submit one Blender animation job of a recipe to the configured GPU profile."""
-    from co_pymol.utils.pymol.blender import capture_animation
+    from co_pymol.scene.capture import capture_animation
 
     bridge = blender_bridge(args)
     default = CUTAWAY_PRESET if recipe == "cutaway" else DEFAULT_PRESET
@@ -357,13 +358,10 @@ def submit_blender_animation(args: argparse.Namespace, cmd, recipe: str, frames)
 
 
 def cmd_animate(args: argparse.Namespace) -> int | None:
-    from co_pymol.core.animation import choose_recipe, frames_for
-    from co_pymol.utils.pymol.animate import (
-        build_cutaway,
-        keys_for,
-        render_preview,
-        scene_facts,
-    )
+    from co_pymol.scene.animation import choose_recipe, frames_for
+    from co_pymol.scene.camera import keys_for
+    from co_pymol.scene.preview import build_cutaway, render_preview
+    from co_pymol.scene.session import scene_facts
 
     with open_saved_session(args.session) as cmd:
         facts = scene_facts(cmd)
@@ -569,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_blender_opts(p_render)
     p_render.set_defaults(func=cmd_render)
 
-    from co_pymol.core.animation import RECIPES
+    from co_pymol.scene.animation import RECIPES
 
     p_animate = sub.add_parser(
         "animate",

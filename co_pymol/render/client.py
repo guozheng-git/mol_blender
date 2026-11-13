@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from itertools import count
 from pathlib import Path
 
-from co_pymol.core.files import write_json
+from co_pymol.render.records import write_json
 
 _ADJECTIVES = (
     "amber",
@@ -256,7 +256,7 @@ class BlenderBridge:
         return [
             cfg.render_python,
             "-B",
-            str(Path(__file__).with_name("blender_worker.py")),
+            str(Path(__file__).with_name("worker.py")),
             action,
             str(path),
         ]

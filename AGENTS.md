@@ -17,15 +17,20 @@ checks, bounded local IPC and idle shutdown. Fresh local rendering remains the
 default; Slurm jobs keep one independent Blender process per submitted request.
 
 - `co_pymol/` is the PyMOL-side MCP server; it runs in PyMOL's Python (3.10+) and must
-  not import the renderer. Its detached `core/blender_worker.py` runs in the render
+  not import the renderer. Its detached `render/worker.py` runs in the render
   environment and calls `local.render_payload` or `cluster.client.Client`. Keep it a
   sibling of `blender_render/` so the engine inventory is unaffected. Test it with
   PyMOL's Python: `python -m pytest tests/co_pymol`.
-- Keep the pure recipe compiler in `co_pymol/core/animation.py` and reuse its
-  PyMOL camera/capture helpers from Structure Studio. Studio reads these helpers
-  from the bundled wheel; do not copy their algorithms into plugin scripts.
+- Keep the pure recipe compiler in `co_pymol/scene/animation.py` and reuse its
+  PyMOL `scene/camera.py` and `scene/capture.py` helpers from Structure Studio.
+  Studio reads these helpers from the bundled wheel; do not copy their algorithms
+  into plugin scripts.
   Compiled paths enter the existing renderer payload. PyMOL's ghost-shell
   preview is a display mapping of the same cutaway opacity timeline.
+- Group host scene operations under `scene/` in both sibling packages. Keep
+  PyMOL's render client, detached worker and gallery in `co_pymol/render/`.
+  Scene helpers return data; MCP wrappers belong in `co_pymol/tools/`. Preserve
+  standalone exporter loading and the renderer's source identity when moving files.
 - Export CIF first and assign secondary structure in PyMOL before export.
 - Preserve enabled selections, transforms, colors and the saved camera by default.
 - Keep `mint_sky_assembly` as the default, native Molecular Nodes ligand sticks, and rough

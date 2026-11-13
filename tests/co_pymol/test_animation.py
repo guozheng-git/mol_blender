@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from co_pymol.core.animation import (
+from co_pymol.scene.animation import (
     Keys,
     blend,
     choose_recipe,

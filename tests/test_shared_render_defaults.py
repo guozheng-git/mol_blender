@@ -64,7 +64,7 @@ import sys
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root))
 from co_pymol import cli
-from co_pymol.core import animation as pymol_animation
+from co_pymol.scene import animation as pymol_animation
 assert not any(name == 'blender_render' or name.startswith('blender_render.') for name in sys.modules)
 assert 'yaml' not in sys.modules
 still = cli.build_parser().parse_args(['render', 'example.pse'])
@@ -76,7 +76,8 @@ assert pymol_animation.RECIPE_DEFAULTS['rock'] == {'duration': 8, 'rock_angle': 
 view = (1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, 0)
 assert len(pymol_animation.frames_for('rock', pymol_animation.Keys(overview=view))) == 160
 
-from blender_render import animation, core, export
+from blender_render import animation, core
+from blender_render.scene import export
 from blender_render.cluster.config import Limits
 from blender_render.spec import resolve_options
 resolved = resolve_options({'animation': 'rock', 'width': 160, 'height': 120}, {})

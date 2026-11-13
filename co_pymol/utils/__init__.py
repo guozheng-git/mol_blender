@@ -1,1 +1,1 @@
-"""PyMOL access and rendering helpers."""
+"""JSON-RPC transport helpers."""

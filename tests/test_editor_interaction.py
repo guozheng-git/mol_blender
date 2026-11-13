@@ -6,13 +6,13 @@ from types import SimpleNamespace as NS
 import sys
 
 import pytest
-import blender_render
+import blender_render.scene
 from blender_render import editor
 
 
 def interaction(monkeypatch, bpy):
     monkeypatch.setitem(sys.modules, 'bpy', bpy)
-    monkeypatch.setattr(blender_render, 'scene_capture', NS(), raising=False)
+    monkeypatch.setattr(blender_render.scene, 'capture', NS(), raising=False)
     spec = importlib.util.spec_from_file_location('blender_render._interaction_test',
                                                  Path(editor.__file__).with_name('editor_interaction.py'))
     module = importlib.util.module_from_spec(spec)

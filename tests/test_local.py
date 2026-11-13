@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from blender_render import cli, local, local_bridge, developer, pymol_bridge_plugin
 from blender_render.config import save_config
-from blender_render.export import from_file
+from blender_render.scene.export import from_file
 
 
 def bundle():

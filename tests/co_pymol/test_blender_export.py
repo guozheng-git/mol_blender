@@ -5,8 +5,8 @@ from __future__ import annotations
 import gemmi
 import pytest
 
-from co_pymol.utils.pymol.blender import capture_pse, capture_scene
-from co_pymol.utils.pymol.helper import pymol_lock
+from co_pymol.scene.capture import capture_pse, capture_scene
+from co_pymol.scene.session import pymol_lock
 
 
 def test_live_coordinates_colors_enabled_objects_and_camera_survive_export(tmp_path):

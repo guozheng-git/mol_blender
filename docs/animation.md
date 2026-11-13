@@ -87,10 +87,10 @@ untested GUI/client behavior.
 
 ## Shared PyMOL and Structure Studio recipes
 
-Both clients use `co_pymol/core/animation.py` for `turntable`, `rock`, `reveal`,
-`cutaway`, `states` and `scenes`. Shared PyMOL helpers measure camera keys and
-capture the anchor scene while preserving the caller's camera, colors, enabled
-objects, secondary structure and pinned molecular states. See Studio's
+Both clients use `co_pymol/scene/animation.py` for `turntable`, `rock`, `reveal`,
+`cutaway`, `states` and `scenes`. Its sibling `camera.py` measures camera keys and
+`capture.py` captures the anchor scene while preserving the caller's camera,
+colors, enabled objects, secondary structure and pinned molecular states. See Studio's
 [animation reference](../plugins/structure-studio/skills/structure-studio/references/animations.md)
 for commands, prerequisites and quality controls. Existing `--animation rock|360`
 commands retain their defaults.

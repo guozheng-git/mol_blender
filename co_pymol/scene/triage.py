@@ -1,19 +1,16 @@
 """Triage-specific rendering: focus a structure and snapshot it.
 
-Unlike the rest of `core/`, this drives PyMOL — it's the one triage operation
-that needs `cmd`. The pure triage state lives in `triage.py`.
+This drives PyMOL; the pure navigation state lives in `co_pymol.core.triage`.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from mcp.server.fastmcp import Image
-
-from co_pymol.utils.pymol.render import apply_plddt_palette, render_image
+from co_pymol.scene.preview import apply_plddt_palette, render_image
 
 
-def triage_render(cmd, path: Path, width: int = 800, height: int = 600) -> Image:
+def triage_render(cmd, path: Path, width: int = 800, height: int = 600) -> bytes:
     """Focus on `path` (loading it if needed), hide siblings, color by pLDDT, render.
 
     Caller holds the pymol_session lock.

@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from co_pymol.core import blender as adapter
-from co_pymol.core.blender import BlenderBridge, BlenderConfig, write_json
+from co_pymol.render import client as adapter
+from co_pymol.render.client import BlenderBridge, BlenderConfig, write_json
 
 
 # Fakes of this checkout's renderer modules, imported by the detached worker in
@@ -135,7 +135,7 @@ def fake_repo(tmp_path, monkeypatch):
     }
     for name, content in files.items():
         (package / name).write_text(content)
-    monkeypatch.setattr("co_pymol.core.blender.REPO_ROOT", repo)
+    monkeypatch.setattr("co_pymol.render.client.REPO_ROOT", repo)
     return repo
 
 
@@ -390,7 +390,7 @@ def test_batch_returns_and_other_pymol_tool_runs_while_remote_is_blocked(
     preset_backend, monkeypatch
 ):
     from co_pymol.server import create_server
-    from co_pymol.utils.pymol.helper import pymol_lock, pymol_session
+    from co_pymol.scene.session import pymol_lock, pymol_session
 
     bridge = preset_backend
     gate = Path(bridge.config.render_home) / "hold_submit"
@@ -551,7 +551,7 @@ def test_named_render_is_found_after_restart_without_chat_history(bridge):
 @pytest.mark.parametrize("name", [None, "", "  "])
 def test_omitted_or_blank_name_gets_an_automatic_name(bridge, monkeypatch, name):
     monkeypatch.setattr(
-        "co_pymol.core.blender.random_render_name", lambda: "mellow-otter"
+        "co_pymol.render.client.random_render_name", lambda: "mellow-otter"
     )
     request_id = submit(bridge, name=name)
     completed = wait_for(bridge, request_id, "completed")
@@ -565,7 +565,7 @@ def test_automatic_name_collision_chooses_another_name(bridge, monkeypatch):
     existing.mkdir(parents=True)
     (existing / "keep.txt").write_text("keep")
     names = iter(["mellow-otter", "curious-heron"])
-    monkeypatch.setattr("co_pymol.core.blender.random_render_name", lambda: next(names))
+    monkeypatch.setattr("co_pymol.render.client.random_render_name", lambda: next(names))
     request_id = submit(bridge)
     assert wait_for(bridge, request_id, "completed")["name"] == "curious-heron"
     assert (existing / "keep.txt").read_text() == "keep"
@@ -648,7 +648,7 @@ def test_legacy_uuid_directory_still_lists_and_returns_its_image(bridge):
 def test_pse_is_saved_before_submission_and_survives_result_recovery(
     bridge, monkeypatch
 ):
-    from co_pymol.utils.pymol.helper import pymol_lock
+    from co_pymol.scene.session import pymol_lock
 
     pse = b"frozen session bytes"
     launch = bridge._launch
@@ -813,7 +813,7 @@ def test_request_id_cannot_escape_output_directory(bridge):
 
 def test_network_work_starts_only_after_pymol_lock_is_released(bridge, monkeypatch):
     from co_pymol.tools.blender import register_blender_tools
-    from co_pymol.utils.pymol.helper import pymol_lock, pymol_session
+    from co_pymol.scene.session import pymol_lock, pymol_session
 
     registered = {}
 
@@ -989,7 +989,7 @@ worker.time.sleep = lambda seconds: clock.__setitem__(0, clock[0] + seconds)
 worker.run(Path(sys.argv[2]), recover=True)
 '''
     subprocess.run([sys.executable, '-c', script,
-                    str(Path(adapter.__file__).with_name('blender_worker.py')), str(directory)],
+                    str(Path(adapter.__file__).with_name('worker.py')), str(directory)],
                    cwd=directory, env=bridge._environment(bridge.config), check=True, timeout=10)
     state = bridge.status(request_id)
     assert state["status"] == "needs_attention"
@@ -1204,7 +1204,7 @@ def test_project_mcp_tool_passes_names_and_resolves_preset_aliases(
     preset_backend, monkeypatch, tmp_path
 ):
     from co_pymol.server import create_server
-    from co_pymol.utils.pymol.helper import pymol_session
+    from co_pymol.scene.session import pymol_session
 
     bridge = preset_backend
     bridge._config = replace(bridge.config, project_directory=str(tmp_path / "demo"))
@@ -1279,7 +1279,7 @@ def test_cli_renders_saved_session_without_live_pymol(
     preset_backend, tmp_path, monkeypatch, capsys
 ):
     from co_pymol import cli
-    from co_pymol.utils.pymol import blender as pymol_blender
+    from co_pymol.scene import capture as pymol_blender
 
     session = saved_session(tmp_path / "figure.pse")
     exported = {}
@@ -1321,7 +1321,7 @@ def test_cli_render_batches_several_presets(
     preset_backend, tmp_path, monkeypatch, capsys
 ):
     from co_pymol import cli
-    from co_pymol.utils.pymol import blender as pymol_blender
+    from co_pymol.scene import capture as pymol_blender
 
     session = saved_session(tmp_path / "figure.pse")
     monkeypatch.setattr(

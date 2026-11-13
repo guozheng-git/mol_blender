@@ -2108,3 +2108,50 @@ workflows remain in place; this adds no service or general job API.
 - Generated defaults, `uv lock --check` and Git whitespace checks passed. No lab
   job was submitted and no desktop PyMOL or Blender session was changed. Temporary
   build, installation, session, render and source-snapshot artifacts were removed.
+
+## Scene and rendering package boundaries (2026-11-13)
+
+Grouped PyMOL session access, camera measurement, recipe compilation, capture
+and native previews in `co_pymol/scene/`. Moved the client, detached worker,
+gallery and request-record writer into `co_pymol/render/`. Native scene helpers
+return bytes/data, with MCP wrapping at the tool boundary and lazy CLI imports
+at plugin startup. Structure Studio uses the same scene modules from its wheel.
+
+The renderer's exporter, saved-scene metadata and preset extraction now live in
+`blender_render/scene/`. Updated standalone script paths, resource lookup,
+conversion preloads and private-source roots. Existing local/cluster entry points
+and renderer identity scope remain unchanged.
+
+- An isolated source snapshot passed **194 PyMOL tests** in **54.88 s**, including
+  two fresh-process checks that shared scene imports load no renderer, PyMOL or
+  MCP services. The existing Pydantic settings warning remains.
+- Renderer/Studio tests with native Blender geometry and real headless PyMOL
+  enabled: **586 passed, 48 skipped** in **62.52 s**, with four existing warnings.
+  The optional wheel inventory check passed separately; browser checks remain
+  skipped. The existing client parity and capture-preservation cases passed.
+- Built the wheel and both Studio archives outside the checkout. Every packaged
+  co-pymol Python file and the renderer engine inventory matched source; obsolete
+  module paths were absent. Installed the wheel in a separate target and ran
+  **58 recipe/capture/client/import tests**, all passing in **33.37 s**.
+- Real headless PyMOL imported all six recipes and the standalone scene exporter
+  directly from the wheel, prepared strict JSON payloads with pinned states,
+  and produced native PNG bytes without importing Blender or MCP services.
+  The local PyMOL interpreter reported its existing missing-license message;
+  native preview appearance was not treated as quality acceptance.
+- Ran `scripts/validate_scene_edit.py` against the installed wheel with public
+  1STP and the configured local runtime. Both base and dried-paint cases passed
+  original-scene inspection, metadata capture, edited-preset extraction and
+  replay. Maximum per-channel pixel RMS against direct Blender renders was
+  **0.140** at **192 × 144, eight samples**. The real PyMOL bridge also extracted
+  and rendered a preset. Embedded scripts stayed disabled, unsupported geometry
+  edits were rejected, and the private warm worker was stopped.
+- The installed co-pymol CLI and relocated detached worker completed a public
+  1STP turntable on the **Apple M3 Metal GPU** in **15.78 s**: **192 × 144,
+  four samples, four frames, 4 FPS, one second**. PNG, MP4, GIF, frame archive,
+  saved PSE, resolved style and manifest outputs completed. FFprobe and Pillow
+  confirmed dimensions/timing/counts; frame hashes were distinct and the still
+  matched the anchor. Inspected two turntable views and both preset replays.
+  These are low-resolution pipeline checks, not figure-quality acceptance.
+- Generated defaults, `uv lock --check` and Git whitespace checks passed. No
+  desktop session was changed or lab job submitted. Temporary validation outputs,
+  installations and source snapshots were removed.

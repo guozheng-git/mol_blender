@@ -7,8 +7,8 @@ import pymol2
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(0, sys.argv[2])
 from animation_session import prepare
-from co_pymol.utils.pymol.animate import keys_for
-from co_pymol.core.animation import template
+from co_pymol.scene.camera import keys_for
+from co_pymol.scene.animation import template
 
 with pymol2.PyMOL() as instance:
     cmd = instance.cmd

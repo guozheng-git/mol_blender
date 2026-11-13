@@ -296,13 +296,37 @@ Recipe timings and the shorter legacy camera orbits have separate entries so
 centralizing their settings preserves their existing behavior.
 
 PyMOL and Structure Studio also share the recipe functions in
-[`co_pymol/core/animation.py`](co_pymol/core/animation.py) and PyMOL camera/capture
-helpers in `co_pymol/utils/pymol/`. All six named recipes produce the same camera
+[`co_pymol/scene/animation.py`](co_pymol/scene/animation.py) and PyMOL camera/capture
+helpers in `co_pymol/scene/`. All six named recipes produce the same camera
 paths, molecular-state indices and cutaway opacity for the same inputs. Studio
 imports these helpers from its bundled wheel; source checkouts use the sibling
 package directly. The PyMOL preview maps cutaway opacity to its ghost-shell
 display. Local rendering, cluster submission and each client's job workflow
 continue to use their existing entry points.
+
+## Package boundaries
+
+`co_pymol` and `blender_render` are sibling packages, shipped together. Scene
+preparation has an explicit home in each:
+
+- `co_pymol/scene/`: `session.py` owns PyMOL access, `camera.py` measures camera
+  keys, `animation.py` compiles shared recipes, and `capture.py` freezes scene
+  payloads. `preview.py` produces native PyMOL images and movies. Structure Studio
+  reuses these modules directly; importing them does not start the MCP server.
+- `co_pymol/render/`: `client.py` manages render requests and results, `worker.py`
+  runs in the renderer environment, and `gallery.py` builds preset contact sheets.
+  MCP image wrappers and tool registration stay in `co_pymol/tools/`.
+- `blender_render/scene/`: `export.py` converts PyMOL scenes to data-only payloads,
+  `capture.py` records saved Blender scene metadata, and `edit.py` extracts preset
+  edits. The exporter also runs standalone inside PyMOL without importing the
+  renderer package.
+
+Execution still enters through `blender_render.local.render_payload` or the
+existing cluster client. `blender_render/animation.py` validates and encodes
+renderer animations; the shared recipe compiler in `co_pymol/scene/animation.py`
+produces their camera paths. Only the detached worker imports renderer execution
+code from the PyMOL client. The renderer's identity and private snapshots cover
+its scene subpackage without including the sibling client package.
 
 ## Claude Code and Codex
 

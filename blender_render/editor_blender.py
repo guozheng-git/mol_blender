@@ -19,7 +19,7 @@ if __package__ in (None, ''):
 
 import bpy
 from blender_render import editor_controls as controls
-from blender_render import scene_capture as capture
+from blender_render.scene import capture
 from blender_render.editor_protocol import MAX_OPERATIONS, number, receive, send, write_json
 
 _ACTIVE = None

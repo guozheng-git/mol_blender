@@ -30,7 +30,7 @@ def saved_session(path, *, scenes=0, states=1):
 @pytest.fixture
 def submitted(preset_backend, tmp_path, monkeypatch):  # noqa: F811
     """Run animate --blender and return what reached the backend request."""
-    from co_pymol.utils.pymol import blender as pymol_blender
+    from co_pymol.scene import capture as pymol_blender
 
     views = []
     captured = []
@@ -136,9 +136,9 @@ def test_states_send_each_frames_state_and_export_all_states(
 @pytest.mark.parametrize('recipe', ['reveal', 'cutaway', 'states', 'rock'])
 def test_real_session_recipe_views_are_json_serializable(tmp_path, recipe):
     """PyMOL coordinates are float32; measured clip planes must not leak it."""
-    from co_pymol.core.animation import frames_for
-    from co_pymol.utils.pymol.animate import keys_for
-    from co_pymol.utils.pymol.blender import open_session
+    from co_pymol.scene.animation import frames_for
+    from co_pymol.scene.camera import keys_for
+    from co_pymol.scene.session import open_session
 
     session = saved_session(tmp_path / 'motion.pse', states=3)
     with open_session(session) as cmd:

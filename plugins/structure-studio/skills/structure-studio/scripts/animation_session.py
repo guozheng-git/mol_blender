@@ -14,9 +14,9 @@ from pymol_session import ligand_records, residue_selection
 
 
 def prepare(cmd, config, *, width=None, height=None):
-    from co_pymol.core.animation import frames_for, template
-    from co_pymol.utils.pymol.animate import keys_for
-    from co_pymol.utils.pymol.blender import capture_animation
+    from co_pymol.scene.animation import frames_for, template
+    from co_pymol.scene.camera import keys_for
+    from co_pymol.scene.capture import capture_animation
 
     config = template(config)
     if any(value is not None and (type(value) is not int or value < 1) for value in (width, height)):

@@ -4432,7 +4432,7 @@ def _render(args: argparse.Namespace) -> None:
                      "Source and build instructions: https://github.com/magnusbauer/blender_render\n"
                      "Upstream Molecular Nodes: https://github.com/BradyAJohnston/MolecularNodes\n\n")
         notice.write(resource_bytes(Path(__file__).with_name("GPL-3.0-or-later.txt")).decode())
-        from blender_render.scene_capture import capture
+        from blender_render.scene.capture import capture
         capture(scene, style_doc, materials, light_target, light_radius)
         bpy.ops.wm.save_as_mainfile(filepath=str(blend_output), copy=True)
         print(f"Custom blend saved: {blend_output}")

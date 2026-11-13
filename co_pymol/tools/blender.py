@@ -7,11 +7,11 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP, Image
 
-from co_pymol.core.blender import BlenderBridge, render_name
+from co_pymol.render.client import BlenderBridge, render_name
 from co_pymol.defaults import IMAGE
 from co_pymol.tools.errors import error_wrapper
-from co_pymol.utils.pymol.blender import capture_pse, capture_scene
-from co_pymol.utils.pymol.helper import pymol_session
+from co_pymol.scene.capture import capture_pse, capture_scene
+from co_pymol.scene.session import pymol_session
 
 
 def register_blender_tools(mcp: FastMCP) -> None:

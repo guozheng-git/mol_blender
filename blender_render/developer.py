@@ -349,7 +349,7 @@ def parser() -> argparse.ArgumentParser:
 def execute(args):
     from blender_render import authoring, core
     if args.action == 'from-blend':
-        from blender_render.scene_edit import save_from_blend
+        from blender_render.scene.edit import save_from_blend
         return save_from_blend(args.scene, args.preset, description=args.description, catalog_dir=args.catalog_dir,
                                blender=args.blender, camera_policy=args.camera_policy, replace=args.replace,
                                allow_partial=args.allow_partial, report=args.report, timeout=args.timeout)

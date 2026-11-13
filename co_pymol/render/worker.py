@@ -18,9 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 if __package__ in (None, ""):
-    from files import write_json
+    from records import write_json
 else:
-    from .files import write_json
+    from .records import write_json
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -214,7 +214,10 @@ def run_batch(directory: Path) -> None:
 def main() -> None:
     action, path = sys.argv[1:]
     if action in {"presets", "gallery"}:
-        from blender_gallery import preset_gallery
+        if __package__ in (None, ""):
+            from gallery import preset_gallery
+        else:
+            from .gallery import preset_gallery
 
         from blender_render.config import config_root
         from blender_render.presets import catalog

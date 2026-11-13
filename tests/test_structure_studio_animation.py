@@ -13,7 +13,7 @@ sys.path.insert(0, str(SKILL / "scripts"))
 import studio
 from studio import animation_recipes
 
-from co_pymol.core.animation import (
+from co_pymol.scene.animation import (
     Keys,
     blend,
     frames_for,

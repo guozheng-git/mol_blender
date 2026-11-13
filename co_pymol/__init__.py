@@ -10,7 +10,6 @@ import socket
 import threading
 from types import SimpleNamespace
 
-from co_pymol.cli import server_url
 from co_pymol.constants import DEFAULT_HOST, DEFAULT_PORT
 
 state = SimpleNamespace(thread=None)
@@ -41,6 +40,7 @@ def start_mcp(port: int | str = DEFAULT_PORT, host: str = DEFAULT_HOST):
     # they'd break `import co_pymol` under the plain Python the stdlib-only CLI uses.
     import uvicorn
 
+    from co_pymol.cli import server_url
     from co_pymol.server import create_server
 
     # PyMOL's command extension passes all args as strings (`start_mcp 9000`).

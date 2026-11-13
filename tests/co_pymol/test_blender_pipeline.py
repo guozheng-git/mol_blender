@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from co_pymol.core.blender import write_json
+from co_pymol.render.client import write_json
 from test_blender import bridge, calls, fake_repo  # noqa: F401 (fixtures)
 
 

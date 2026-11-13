@@ -134,7 +134,7 @@ class FakeCmd:
 
 
 def test_exporter_collects_every_state_in_atom_order():
-    from blender_render.export import collect_state_coordinates
+    from blender_render.scene.export import collect_state_coordinates
     result = collect_state_coordinates(FakeCmd([[[0, 0, 0], [1, 2, 3.00049]], [[1, 1, 1], [2, 2, 2]]]), 'all', 1)
     assert result == {'base': 1, 'coordinates': [[0, 0, 0, 1, 2, 3.0], [1, 1, 1, 2, 2, 2]]}
     with pytest.raises(ValueError, match='same 2 atoms'):
@@ -181,7 +181,7 @@ def test_lid_needs_a_preset_with_a_cutout():
 
 def test_state_export_rejects_different_atoms_with_equal_counts():
     from types import SimpleNamespace
-    from blender_render.export import collect_state_coordinates
+    from blender_render.scene.export import collect_state_coordinates
     command = FakeCmd([[[0, 0, 0]], [[1, 1, 1]]])
     command.get_model = lambda selection, state: SimpleNamespace(atom=[SimpleNamespace(index=state)])
     with pytest.raises(ValueError, match='same 1 atoms'):
