@@ -21,6 +21,11 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   environment and calls `local.render_payload` or `cluster.client.Client`. Keep it a
   sibling of `blender_render/` so the engine inventory is unaffected. Test it with
   PyMOL's Python: `python -m pytest tests/co_pymol`.
+- Keep the pure recipe compiler in `co_pymol/core/animation.py` and reuse its
+  PyMOL camera/capture helpers from Structure Studio. Studio reads these helpers
+  from the bundled wheel; do not copy their algorithms into plugin scripts.
+  Compiled paths enter the existing renderer payload. PyMOL's ghost-shell
+  preview is a display mapping of the same cutaway opacity timeline.
 - Export CIF first and assign secondary structure in PyMOL before export.
 - Preserve enabled selections, transforms, colors and the saved camera by default.
 - Keep `mint_sky_assembly` as the default, native Molecular Nodes ligand sticks, and rough

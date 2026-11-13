@@ -85,13 +85,23 @@ tool; movie playback depends on the client's support for local media files.
 See [validation](validation.md#local-animation-port) for executed Mac checks and
 untested GUI/client behavior.
 
-## Structure Studio recipes
+## Shared PyMOL and Structure Studio recipes
 
-The Claude plugin adds reusable `turntable`, `rock`, `reveal`, `cutaway`, `states`
-and `scenes` templates. See its
+Both clients use `co_pymol/core/animation.py` for `turntable`, `rock`, `reveal`,
+`cutaway`, `states` and `scenes`. Shared PyMOL helpers measure camera keys and
+capture the anchor scene while preserving the caller's camera, colors, enabled
+objects, secondary structure and pinned molecular states. See Studio's
 [animation reference](../plugins/structure-studio/skills/structure-studio/references/animations.md)
 for commands, prerequisites and quality controls. Existing `--animation rock|360`
 commands retain their defaults.
+
+`python -m co_pymol animate scene.pse --blender --recipe rock --duration 2
+--fps 8 --rock-angle 17` uses the same recipe compiler as Studio. The PyMOL CLI
+also accepts `--gif`/`--no-gif` for Blender movies. All named recipes use sampled
+camera paths, including rock and turntable. Duration overrides scale the whole
+timeline; segment rounding preserves the exact requested total frame count.
+State movies must include every molecular state. PyMOL's native preview retains
+its ghost-shell cutaway display, mapping the shared lid opacity to transparency.
 
 The shared renderer also accepts `output.animation.mode = "path"` in a style or
 output override. `path` is a list of 4–360 PyMOL views (18 finite numbers each),

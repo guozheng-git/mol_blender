@@ -323,52 +323,17 @@ def cmd_inspect(args: argparse.Namespace) -> None:
         print(json.dumps(scene_facts(cmd), indent=2))
 
 
-# Turntable and rock map onto the backend's own orbits; the other recipes send
-# one view per frame, plus each frame's PyMOL state (states) or the opacity of
-# the surface a preset's ligand cutout removes (cutaway).
-BLENDER_ORBITS = {
-    "turntable": {"mode": "360", **ANIMATION["recipes"]["turntable"]},
-    "rock": {"mode": "rock", **ANIMATION["recipes"]["rock"]},
-}
-BLENDER_PATHS = {"reveal", "scenes", "states", "cutaway"}
 CUTAWAY_PRESET = IMAGE["cutaway_preset"]
 
 
 def submit_blender_animation(args: argparse.Namespace, cmd, recipe: str, frames) -> int:
     """Submit one Blender animation job of a recipe to the configured GPU profile."""
-    from co_pymol.core.animation import CUTAWAY_FADE
-    from co_pymol.utils.pymol.blender import capture_scene
+    from co_pymol.utils.pymol.blender import capture_animation
 
-    if recipe not in BLENDER_ORBITS and recipe not in BLENDER_PATHS:
-        raise ValueError(f"Blender cannot render the {recipe} recipe")
-    anchor = 0
-    if recipe in BLENDER_ORBITS:
-        animation = {**BLENDER_ORBITS[recipe], "fps": args.fps}
-    else:
-        animation = {
-            "mode": "path",
-            "fps": args.fps,
-            "path": [list(frame.view) for frame in frames],
-        }
-        if recipe == "states":
-            animation["states"] = [frame.state for frame in frames]
-        if recipe == "cutaway":
-            # The preset's cut appears as its lid fades from intact to gone.
-            lid = [max(0.0, 1 - frame.fade / CUTAWAY_FADE) for frame in frames]
-            # Build the scene, and so aim the camera-facing cut, from the first
-            # close-up with the cut complete; that frame is also the still.
-            anchor = next(i for i, opacity in enumerate(lid) if opacity <= 1e-9)
-            animation.update(lid=[round(v, 6) for v in lid], anchor=anchor)
     bridge = blender_bridge(args)
     default = CUTAWAY_PRESET if recipe == "cutaway" else DEFAULT_PRESET
     preset = bridge.select_presets([args.preset or default], False)[0]
-    # The anchor view is the rendered camera; other frames move relative to it.
-    cmd.set_view(frames[anchor].view)
-    if frames[anchor].state:
-        cmd.set("state", frames[anchor].state)
-    payload = capture_scene(
-        cmd, "all", -1, all_states=recipe == "states"
-    )
+    payload, animation = capture_animation(cmd, recipe, frames, args.fps, gif=args.gif)
     receipt = bridge.submit(
         payload,
         preset=preset,
@@ -413,7 +378,7 @@ def cmd_animate(args: argparse.Namespace) -> int | None:
             has_focus=focus is not None,
         )
         keys = keys_for(cmd, recipe, focus)
-        frames = frames_for(recipe, keys, args.fps)
+        frames = frames_for(recipe, keys, args.fps, duration=args.duration, rock_angle=args.rock_angle)
         if args.blender:
             return submit_blender_animation(args, cmd, recipe, frames)
         shell = None
@@ -635,6 +600,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pixels high; 0 follows the session's viewport aspect ratio",
     )
     p_animate.add_argument("--fps", type=int, default=ANIMATION["fps"], help="Frames per second")
+    p_animate.add_argument("--duration", type=float, help="Scale the recipe to this many seconds")
+    p_animate.add_argument("--rock-angle", type=float, help="Rock recipe angle in degrees")
+    p_animate.add_argument("--gif", action=argparse.BooleanOptionalAction, default=ANIMATION["gif"],
+                           help="Also encode a GIF with --blender")
     p_animate.add_argument(
         "--blender",
         action="store_true",

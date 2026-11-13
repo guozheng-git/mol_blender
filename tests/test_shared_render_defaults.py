@@ -72,7 +72,7 @@ movie = cli.build_parser().parse_args(['animate', 'example.pse'])
 assert (still.width, still.height, still.samples) == (920, 0, 27)
 assert (movie.width, movie.fps, movie.samples) == (720, 20, 29)
 assert cli.DEFAULT_PRESET == 'northern_nights'
-assert cli.BLENDER_ORBITS['rock'] == {'mode': 'rock', 'duration': 8, 'rock_angle': 22}
+assert pymol_animation.RECIPE_DEFAULTS['rock'] == {'duration': 8, 'rock_angle': 22}
 view = (1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, 0)
 assert len(pymol_animation.frames_for('rock', pymol_animation.Keys(overview=view))) == 160
 
@@ -98,8 +98,8 @@ schema = json.loads((root / 'blender_render/style.schema.json').read_text())
 assert schema['properties']['output']['properties']['animation']['properties']['path']['maxItems'] == 400
 
 sys.path.insert(0, str(root / 'plugins/structure-studio/skills/structure-studio/scripts'))
-import animation_recipes
 import studio
+from studio import animation_recipes
 assert len(animation_recipes.frames_for('rock', animation_recipes.Keys(overview=view))) == 160
 template = animation_recipes.template({'version': 1, 'recipe': 'rock'})
 assert template['fps'] == 20 and template['rock_angle'] == 22

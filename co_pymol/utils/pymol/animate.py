@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from co_pymol.core.animation import Frame, Keys, View
+from co_pymol.defaults import ANIMATION
 
 LIGANDS = "enabled and organic and not solvent"
 SHELL_FLAG = 8  # a user flag PyMOL leaves free; marks the lid of the cutaway
@@ -93,19 +94,22 @@ def opening_view(cmd, view: View, focus: str) -> View:
 def keys_for(cmd, recipe: str, focus: str | None) -> Keys:
     overview = tuple(cmd.get_view())
     scenes = []
-    for name in cmd.get_scene_list() if recipe == "scenes" else ():
-        cmd.scene(name, "recall", animate=0)
-        scenes.append(tuple(cmd.get_view()))
-    if scenes:
-        # Representations stay those of the first scene; only cameras move.
-        cmd.scene(cmd.get_scene_list()[0], "recall", animate=0)
-    target = None
-    if focus and recipe == "reveal":
-        target = opening_view(cmd, overview, focus)
-    elif focus and recipe == "cutaway":
-        # Push straight in: the fade, not a turn, opens the way to the site.
-        target = _framed(cmd, overview, pocket(focus))
-    cmd.set_view(overview)
+    try:
+        for name in cmd.get_scene_list() if recipe == "scenes" else ():
+            cmd.scene(name, "recall", animate=0, color=0, active=0, rep=0, frame=0)
+            scenes.append(tuple(cmd.get_view()))
+        target = None
+        if focus and recipe in {"reveal", "cutaway"}:
+            focus = f"enabled and ({focus})"
+            if not cmd.count_atoms(focus):
+                raise ValueError("The animation focus matches no enabled atoms")
+            if recipe == "reveal":
+                target = opening_view(cmd, overview, focus)
+            else:
+                # Push straight in: the fade opens the way to the site.
+                target = _framed(cmd, overview, pocket(focus))
+    finally:
+        cmd.set_view(overview)
     return Keys(
         overview=overview,
         focus=target,
@@ -167,6 +171,8 @@ def render_preview(
     shell: str | None = None,
 ) -> Path:
     """Ray-trace every frame at preview quality and encode an H.264 MP4."""
+    from co_pymol.utils.pymol.blender import set_animation_frame
+
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise OSError("ffmpeg is required for animation previews (brew install ffmpeg)")
@@ -175,11 +181,12 @@ def render_preview(
     cmd.set("ray_shadows", 0)
     with tempfile.TemporaryDirectory(prefix="co-pymol-frames-") as directory:
         for number, frame in enumerate(frames):
-            cmd.set_view(frame.view)
-            if frame.state:
-                cmd.set("state", frame.state)
+            set_animation_frame(cmd, frame)
             if shell:
-                cmd.set("transparency", frame.fade, shell)
+                # PyMOL previews retain a ghost of the shell. The shared
+                # timeline records full lid opacity for Blender's cutaway.
+                transparency = (1 - frame.lid_opacity) * ANIMATION["recipes"]["cutaway"]["pymol_shell_transparency"]
+                cmd.set("transparency", transparency, shell)
             cmd.png(
                 f"{directory}/frame_{number:04d}.png",
                 width=width,

@@ -1,7 +1,9 @@
 # Animation recipes and templates
 
-These recipes adapt co-pymol's keyframe timelines and camera measurement to the
-shared local Blender renderer. No co-pymol installation or remote backend is needed.
+These recipes use the same co-pymol timeline and camera/capture functions as the
+PyMOL client. The helpers ship in Studio's bundled wheel, so no separate co-pymol
+installation or remote backend is needed. Named recipes compile to camera paths;
+the renderer's existing local and lab execution entry points are unchanged.
 
 ## Choose a recipe
 

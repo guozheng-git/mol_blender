@@ -62,16 +62,14 @@ def submitted(preset_backend, tmp_path, monkeypatch):  # noqa: F811
     return run
 
 
-def test_turntable_uses_the_backend_orbit(submitted, tmp_path, capsys):
+def test_turntable_uses_the_shared_camera_path(submitted, tmp_path, capsys):
     session = saved_session(tmp_path / "one.pse")
     code, receipt, request, _ = submitted(session, "turntable", capsys)
     assert code == 0 and receipt["status"] == "completed"
     options = request["options"]
-    assert (options["animation"], options["duration"], options["fps"]) == (
-        "360",
-        10,
-        24,
-    )
+    animation = options["overrides"]["output"]["animation"]
+    assert animation["mode"] == "path" and animation["fps"] == 24
+    assert len(animation["path"]) == receipt["frames"] == 240
     # The saved request keeps the configured lab backend and GPU requirement.
     assert request["config"]["backend"] == "cluster"
     assert request["config"]["require_gpu"] is True

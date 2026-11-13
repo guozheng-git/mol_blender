@@ -7,7 +7,6 @@ import math
 import pytest
 
 from co_pymol.core.animation import (
-    CUTAWAY_FADE,
     Keys,
     blend,
     choose_recipe,
@@ -69,12 +68,12 @@ def test_turntable_loops_without_a_repeated_frame():
 
 def test_cutaway_starts_buried_then_fades_the_lid_at_the_focus():
     frames = frames_for("cutaway", Keys(overview=VIEW, focus=FOCUS), fps=10)
-    assert frames[0].fade == 0 and close(frames[0].view, VIEW)
-    fading = [f for f in frames if 0 < f.fade < CUTAWAY_FADE]
+    assert frames[0].lid_opacity == 1 and close(frames[0].view, VIEW)
+    fading = [f for f in frames if 0 < f.lid_opacity < 1]
     assert fading and all(close(f.view, FOCUS) for f in fading)
-    assert frames[-1].fade == pytest.approx(CUTAWAY_FADE)
-    fades = [f.fade for f in frames]
-    assert fades == sorted(fades)  # never flickers back to opaque
+    assert frames[-1].lid_opacity == 0
+    opacity = [f.lid_opacity for f in frames]
+    assert opacity == sorted(opacity, reverse=True)  # never flickers back to opaque
 
 
 def test_reveal_eases_into_the_focus_before_rocking():

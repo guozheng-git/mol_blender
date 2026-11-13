@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Adapted from co-pymol; Copyright (c) 2026 Soo-Jeong Kim.
 """Animation recipes: keyframe timelines compiled to one setting per frame.
 
 Pure and stdlib-only — no PyMOL or numpy, so the CLI can list recipes
@@ -31,7 +33,7 @@ View = tuple[float, ...]
 class Frame:
     view: View
     state: int = 0  # 0 leaves the session's current state
-    fade: float = 0.0  # transparency of the cutaway shell; 0 is opaque
+    lid_opacity: float = 1.0  # cutaway lid: 1 is closed, 0 is fully removed
 
 
 @dataclass(frozen=True)
@@ -85,21 +87,22 @@ def turn(view: View, degrees: float, axis: str = "y") -> View:
 
 
 def _quaternion(m: Matrix) -> tuple[float, float, float, float]:
-    # Near a half-turn the antisymmetric terms vanish. Derive the smaller
-    # components from the largest one instead, retaining mixed-axis signs.
+    """Convert a rotation without losing axis signs at or near a half-turn."""
     trace = sum(m[i][i] for i in range(3))
     if trace > 0:
         scale = 2 * math.sqrt(1 + trace)
-        q = [scale / 4, (m[2][1] - m[1][2]) / scale,
-             (m[0][2] - m[2][0]) / scale, (m[1][0] - m[0][1]) / scale]
+        q = (scale / 4, (m[2][1] - m[1][2]) / scale,
+             (m[0][2] - m[2][0]) / scale, (m[1][0] - m[0][1]) / scale)
     else:
+        # Use the largest vector component as the denominator when w is small.
         i = max(range(3), key=lambda index: m[index][index])
         j, k = (i + 1) % 3, (i + 2) % 3
         scale = 2 * math.sqrt(1 + m[i][i] - m[j][j] - m[k][k])
-        q = [(m[k][j] - m[j][k]) / scale, 0., 0., 0.]
-        q[i + 1] = scale / 4
-        q[j + 1] = (m[j][i] + m[i][j]) / scale
-        q[k + 1] = (m[k][i] + m[i][k]) / scale
+        vector = [0.0, 0.0, 0.0]
+        vector[i] = scale / 4
+        vector[j] = (m[i][j] + m[j][i]) / scale
+        vector[k] = (m[i][k] + m[k][i]) / scale
+        q = ((m[k][j] - m[j][k]) / scale, *vector)
     norm = math.sqrt(sum(value * value for value in q))
     return tuple(value / norm for value in q)
 
@@ -116,7 +119,7 @@ def _matrix(q: tuple[float, ...]) -> Matrix:
 def blend(a: View, b: View, t: float) -> View:
     """Interpolate two views: rotation along the shortest arc, the rest linearly."""
     qa, qb = _quaternion(_rotation(a)), _quaternion(_rotation(b))
-    dot = sum(i * j for i, j in zip(qa, qb, strict=True))
+    dot = sum(i * j for i, j in zip(qa, qb))
     if dot < 0:
         qb, dot = tuple(-i for i in qb), -dot
     angle = math.acos(min(1.0, dot))
@@ -125,12 +128,12 @@ def blend(a: View, b: View, t: float) -> View:
     else:
         wa = math.sin((1 - t) * angle) / math.sin(angle)
         wb = math.sin(t * angle) / math.sin(angle)
-        q = tuple(wa * i + wb * j for i, j in zip(qa, qb, strict=True))
-    rest = tuple((1 - t) * x + t * y for x, y in zip(a[9:17], b[9:17], strict=True))
+        q = tuple(wa * i + wb * j for i, j in zip(qa, qb))
+    rest = tuple((1 - t) * x + t * y for x, y in zip(a[9:17], b[9:17]))
     return _with_rotation(a, _matrix(q))[:9] + rest + (a[17],)
 
 
-# Segments. Each keeps state and fade from the previous frame unless it sets them.
+# Segments keep state and lid opacity from the previous frame unless they set them.
 
 
 def hold(view: View, seconds: float) -> Segment:
@@ -153,9 +156,9 @@ def rock(view: View, seconds: float, degrees: float) -> Segment:
     )
 
 
-def fade(view: View, seconds: float, to: float) -> Segment:
+def fade_out(view: View, seconds: float) -> Segment:
     def frame(t: float, last: Frame) -> Frame:
-        return replace(last, view=view, fade=to * smooth(t))
+        return replace(last, view=view, lid_opacity=last.lid_opacity * (1 - smooth(t)))
 
     return seconds, frame
 
@@ -164,10 +167,9 @@ def play_states(view: View, seconds: float, states: int, degrees: float) -> Segm
     def frame(t: float, last: Frame) -> Frame:
         return Frame(
             view=turn(view, degrees * math.sin(2 * math.pi * t)),
-            # Exact frame/state boundaries can round just below an integer
-            # (e.g. 13/360*360). Avoid repeating one state and skipping the next.
+            # Protect exact state boundaries from floating-point rounding.
             state=1 + min(states - 1, math.floor(t * states + 1e-9)),
-            fade=last.fade,
+            lid_opacity=last.lid_opacity,
         )
 
     return seconds, frame
@@ -177,8 +179,10 @@ def compile_frames(segments: list[Segment], fps: int) -> list[Frame]:
     """Sample every segment at fps; each one starts where the last one ended."""
     frames: list[Frame] = []
     last: Frame | None = None
+    elapsed = 0.0
     for seconds, segment in segments:
-        count = max(1, round(seconds * fps))
+        elapsed += seconds
+        count = round(elapsed * fps) - len(frames)
         if last is None:
             last = segment(0.0, Frame(view=()))
         frames.extend(segment(i / count, last) for i in range(count))
@@ -209,9 +213,6 @@ def reveal_recipe(keys: Keys) -> list[Segment]:
     ]
 
 
-CUTAWAY_FADE = RECIPE_DEFAULTS["cutaway"]["pymol_shell_transparency"]  # keep a ghost of the shell so the pocket stays in context
-
-
 def cutaway_recipe(keys: Keys) -> list[Segment]:
     """Overview with the site buried, push in, fade the shell in front, rock."""
     config = RECIPE_DEFAULTS["cutaway"]
@@ -220,7 +221,7 @@ def cutaway_recipe(keys: Keys) -> list[Segment]:
         hold(keys.overview, config["overview_hold"]),
         move(keys.overview, focus, config["approach"]),
         hold(focus, config["before_fade_hold"]),
-        fade(focus, config["fade_duration"], CUTAWAY_FADE),
+        fade_out(focus, config["fade_duration"]),
         hold(focus, config["after_fade_hold"]),
         rock(focus, config["rock_duration"], config["rock_angle"]),
     ]
@@ -239,7 +240,7 @@ def scenes_recipe(keys: Keys) -> list[Segment]:
         raise ValueError("The scenes recipe needs at least two saved scenes")
     config = RECIPE_DEFAULTS["scenes"]
     segments = [hold(keys.scenes[0], config["hold_duration"])]
-    for a, b in zip(keys.scenes, keys.scenes[1:], strict=False):
+    for a, b in zip(keys.scenes, keys.scenes[1:]):
         segments += [move(a, b, config["transition_duration"]), hold(b, config["hold_duration"])]
     return segments
 
@@ -259,8 +260,8 @@ RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
     ),
     "cutaway": (
         cutaway_recipe,
-        "Overview with the site buried, push in, fade the surface in front of "
-        "it to a ghost, then rock gently.",
+        "Overview with the site buried, push in, fade away the surface covering "
+        "the pocket, then rock gently.",
     ),
     "states": (states_recipe, f"Play through all states while rocking ±{RECIPE_DEFAULTS['states']['rock_angle']:g}°."),
     "scenes": (scenes_recipe, "Fly between saved scenes, holding at each."),
@@ -278,7 +279,65 @@ def choose_recipe(*, scenes: int, states: int, has_focus: bool) -> str:
     return "turntable"
 
 
-def frames_for(recipe: str, keys: Keys, fps: int = ANIMATION["fps"]) -> list[Frame]:
+def frames_for(recipe: str, keys: Keys, fps: int = ANIMATION["fps"], *, duration=None, rock_angle=None) -> list[Frame]:
     if recipe not in RECIPES:
         raise ValueError(f"Unknown recipe {recipe!r}; choose from {', '.join(RECIPES)}")
-    return compile_frames(RECIPES[recipe][0](keys), fps)
+    segments = RECIPES[recipe][0](keys)
+    if rock_angle is not None:
+        if recipe != "rock" or type(rock_angle) not in (int, float) or not math.isfinite(rock_angle) or not 0 < rock_angle <= ANIMATION_LIMITS["max_rock_angle"]:
+            raise ValueError(f"rock_angle requires the rock recipe and an angle in (0, {ANIMATION_LIMITS['max_rock_angle']}]")
+        segments = [rock(keys.overview, RECIPE_DEFAULTS["rock"]["duration"], rock_angle)]
+    seconds = sum(s for s, _ in segments)
+    duration = seconds if duration is None else duration
+    if type(fps) is not int or not 1 <= fps <= ANIMATION_LIMITS["max_fps"]:
+        raise ValueError(f"fps must be an integer from 1 to {ANIMATION_LIMITS['max_fps']}")
+    if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= ANIMATION_LIMITS["max_duration"]:
+        raise ValueError(f"duration must be positive and at most {ANIMATION_LIMITS['max_duration']} seconds; shorten long scene tours explicitly")
+    count = duration * fps
+    if not ANIMATION_LIMITS["min_frames"] <= count <= ANIMATION_LIMITS["max_frames"] or not math.isclose(count, round(count), abs_tol=1e-8):
+        raise ValueError(f"duration × fps must be an integer from {ANIMATION_LIMITS['min_frames']} to {ANIMATION_LIMITS['max_frames']}")
+    frames = compile_frames([(s * duration / seconds, f) for s, f in segments], fps)
+    if recipe == "states" and {frame.state for frame in frames} != set(range(1, keys.states + 1)):
+        raise ValueError("The movie is too short to show every state; increase duration or FPS")
+    return frames
+
+
+def template(value: dict) -> dict:
+    """Validate a portable recipe template; no paths, executable code or renderer settings."""
+    if not isinstance(value, dict) or set(value) - {"version", "recipe", "fps", "gif", "duration", "rock_angle", "focus"}:
+        raise ValueError("Unsupported animation template fields")
+    if type(value.get("version")) is not int or value["version"] != 1 or value.get("recipe") not in RECIPES:
+        raise ValueError("Animation templates need version=1 and a known recipe")
+    result = {"fps": ANIMATION["fps"], "gif": ANIMATION["gif"], **value}
+    if result["recipe"] == "rock":
+        result.setdefault("rock_angle", RECIPE_DEFAULTS["rock"]["rock_angle"])
+    if type(result["fps"]) is not int or not 1 <= result["fps"] <= ANIMATION_LIMITS["max_fps"]:
+        raise ValueError(f"fps must be an integer from 1 to {ANIMATION_LIMITS['max_fps']}")
+    if type(result["gif"]) is not bool:
+        raise ValueError("gif must be a boolean")
+    for key in ("duration", "rock_angle"):
+        if key in result and (type(result[key]) not in (int, float) or not math.isfinite(result[key]) or result[key] <= 0):
+            raise ValueError(key + " must be a positive finite number")
+    if "duration" in result and result["duration"] > ANIMATION_LIMITS["max_duration"]:
+        raise ValueError(f"duration must be at most {ANIMATION_LIMITS['max_duration']} seconds")
+    if "rock_angle" in result and (result["recipe"] != "rock" or result["rock_angle"] > ANIMATION_LIMITS["max_rock_angle"]):
+        raise ValueError(f"rock_angle requires the rock recipe and an angle in (0, {ANIMATION_LIMITS['max_rock_angle']}]")
+    if "focus" in result and (result["recipe"] not in {"reveal", "cutaway"} or not isinstance(result["focus"], str) or not result["focus"].strip()):
+        raise ValueError("focus must be a nonempty PyMOL selection for reveal or cutaway")
+    return result
+
+
+def animation_payload(recipe: str, frames: list[Frame], fps: int, *, gif: bool = ANIMATION["gif"]) -> dict:
+    """Translate a compiled recipe into the renderer's existing camera-path input."""
+    animation = {"mode": "path", "path": [[float(v) for v in frame.view] for frame in frames],
+                 "fps": fps, "gif": gif}
+    if recipe == "cutaway":
+        lid = [round(frame.lid_opacity, 6) for frame in frames]
+        try:
+            anchor = lid.index(0)
+        except ValueError:
+            raise ValueError("The movie is too short to open the cutaway; increase duration or FPS") from None
+        animation.update(lid=lid, anchor=anchor)
+    if recipe == "states":
+        animation["states"] = [frame.state for frame in frames]
+    return animation

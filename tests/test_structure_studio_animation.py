@@ -10,10 +10,10 @@ from pathlib import Path
 import sys
 SKILL = Path(__file__).resolve().parents[1] / "plugins/structure-studio/skills/structure-studio"
 sys.path.insert(0, str(SKILL / "scripts"))
-import animation_recipes
 import studio
+from studio import animation_recipes
 
-from animation_recipes import (
+from co_pymol.core.animation import (
     Keys,
     blend,
     frames_for,

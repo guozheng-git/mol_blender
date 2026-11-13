@@ -295,6 +295,15 @@ precedence. The `limits` section defines enforced bounds, not request overrides.
 Recipe timings and the shorter legacy camera orbits have separate entries so
 centralizing their settings preserves their existing behavior.
 
+PyMOL and Structure Studio also share the recipe functions in
+[`co_pymol/core/animation.py`](co_pymol/core/animation.py) and PyMOL camera/capture
+helpers in `co_pymol/utils/pymol/`. All six named recipes produce the same camera
+paths, molecular-state indices and cutaway opacity for the same inputs. Studio
+imports these helpers from its bundled wheel; source checkouts use the sibling
+package directly. The PyMOL preview maps cutaway opacity to its ghost-shell
+display. Local rendering, cluster submission and each client's job workflow
+continue to use their existing entry points.
+
 ## Claude Code and Codex
 
 Open this checkout in either agent and use the CLI above. The repository includes

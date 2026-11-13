@@ -89,6 +89,18 @@ def wheel() -> Path:
     return found[-1]
 
 
+def use_bundled_helpers() -> None:
+    """Import pure helpers from this plugin's wheel, or its source checkout."""
+    if any(WHEELS.glob("*.whl")):
+        source = wheel()
+    else:
+        source = SKILL_ROOT.parents[3]
+        if not (source / "co_pymol/core/animation.py").is_file():
+            raise SetupError("Shared helpers are missing; use the staged plugin or the full source checkout.")
+    if str(source) not in sys.path:
+        sys.path.insert(0, str(source))
+
+
 def state() -> dict:
     path = home() / "state.json"
     return json.loads(path.read_text()) if path.is_file() else {}

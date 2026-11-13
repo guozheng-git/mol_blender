@@ -2058,3 +2058,53 @@ this document; Studio's render path merged without conflicts.
   resources remained absent. The temporary build directory was removed.
 - Generated-default checks, `uv lock --check` and Git whitespace checks passed.
   These integration checks did not submit a live lab job or add visual evidence.
+
+## Shared recipe functions and PyMOL capture (2026-11-13)
+
+Structure Studio now imports the canonical recipe compiler from
+`co_pymol/core/animation.py` in its bundled wheel. Removed its copied compiler
+and camera-measurement functions. Both clients use the same camera keys,
+timeline sampling, cutaway opacity, state indices and anchor capture. All named
+recipes produce camera paths; the renderer's separate legacy orbit controls are
+unchanged. PyMOL previews explicitly map lid opacity to ghost-shell transparency.
+
+Capture restores camera, secondary structure and object-state settings, including
+the distinction between an inherited state and an explicitly pinned state. Saved
+scene tours recall cameras without changing colors, representations or enabled
+objects. Existing local rendering, cluster operations, receipts and client job
+workflows remain in place; this adds no service or general job API.
+
+- PyMOL Python 3.10: **192 passed** in **54.21 s**, with the existing Pydantic
+  settings warning. Twelve real-session comparisons run all six recipes through
+  the PyMOL CLI and Studio preparation with default and shortened timings. Their
+  captured payloads match after excluding only export timestamps/run IDs, and
+  their normalized animation inputs match. Explicit focus, dimensions, GIF and
+  rock-angle options are included. Additional cases cover failure restoration
+  for inherited/pinned states and PyMOL's ghost-shell preview mapping.
+- Renderer Python 3.11 with native Blender geometry checks and real Studio PyMOL
+  checks enabled: **586 passed, 48 skipped** in **63.35 s**. Optional browser and
+  wheel checks account for the skips; the wheel inventory test passed separately.
+  The four existing dependency/fixture warnings remain.
+- Built the wheel and both Studio archives outside the checkout. Verified every
+  packaged co-pymol Python file against source and the renderer's engine inventory.
+  The staged Studio recipe catalog loads all six recipes from the wheel. The pure
+  compiler imports with no renderer, PyMOL, NumPy, MCP or YAML modules loaded.
+- Real headless PyMOL imported the shared helpers and standalone exporter directly
+  from the wheel and prepared all six recipes, preserving enabled objects,
+  selections, colors, transforms and pinned-state export. No renderer engine module
+  was imported. Installed the wheel into a separate target outside the checkout;
+  **56 recipe/capture/client integration tests passed** in **32.23 s**.
+- The real co-pymol CLI and detached local worker rendered public 1STP at
+  **192 × 144, four samples** on the **Apple M3 Metal GPU**: a four-frame turntable
+  at 4 FPS / 1 second (**15.70 s** invocation) and a twelve-frame cutaway at
+  6 FPS / 2 seconds (**22.03 s**). Both produced PNG, MP4, GIF, frame archive,
+  saved PSE, resolved style and manifest outputs.
+- FFprobe verified dimensions, frame counts, rates and durations. GIF frame
+  counts matched, every lossless frame had a distinct hash, and each still was
+  byte-identical to its anchor frame. Inspected all four turntable views and
+  cutaway frames 0, 6, 7 and 11: rotation, partial fading and the opened pocket
+  were visible. These are low-sample smoke checks, not figure-quality renders
+  or native-player playback acceptance.
+- Generated defaults, `uv lock --check` and Git whitespace checks passed. No lab
+  job was submitted and no desktop PyMOL or Blender session was changed. Temporary
+  build, installation, session, render and source-snapshot artifacts were removed.

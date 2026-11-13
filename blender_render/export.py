@@ -450,7 +450,8 @@ def _max_states():
         from importlib.resources import files
         raw = files(__package__).joinpath('render_defaults.json').read_text()
     else:
-        raw = Path(__file__).with_name('render_defaults.json').read_text()
+        path = Path(__file__).with_name('render_defaults.json')
+        raw = path.read_bytes() if path.is_file() else __loader__.get_data(str(path))
     return json.loads(raw)['limits']['animation']['max_frames']
 
 
