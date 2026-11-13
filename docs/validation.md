@@ -1926,3 +1926,54 @@ Cluster cancellation behavior was exercised with controlled transport failures;
 no live lab job was submitted. Test renders, installed-package targets and
 temporary source snapshots were removed after validation. Renderer runtime pins
 and the lab image were not changed.
+
+## Shared render defaults and notification removal (2026-11-13)
+
+Removed desktop render alerts, their native helper, setup commands, bundled
+skill, configuration/status fields and package resources. Client setup now
+configures the PyMOL hook and selected MCP client. Local and cluster completion
+regressions confirm that previously enabled desktop preferences are ignored.
+
+Added `render_defaults.yaml` as the authoring source for image preview settings,
+CPU and rough quality, animation FPS and timings, and animation bounds. The
+generator writes stdlib-readable data for the renderer and Structure Studio and
+synchronizes animation schema limits. PyMOL reads the sibling package's data
+without importing the renderer. Wheel builds reject stale generated data and
+clear obsolete package files from previous builds. Preset-specific output and
+explicit overrides retain their existing precedence. Shared recipe algorithms
+and a common client job API remain follow-up work; this change centralizes data.
+
+Validation of the final implementation:
+
+- PyMOL Python 3.10: `python -m pytest tests/co_pymol -q` — **177 passed**
+  in **56.26 s**, with the existing Pydantic settings warning.
+- Renderer Python 3.11, with native Blender configured for geometry regressions:
+  `python -m pytest tests --ignore=tests/co_pymol -q` — **558 passed,
+  50 skipped** in **46.03 s**, with four existing dependency/fixture warnings.
+  The skips cover optional browser, wheel and additional host checks; the wheel
+  check was enabled and passed separately.
+- An isolated-copy regression edits the YAML and verifies that PyMOL CLI
+  defaults, both recipe compilers, renderer normalization, exporter state
+  limits, cluster defaults, schema bounds and Studio CPU caps use the new
+  values. Explicit request options still win. Invalid authoring fields and
+  stale generated data fail before packaging.
+- Built a wheel outside the checkout with a removed notification module seeded
+  into a previous build directory. The stale module was removed, no notification
+  resources were packaged, and the wheel's engine inventory matched the source.
+  Installed the wheel outside the checkout and reran the PyMOL suite:
+  **177 passed** in **58.30 s**.
+- Built a source distribution, checked that it included the YAML, generator and
+  generated data, then built a wheel from that source distribution. Comparing
+  engine inventories exposed an omitted hosted preview HTML resource in the
+  existing source-distribution manifest; added it to the manifest. Rebuilding
+  then produced identical package files and engine inventories through both
+  build routes.
+- Real headless PyMOL prepared a rock animation through the standalone Studio
+  scripts and imported the exporter/animation helpers directly from the built
+  wheel: **144 frames, 24 fps, 6 seconds, 640 × 427**. The payload and overrides
+  serialized as strict JSON, and no renderer engine module was imported. This
+  verifies preparation and packaging, not rendered movie appearance.
+- `python scripts/sync_render_defaults.py --check`, `uv lock --check` and
+  `git diff --check` passed. PyYAML is a build/development dependency; runtime
+  pins and the lab image are unchanged. No live lab job was submitted.
+  Temporary build, installation and synthetic preparation targets were removed.

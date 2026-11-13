@@ -443,7 +443,18 @@ def _build_single_payload(
     return payload
 
 
-MAX_STATES = 360  # matches the most animation frames
+def _max_states():
+    # This module also runs as a standalone captured script in PyMOL. Read only
+    # the shared data; never import the renderer to obtain export bounds.
+    if __package__:
+        from importlib.resources import files
+        raw = files(__package__).joinpath('render_defaults.json').read_text()
+    else:
+        raw = Path(__file__).with_name('render_defaults.json').read_text()
+    return json.loads(raw)['limits']['animation']['max_frames']
+
+
+MAX_STATES = _max_states()
 
 
 def collect_state_coordinates(cmd_obj, selection: str, base_state: int) -> dict[str, Any]:

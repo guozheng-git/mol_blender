@@ -14,11 +14,17 @@ import tempfile
 import time
 import zipfile
 
+from .defaults import ANIMATION, ANIMATION_LIMITS
+
 CONTROLS = ('animation', 'duration', 'fps', 'rock_angle', 'gif')
 PATH_VIEW_LENGTH = 18  # one PyMOL get_view() per frame
-MAX_RGBA = 10 * 1024**3
-MAX_ARCHIVE = 512 * 1024**2
-MAX_FRAMES = 360
+MAX_RGBA = ANIMATION_LIMITS['max_rgba_bytes']
+MAX_ARCHIVE = ANIMATION_LIMITS['max_archive_bytes']
+MAX_FRAMES = ANIMATION_LIMITS['max_frames']
+MIN_FRAMES = ANIMATION_LIMITS['min_frames']
+MAX_FPS = ANIMATION_LIMITS['max_fps']
+MAX_DURATION = ANIMATION_LIMITS['max_duration']
+MAX_ROCK_ANGLE = ANIMATION_LIMITS['max_rock_angle']
 
 
 def normalize(value, output):
@@ -37,25 +43,25 @@ def normalize(value, output):
         return None
     if output.get('raw_view'):
         raise ValueError('Animation is incompatible with raw_view')
-    fps = value.get('fps', 24)
-    duration = value.get('duration', 3 if mode == 'rock' else 6)
-    if type(fps) is not int or not 1 <= fps <= 60:
-        raise ValueError('Animation fps must be an integer from 1 to 60')
-    if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= 15:
-        raise ValueError('Animation duration must be finite, positive and at most 15 seconds')
+    fps = value.get('fps', ANIMATION['fps'])
+    duration = value.get('duration', ANIMATION['orbits'][mode]['duration'])
+    if type(fps) is not int or not 1 <= fps <= MAX_FPS:
+        raise ValueError(f'Animation fps must be an integer from 1 to {MAX_FPS}')
+    if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= MAX_DURATION:
+        raise ValueError(f'Animation duration must be finite, positive and at most {MAX_DURATION} seconds')
     frames = round(fps * duration)
-    if not math.isclose(frames, fps * duration, abs_tol=1e-8) or not 4 <= frames <= MAX_FRAMES:
-        raise ValueError('Animation must contain an integral number of frames from 4 to 360')
+    if not math.isclose(frames, fps * duration, abs_tol=1e-8) or not MIN_FRAMES <= frames <= MAX_FRAMES:
+        raise ValueError(f'Animation must contain an integral number of frames from {MIN_FRAMES} to {MAX_FRAMES}')
     if frames * output['width'] * output['height'] * 4 > MAX_RGBA:
-        raise ValueError('Animation exceeds 10 GiB of decoded RGBA frames; reduce resolution or duration')
-    gif = value.get('gif', False)
+        raise ValueError(f'Animation exceeds {MAX_RGBA / 1024**3:g} GiB of decoded RGBA frames; reduce resolution or duration')
+    gif = value.get('gif', ANIMATION['gif'])
     if type(gif) is not bool:
         raise ValueError('gif must be a boolean')
     result = dict(mode=mode, duration=duration, fps=fps, gif=gif)
     if mode == 'rock':
-        angle = value.get('rock_angle', 12)
-        if type(angle) not in (int, float) or not math.isfinite(angle) or not 0 < angle <= 45:
-            raise ValueError('rock_angle must be in (0, 45] degrees')
+        angle = value.get('rock_angle', ANIMATION['orbits']['rock']['rock_angle'])
+        if type(angle) not in (int, float) or not math.isfinite(angle) or not 0 < angle <= MAX_ROCK_ANGLE:
+            raise ValueError(f'rock_angle must be in (0, {MAX_ROCK_ANGLE}] degrees')
         result['rock_angle'] = angle
     elif 'rock_angle' in value:
         raise ValueError('rock_angle applies only to rock')
@@ -73,12 +79,12 @@ def _normalize_path(value, output):
         raise ValueError('Animation is incompatible with raw_view')
     if set(value) - {'mode', 'path', 'fps', 'duration', 'gif', 'states', 'anchor', 'lid'}:
         raise ValueError('rock_angle applies only to rock')
-    fps = value.get('fps', 24)
-    if type(fps) is not int or not 1 <= fps <= 60:
-        raise ValueError('Animation fps must be an integer from 1 to 60')
+    fps = value.get('fps', ANIMATION['fps'])
+    if type(fps) is not int or not 1 <= fps <= MAX_FPS:
+        raise ValueError(f'Animation fps must be an integer from 1 to {MAX_FPS}')
     path = value.get('path')
-    if not isinstance(path, list) or not 4 <= len(path) <= MAX_FRAMES:
-        raise ValueError('Animation path must contain 4 to 360 views')
+    if not isinstance(path, list) or not MIN_FRAMES <= len(path) <= MAX_FRAMES:
+        raise ValueError(f'Animation path must contain {MIN_FRAMES} to {MAX_FRAMES} views')
     for view in path:
         if (not isinstance(view, list) or len(view) != PATH_VIEW_LENGTH
                 or any(type(v) not in (int, float) or not math.isfinite(v) for v in view)):
@@ -90,11 +96,11 @@ def _normalize_path(value, output):
                                 or not math.isfinite(value['duration'])
                                 or not math.isclose(value['duration'], duration, abs_tol=1e-8)):
         raise ValueError('Animation duration must equal the path length divided by fps')
-    if duration > 15:
-        raise ValueError('Animation duration must be at most 15 seconds')
+    if duration > MAX_DURATION:
+        raise ValueError(f'Animation duration must be at most {MAX_DURATION} seconds')
     if len(path) * output['width'] * output['height'] * 4 > MAX_RGBA:
-        raise ValueError('Animation exceeds 10 GiB of decoded RGBA frames; reduce resolution or duration')
-    gif = value.get('gif', False)
+        raise ValueError(f'Animation exceeds {MAX_RGBA / 1024**3:g} GiB of decoded RGBA frames; reduce resolution or duration')
+    gif = value.get('gif', ANIMATION['gif'])
     if type(gif) is not bool:
         raise ValueError('gif must be a boolean')
     result = dict(mode='path', duration=duration, fps=fps, gif=gif,
@@ -104,7 +110,7 @@ def _normalize_path(value, output):
         states = value['states']
         if (not isinstance(states, list) or len(states) != len(path)
                 or any(type(n) is not int or not 1 <= n <= MAX_FRAMES for n in states)):
-            raise ValueError('Animation states must give one PyMOL state number (1-360) per path view')
+            raise ValueError(f'Animation states must give one PyMOL state number (1-{MAX_FRAMES}) per path view')
         result['states'] = list(states)
     # The anchor view is the rendered scene's camera (and the still image);
     # every other frame moves relative to it. Camera-facing cuts aim from it.
@@ -219,7 +225,7 @@ def package_frames(directory, archive, config, width, height):
         for path in paths:
             out.write(path, path.name)
     if Path(archive).stat().st_size > MAX_ARCHIVE:
-        raise ValueError('Frame archive exceeds 512 MiB')
+        raise ValueError(f'Frame archive exceeds {MAX_ARCHIVE / 1024**2:g} MiB')
     return metadata
 
 
@@ -228,7 +234,7 @@ def unpack(archive):
     """Validate all members and PNG headers before exposing paths to PyMOL/FFmpeg."""
     archive = Path(archive)
     if archive.stat().st_size > MAX_ARCHIVE:
-        raise ValueError('Frame archive exceeds 512 MiB')
+        raise ValueError(f'Frame archive exceeds {MAX_ARCHIVE / 1024**2:g} MiB')
     with tempfile.TemporaryDirectory(prefix='blender-movie-') as directory, zipfile.ZipFile(archive) as source:
         members = source.infolist()
         if len(members) > MAX_FRAMES + 1 or len({i.filename for i in members}) != len(members):
@@ -242,7 +248,7 @@ def unpack(archive):
         if not isinstance(meta, dict) or meta.get('version') != 1 or any(type(meta.get(k)) is not int for k in ('fps', 'frames', 'width', 'height')):
             raise ValueError('Invalid movie metadata')
         n, w, h = meta['frames'], meta['width'], meta['height']
-        if not 4 <= n <= MAX_FRAMES or not 1 <= meta['fps'] <= 60 or n / meta['fps'] > 15 or min(w, h) < 1 or n*w*h*4 > MAX_RGBA:
+        if not MIN_FRAMES <= n <= MAX_FRAMES or not 1 <= meta['fps'] <= MAX_FPS or n / meta['fps'] > MAX_DURATION or min(w, h) < 1 or n*w*h*4 > MAX_RGBA:
             raise ValueError('Movie exceeds frame, FPS or memory bounds')
         names = [f'{i:04d}.png' for i in range(n)]
         if {i.filename for i in members} != set(names) | {'frames.json'}:

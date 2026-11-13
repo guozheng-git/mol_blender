@@ -18,11 +18,6 @@ from co_pymol.core import blender as adapter
 from co_pymol.core.blender import BlenderBridge, BlenderConfig, write_json
 
 
-@pytest.fixture(autouse=True)
-def isolated_notification_preferences(monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path))
-
-
 # Fakes of this checkout's renderer modules, imported by the detached worker in
 # place of the real `blender_render` package (see the `bridge` fixture). Each
 # call is appended to BLENDER_RENDER_HOME/calls; marker files there steer them.
@@ -1238,107 +1233,36 @@ def test_project_mcp_tool_passes_names_and_resolves_preset_aliases(
     wait_for(bridge, receipt["request_id"], "completed")
 
 
-@pytest.mark.parametrize(
-    ("exit_code", "global_app"), [(0, False), (3, False), (0, True)]
-)
-def test_notification_runs_after_verified_delivery_without_changing_render_status(
-    bridge, tmp_path, exit_code, global_app
+@pytest.mark.parametrize("backend", ["local", "cluster"])
+def test_completion_ignores_existing_desktop_alert_preferences(
+    bridge, tmp_path, backend
 ):
+    bridge._config = replace(bridge.config, backend=backend)
     app = tmp_path / "Blender Renders.app"
     binary = app / "Contents/MacOS/RenderNotifier"
     binary.parent.mkdir(parents=True)
-    record = tmp_path / "notification.json"
+    record = tmp_path / "alert-sent"
     binary.write_text(
         f"#!{sys.executable}\n"
-        "import json, sys\nfrom pathlib import Path\n"
-        "image = Path(sys.argv[5])\n"
-        "state = json.loads((image.parent / 'state.json').read_text())\n"
-        "assert state['status'] == 'completed'\n"
-        "assert image.read_bytes().startswith(b'\\x89PNG')\n"
-        f"Path({str(record)!r}).write_text(json.dumps(sys.argv[1:]))\n"
-        f"sys.exit({exit_code})\n"
+        "from pathlib import Path\n"
+        f"Path({str(record)!r}).touch()\n"
     )
     binary.chmod(0o700)
-    if global_app:
-        from co_pymol.core.blender_notifications import save_preferences
+    preferences = Path.home() / ".config/co-pymol/notifications.json"
+    preferences.parent.mkdir(parents=True)
+    write_json(preferences, {"enabled": True, "app": str(app)})
 
-        save_preferences({"enabled": True, "app": str(app)})
-    else:
-        bridge._config = replace(bridge.config, notification_app=str(app))
     request_id = submit(bridge)
     for process in bridge._processes:
         process.wait(timeout=5)
     state = bridge.status(request_id)
     assert state["status"] == "completed"
-    assert state["notification"]["sent"] is (exit_code == 0)
-    assert calls(bridge).count("fetch") == 1
-    posted = json.loads(record.read_text())
-    assert posted[0:2] == ["--notify", request_id]
-    assert posted[-2] == state["png_path"]
-    assert posted[-1] == state["directory"]
-    before = record.stat().st_mtime_ns
-    bridge.result(request_id)
-    assert record.stat().st_mtime_ns == before
-
-
-def test_corrupt_notification_preferences_do_not_downgrade_a_render(bridge):
-    from co_pymol.core.blender_notifications import preferences_path
-
-    path = preferences_path()
-    path.parent.mkdir(parents=True)
-    path.write_text("broken JSON")
-    request_id = submit(bridge)
-    for process in bridge._processes:
-        process.wait(timeout=5)
-    state = bridge.status(request_id)
-    assert state["status"] == "completed"
-    assert state["notification"]["sent"] is False
-    assert state["notification"]["error"]
     assert Path(state["png_path"]).is_file()
-
-
-def test_notification_paths_are_arguments_and_missing_image_uses_folder(
-    tmp_path, monkeypatch
-):
-    import subprocess
-
-    from co_pymol.core.blender_notifications import notify_render
-
-    directory = tmp_path / "protein 'quoted' $(unsafe); view"
-    directory.mkdir()
-    observed = []
-
-    def send(argv, **kwargs):
-        assert not kwargs.get("shell")
-        observed.append(argv)
-        return subprocess.CompletedProcess(argv, 0, "", "")
-
-    monkeypatch.setattr("co_pymol.core.blender_notifications.subprocess.run", send)
-    result = notify_render(
-        "/tmp/Test App.app",
-        identifier="test",
-        title="Render ready",
-        message="Click to open",
-        image=directory / "missing.png",
-        directory=directory,
-    )
-    assert result["sent"]
-    assert observed[0][-2:] == [str(directory), str(directory)]
-
-
-def test_missing_notification_helper_is_a_nonfatal_error(tmp_path):
-    from co_pymol.core.blender_notifications import notify_render
-
-    result = notify_render(
-        str(tmp_path / "Missing.app"),
-        identifier="test",
-        title="Ready",
-        message="Open folder",
-        image=tmp_path / "missing.png",
-        directory=tmp_path,
-    )
-    assert result["sent"] is False
-    assert result["error"]
+    saved = json.loads((Path(state["directory"]) / "state.json").read_text())
+    assert "notification" not in saved
+    assert "notification" not in state
+    bridge.result(request_id)
+    assert not record.exists()
 
 
 def saved_session(path: Path) -> Path:

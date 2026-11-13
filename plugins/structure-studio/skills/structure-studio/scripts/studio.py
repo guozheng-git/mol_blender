@@ -22,10 +22,11 @@ import scene as scenes  # noqa: E402
 import studio_env  # noqa: E402
 import structure_io  # noqa: E402
 import animation_recipes  # noqa: E402
+from render_defaults import ANIMATION, IMAGE  # noqa: E402
 
 PRESETS = HERE.parent / "references" / "presets.json"
-CPU_LONG_EDGE = 1280
-CPU_SAMPLES = 64
+CPU_LONG_EDGE = IMAGE["cpu"]["long_edge"]
+CPU_SAMPLES = IMAGE["cpu"]["samples"]
 
 
 def output_dir(explicit: str = "") -> Path:
@@ -155,7 +156,7 @@ def prepare_animation(args, source: Path, recipe: dict, staging: Path) -> tuple[
     # The helper fits the movie to the saved viewport; explicit sizes win.
     defaults = {k: summary[k] for k in ("width", "height") if getattr(args, k) is None}
     if args.samples is None and not args.full_quality:
-        defaults["samples"] = 32
+        defaults["samples"] = ANIMATION["preview"]["samples"]
     return bundle, overrides, summary, defaults
 
 
@@ -208,7 +209,7 @@ def _snapshot(directory: str) -> tuple[str, str]:
 
 def cmd_render(args):
     recipe = animation_template(args)
-    args.preset = args.preset or ("cyan_mint_cutaway" if recipe and recipe["recipe"] == "cutaway" else "mint_sky_assembly")
+    args.preset = args.preset or (IMAGE["cutaway_preset"] if recipe and recipe["recipe"] == "cutaway" else IMAGE["preset"])
     args.lab = args.lab_profile if args.lab else None
     if args.lab and args.lab not in studio_env.cluster_profiles():
         raise ValueError(lab_error("No cluster profile '" + args.lab + "'"))
@@ -701,7 +702,7 @@ def parser():
 
     s = sub.add_parser("render", help="Render with Blender + Molecular Nodes using a preset")
     s.add_argument("structure", help=".cif/.pdb (optionally .gz) or a .pse session")
-    s.add_argument("--preset", help="Default: mint_sky_assembly; cyan_mint_cutaway for the cutaway recipe")
+    s.add_argument("--preset", help=f"Default: {IMAGE['preset']}; {IMAGE['cutaway_preset']} for the cutaway recipe")
     s.add_argument("--style-json", default="")
     s.add_argument("-o", "--output", default="")
     s.add_argument("--out-dir", default="")

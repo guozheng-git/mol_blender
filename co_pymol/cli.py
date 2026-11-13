@@ -2,7 +2,6 @@
 
 Subcommands:
     setup <client>     Install the PyMOL hook and configure one MCP client
-    notifications      Set up, check, test or disable local render alerts
     proxy              Run the stdio MCP proxy that survives PyMOL restarts
     render <pse>       Render a saved PyMOL session with Blender
     animate <pse>      Preview an animation recipe of a saved session
@@ -31,7 +30,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from co_pymol.constants import DEFAULT_HOST, DEFAULT_PORT
-from co_pymol.utils.skills import install_notification_skill
+from co_pymol.defaults import ANIMATION, IMAGE
 
 PYMOLRC_SENTINEL = "# co-pymol: auto-start MCP server on PyMOL launch"
 PYMOLRC_LINE = "from co_pymol import __init_plugin__; __init_plugin__()"
@@ -206,7 +205,7 @@ def install_cursor_mcp(host: str, port: int) -> str:
 
 
 def cmd_setup(args: argparse.Namespace) -> None:
-    """Install the hook, MCP configuration and skill for the chosen client."""
+    """Install the hook and MCP configuration for the chosen client."""
     if args.client == "codex":
         # Preflight before changing ~/.pymolrc.py so a missing selected client
         # fails without leaving a partial setup. Other clients are not checked.
@@ -231,46 +230,7 @@ def cmd_setup(args: argparse.Namespace) -> None:
 
     print(write_pymolrc_hook(Path.home() / ".pymolrc.py"))
     print(configure(args.host, args.port))
-    print(install_notification_skill(args.client))
-    if not args.no_notifications:
-        print(prepare_notifications())
     print(f"Restart PyMOL. {restart} to load the pymol tools.")
-
-
-def prepare_notifications() -> str:
-    from co_pymol.utils.notifications import setup_notifications
-
-    try:
-        result = setup_notifications()
-        return "Notifications: " + result.get("message", result["status"])
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
-        return (
-            f"Notifications need setup: {exc}. "
-            "Run `co-pymol notifications setup` from your desktop terminal. "
-            "The PyMOL connection is configured."
-        )
-
-
-def cmd_notifications(args: argparse.Namespace) -> int:
-    from co_pymol.utils.notifications import (
-        disable_notifications,
-        notification_status,
-        setup_notifications,
-        test_notification,
-    )
-
-    actions = {
-        "setup": lambda: setup_notifications(enable=True),
-        "status": notification_status,
-        "test": test_notification,
-        "disable": disable_notifications,
-    }
-    try:
-        result = actions[args.action]()
-    except subprocess.SubprocessError as exc:
-        raise RuntimeError(f"Notification helper failed: {exc}") from exc
-    print(json.dumps(result, indent=2))
-    return int(args.action == "test" and not result.get("sent"))
 
 
 def cmd_proxy(args: argparse.Namespace) -> int:
@@ -283,7 +243,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     return run_proxy(args.host, args.port)
 
 
-DEFAULT_PRESET = "mint_sky_assembly"
+DEFAULT_PRESET = IMAGE["preset"]
 
 # Statuses after which a render's background helper has stopped working.
 FINISHED = {"completed", "failed", "cancelled", "needs_attention"}
@@ -367,11 +327,11 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 # one view per frame, plus each frame's PyMOL state (states) or the opacity of
 # the surface a preset's ligand cutout removes (cutaway).
 BLENDER_ORBITS = {
-    "turntable": {"mode": "360", "duration": 10},
-    "rock": {"mode": "rock", "duration": 6, "rock_angle": 25},
+    "turntable": {"mode": "360", **ANIMATION["recipes"]["turntable"]},
+    "rock": {"mode": "rock", **ANIMATION["recipes"]["rock"]},
 }
 BLENDER_PATHS = {"reveal", "scenes", "states", "cutaway"}
-CUTAWAY_PRESET = "cyan_mint_cutaway"
+CUTAWAY_PRESET = IMAGE["cutaway_preset"]
 
 
 def submit_blender_animation(args: argparse.Namespace, cmd, recipe: str, frames) -> int:
@@ -551,7 +511,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="cmd",
         required=True,
-        metavar="{setup,notifications,proxy,render,animate,inspect,presets,renders}",
+        metavar="{setup,proxy,render,animate,inspect,presets,renders}",
     )
 
     p_setup = sub.add_parser(
@@ -559,9 +519,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Install the PyMOL hook and configure one MCP client",
         description=(
             "Set up co-pymol for exactly one client. This installs the shared "
-            "PyMOL startup hook, configures the selected client's MCP server, "
-            "installs its notification skill, and prepares "
-            "macOS completion alerts. Other clients do not need to be installed. "
+            "PyMOL startup hook and configures the selected client's MCP server. "
+            "Other clients do not need to be installed. "
             "No remote login or GPU job is started."
         ),
     )
@@ -576,21 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"Install the PyMOL hook and configure {label}",
         )
         add_server_opts(p_client)
-        p_client.add_argument(
-            "--no-notifications",
-            action="store_true",
-            help="Skip desktop notification setup (preserves existing preferences)",
-        )
         p_client.set_defaults(func=cmd_setup)
-
-    p_notifications = sub.add_parser(
-        "notifications",
-        help="Set up, check, test or disable local render alerts",
-    )
-    p_notifications.add_argument(
-        "action", choices=["setup", "status", "test", "disable"]
-    )
-    p_notifications.set_defaults(func=cmd_notifications)
 
     p_proxy = sub.add_parser(
         "proxy",
@@ -632,14 +577,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_render.add_argument(
         "--state", type=int, default=-1, help="Object state (default: current)"
     )
-    p_render.add_argument("--width", type=int, default=800, help="Pixels wide")
+    p_render.add_argument("--width", type=int, default=IMAGE["preview"]["width"], help="Pixels wide")
     p_render.add_argument(
         "--height",
         type=int,
-        default=0,
+        default=IMAGE["preview"]["height"],
         help="Pixels high; 0 follows the session's viewport aspect ratio",
     )
-    p_render.add_argument("--samples", type=int, default=32, help="Cycles samples")
+    p_render.add_argument("--samples", type=int, default=IMAGE["preview"]["samples"], help="Cycles samples")
     p_render.add_argument(
         "--preset-colors",
         action="store_true",
@@ -682,14 +627,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Selection to reveal (default: the largest ligand)",
     )
     p_animate.add_argument("--out", help="Output MP4 (default: <session>.<recipe>.mp4)")
-    p_animate.add_argument("--width", type=int, default=640, help="Pixels wide")
+    p_animate.add_argument("--width", type=int, default=ANIMATION["preview"]["width"], help="Pixels wide")
     p_animate.add_argument(
         "--height",
         type=int,
-        default=0,
+        default=ANIMATION["preview"]["height"],
         help="Pixels high; 0 follows the session's viewport aspect ratio",
     )
-    p_animate.add_argument("--fps", type=int, default=24, help="Frames per second")
+    p_animate.add_argument("--fps", type=int, default=ANIMATION["fps"], help="Frames per second")
     p_animate.add_argument(
         "--blender",
         action="store_true",
@@ -706,7 +651,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_animate.add_argument(
-        "--samples", type=int, default=32, help="Cycles samples with --blender"
+        "--samples", type=int, default=ANIMATION["preview"]["samples"], help="Cycles samples with --blender"
     )
     p_animate.add_argument("--name", help="Output folder name with --blender")
     p_animate.add_argument(

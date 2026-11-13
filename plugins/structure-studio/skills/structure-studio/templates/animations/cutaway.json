@@ -1,7 +1,5 @@
 {
   "version": 1,
   "recipe": "cutaway",
-  "duration": 11.5,
-  "fps": 24,
   "gif": true
 }

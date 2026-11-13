@@ -1420,6 +1420,7 @@ dev = [
     { name = "numpy" },
     { name = "playwright" },
     { name = "pytest" },
+    { name = "pyyaml" },
 ]
 hosted = [
     { name = "fastmcp" },
@@ -1448,6 +1449,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11,<13" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.50,<2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = "==6.0.3" },
     { name = "starlette", marker = "extra == 'cluster'", specifier = "==1.10.0" },
     { name = "uvicorn", marker = "extra == 'cluster'", specifier = "==0.54.0" },
 ]

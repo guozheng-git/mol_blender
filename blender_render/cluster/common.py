@@ -10,6 +10,8 @@ import re
 import tempfile
 from urllib.parse import urlsplit
 
+from ..defaults import ANIMATION_LIMITS
+
 PROTOCOL = 1
 MAX_REQUEST = 20 * 1024**2
 MAX_ARTIFACT = 1024**3
@@ -89,7 +91,7 @@ class Limits:
     max_request_bytes: int = MAX_REQUEST
     max_pixels: int = 4096 * 4096
     max_samples: int = 512
-    max_frames: int = 360
+    max_frames: int = ANIMATION_LIMITS['max_frames']
     max_artifact_bytes: int = MAX_ARTIFACT
     max_active_per_user: int = 4
     max_active_total: int = 32

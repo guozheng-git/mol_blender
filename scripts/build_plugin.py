@@ -56,6 +56,8 @@ def preset_catalog() -> list[dict]:
 
 
 def write_catalog(rows: list[dict], skill: Path) -> None:
+    defaults = json.loads((ROOT / 'blender_render/render_defaults.json').read_text())
+    cpu = defaults['image']['cpu']
     references = skill / "references"
     (references / "presets.json").write_text(json.dumps(rows, indent=2) + "\n")
     lines = ["# Blender presets", "",
@@ -70,7 +72,7 @@ def write_catalog(rows: list[dict], skill: Path) -> None:
         name = f"`{row['id']}`" + (" (default)" if row["default"] else "")
         lines.append(f"| {name} | {row['description']} | {row['width']}×{row['height']}, {row['samples']} samples "
                      f"| {scope} | {row['example_structure']} |")
-    lines += ["", "On CPU-only machines `studio.py render` caps the long edge at 1280 px and samples at 64 unless "
+    lines += ["", f"On CPU-only machines `studio.py render` caps the long edge at {cpu['long_edge']} px and samples at {cpu['samples']} unless "
               "`--full-quality` or explicit `--width/--height/--samples` are given.", ""]
     (references / "presets.md").write_text("\n".join(lines))
 
@@ -115,6 +117,7 @@ def main(argv=None):
     shutil.copy2(wheel, output / wheel.name)
     rows = preset_catalog()
     write_catalog(rows, skill)
+    shutil.copy2(ROOT / 'blender_render/render_defaults.json', skill / 'assets/render_defaults.json')
     source = {'revision': os.environ.get('BUILD_SOURCE_REVISION'), 'version': json.loads(
         (plugin / '.claude-plugin/plugin.json').read_text()).get('version')}
     (skill / 'source-revision.json').write_text(json.dumps(source, indent=2) + '\n')

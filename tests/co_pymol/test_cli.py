@@ -10,16 +10,12 @@ import pytest
 from co_pymol import cli
 
 
-@pytest.fixture(autouse=True)
-def no_desktop_setup(monkeypatch):
-    monkeypatch.setattr(cli, "prepare_notifications", lambda: "Notifications: test")
-
-
 def test_public_help_only_advertises_setup_and_proxy() -> None:
     help_text = cli.build_parser().format_help()
 
     assert "setup" in help_text
     assert "proxy" in help_text
+    assert "notifications" not in help_text
     assert "install-hook" not in help_text
     assert "install-config" not in help_text
     assert "install-codex" not in help_text

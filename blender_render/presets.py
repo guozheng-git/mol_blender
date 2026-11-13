@@ -5,6 +5,8 @@ import copy
 import json
 from pathlib import Path
 
+from .defaults import IMAGE
+
 # Existing preset identifiers stay stable; reference styles use distinct identifiers.
 _PRESETS = (
     ("preset_1_interface", "style_preset_1_opaque_pastel.json", "01_opaque_pastel_ses_interface.png",
@@ -42,7 +44,7 @@ _PRESETS = (
     ("northern_nights_cutaway", "style_preset_northern_nights_cutaway.json", "northern_nights_cutaway.png",
      "Rounded STAT-style pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.", (), "clay"),
 )
-DEFAULT_PRESET = "mint_sky_assembly"
+DEFAULT_PRESET = IMAGE["preset"]
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}
 PRESET_OUTPUT_FILENAMES = {row[0]: row[2] for row in _PRESETS}
 _ALIASES = {alias: row[0] for row in _PRESETS for alias in (row[0], "builtin/" + row[0], *row[4])}

@@ -180,27 +180,6 @@ def run(directory: Path, *, recover: bool = False) -> None:
                 png_sha256=hashlib.sha256(png).hexdigest(),
                 error=None,
             )
-            try:
-                from blender_notifications import completion_notification
-
-                notification = completion_notification(
-                    cfg.get("notification_app"),
-                    identifier=request["request_id"],
-                    title="Blender render ready",
-                    message=(
-                        f"{request.get('name', directory.name)}"
-                        " — click to show in Finder"
-                    ),
-                    image=png_path,
-                    directory=directory,
-                )
-            except Exception as exc:
-                notification = {"sent": False, "error": str(exc)}
-            # A notification problem must not turn a finished render into a failure.
-            try:
-                update(notification=notification)
-            except OSError as exc:
-                print(f"Could not save notification diagnostics: {exc}")
         except RenderCancelled:
             update(status="cancelled", error=None)
         except Exception as exc:

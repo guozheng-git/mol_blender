@@ -20,6 +20,10 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
+from co_pymol.defaults import ANIMATION, ANIMATION_LIMITS
+
+RECIPE_DEFAULTS = ANIMATION["recipes"]
+
 View = tuple[float, ...]
 
 
@@ -182,56 +186,61 @@ def compile_frames(segments: list[Segment], fps: int) -> list[Frame]:
     return frames
 
 
-# Recipes. Every number here is a default worth tuning against previews.
+# Recipe timings and angles come from render_defaults.yaml.
 
 
 def turntable_recipe(keys: Keys) -> list[Segment]:
-    return [spin(keys.overview, 10)]
+    return [spin(keys.overview, RECIPE_DEFAULTS["turntable"]["duration"])]
 
 
 def rock_recipe(keys: Keys) -> list[Segment]:
-    return [rock(keys.overview, 6, 25)]
+    config = RECIPE_DEFAULTS["rock"]
+    return [rock(keys.overview, config["duration"], config["rock_angle"])]
 
 
 def reveal_recipe(keys: Keys) -> list[Segment]:
+    config = RECIPE_DEFAULTS["reveal"]
     focus = _require_focus(keys)
     return [
-        hold(keys.overview, 1.5),
-        move(keys.overview, focus, 3),
-        hold(focus, 1),
-        rock(focus, 4, 12),
+        hold(keys.overview, config["overview_hold"]),
+        move(keys.overview, focus, config["approach"]),
+        hold(focus, config["focus_hold"]),
+        rock(focus, config["rock_duration"], config["rock_angle"]),
     ]
 
 
-CUTAWAY_FADE = 0.8  # keep a ghost of the shell so the pocket stays in context
+CUTAWAY_FADE = RECIPE_DEFAULTS["cutaway"]["pymol_shell_transparency"]  # keep a ghost of the shell so the pocket stays in context
 
 
 def cutaway_recipe(keys: Keys) -> list[Segment]:
     """Overview with the site buried, push in, fade the shell in front, rock."""
+    config = RECIPE_DEFAULTS["cutaway"]
     focus = _require_focus(keys)
     return [
-        hold(keys.overview, 1.5),
-        move(keys.overview, focus, 3),
-        hold(focus, 0.5),
-        fade(focus, 2, CUTAWAY_FADE),
-        hold(focus, 0.5),
-        rock(focus, 4, 12),
+        hold(keys.overview, config["overview_hold"]),
+        move(keys.overview, focus, config["approach"]),
+        hold(focus, config["before_fade_hold"]),
+        fade(focus, config["fade_duration"], CUTAWAY_FADE),
+        hold(focus, config["after_fade_hold"]),
+        rock(focus, config["rock_duration"], config["rock_angle"]),
     ]
 
 
 def states_recipe(keys: Keys) -> list[Segment]:
     if keys.states < 2:
         raise ValueError("The states recipe needs a structure with several states")
-    seconds = min(15.0, max(4.0, keys.states * 0.25))
-    return [play_states(keys.overview, seconds, keys.states, 10)]
+    config = RECIPE_DEFAULTS["states"]
+    seconds = min(ANIMATION_LIMITS["max_duration"], max(config["min_duration"], keys.states * config["seconds_per_state"]))
+    return [play_states(keys.overview, seconds, keys.states, config["rock_angle"])]
 
 
 def scenes_recipe(keys: Keys) -> list[Segment]:
     if len(keys.scenes) < 2:
         raise ValueError("The scenes recipe needs at least two saved scenes")
-    segments = [hold(keys.scenes[0], 1.5)]
+    config = RECIPE_DEFAULTS["scenes"]
+    segments = [hold(keys.scenes[0], config["hold_duration"])]
     for a, b in zip(keys.scenes, keys.scenes[1:], strict=False):
-        segments += [move(a, b, 2.5), hold(b, 1.5)]
+        segments += [move(a, b, config["transition_duration"]), hold(b, config["hold_duration"])]
     return segments
 
 
@@ -242,8 +251,8 @@ def _require_focus(keys: Keys) -> View:
 
 
 RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
-    "turntable": (turntable_recipe, "Full turn in 10s at constant speed; loops."),
-    "rock": (rock_recipe, "Swing ±25° over 6s; loops. Keeps the front in view."),
+    "turntable": (turntable_recipe, f"Full turn in {RECIPE_DEFAULTS['turntable']['duration']:g}s at constant speed; loops."),
+    "rock": (rock_recipe, f"Swing ±{RECIPE_DEFAULTS['rock']['rock_angle']:g}° over {RECIPE_DEFAULTS['rock']['duration']:g}s; loops. Keeps the front in view."),
     "reveal": (
         reveal_recipe,
         "Overview, ease in to look down into the focus pocket, then rock gently.",
@@ -253,7 +262,7 @@ RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
         "Overview with the site buried, push in, fade the surface in front of "
         "it to a ghost, then rock gently.",
     ),
-    "states": (states_recipe, "Play through all states while rocking ±10°."),
+    "states": (states_recipe, f"Play through all states while rocking ±{RECIPE_DEFAULTS['states']['rock_angle']:g}°."),
     "scenes": (scenes_recipe, "Fly between saved scenes, holding at each."),
 }
 
@@ -269,7 +278,7 @@ def choose_recipe(*, scenes: int, states: int, has_focus: bool) -> str:
     return "turntable"
 
 
-def frames_for(recipe: str, keys: Keys, fps: int = 24) -> list[Frame]:
+def frames_for(recipe: str, keys: Keys, fps: int = ANIMATION["fps"]) -> list[Frame]:
     if recipe not in RECIPES:
         raise ValueError(f"Unknown recipe {recipe!r}; choose from {', '.join(RECIPES)}")
     return compile_frames(RECIPES[recipe][0](keys), fps)

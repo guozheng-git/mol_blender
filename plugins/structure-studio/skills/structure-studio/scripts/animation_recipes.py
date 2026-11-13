@@ -22,6 +22,10 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
+from render_defaults import ANIMATION, ANIMATION_LIMITS
+
+RECIPE_DEFAULTS = ANIMATION["recipes"]
+
 View = tuple[float, ...]
 
 
@@ -185,53 +189,58 @@ def compile_frames(segments: list[Segment], fps: int) -> list[Frame]:
     return frames
 
 
-# Recipes. Every number here is a default worth tuning against previews.
+# Recipe timings and angles come from render_defaults.yaml.
 
 
 def turntable_recipe(keys: Keys) -> list[Segment]:
-    return [spin(keys.overview, 10)]
+    return [spin(keys.overview, RECIPE_DEFAULTS["turntable"]["duration"])]
 
 
 def rock_recipe(keys: Keys) -> list[Segment]:
-    return [rock(keys.overview, 6, 25)]
+    config = RECIPE_DEFAULTS["rock"]
+    return [rock(keys.overview, config["duration"], config["rock_angle"])]
 
 
 def reveal_recipe(keys: Keys) -> list[Segment]:
+    config = RECIPE_DEFAULTS["reveal"]
     focus = _require_focus(keys)
     return [
-        hold(keys.overview, 1.5),
-        move(keys.overview, focus, 3),
-        hold(focus, 1),
-        rock(focus, 4, 12),
+        hold(keys.overview, config["overview_hold"]),
+        move(keys.overview, focus, config["approach"]),
+        hold(focus, config["focus_hold"]),
+        rock(focus, config["rock_duration"], config["rock_angle"]),
     ]
 
 
 def cutaway_recipe(keys: Keys) -> list[Segment]:
     """Overview with the site buried, push in, fade the shell in front, rock."""
+    config = RECIPE_DEFAULTS["cutaway"]
     focus = _require_focus(keys)
     return [
-        hold(keys.overview, 1.5),
-        move(keys.overview, focus, 3),
-        hold(focus, 0.5),
-        fade_out(focus, 2),
-        hold(focus, 0.5),
-        rock(focus, 4, 12),
+        hold(keys.overview, config["overview_hold"]),
+        move(keys.overview, focus, config["approach"]),
+        hold(focus, config["before_fade_hold"]),
+        fade_out(focus, config["fade_duration"]),
+        hold(focus, config["after_fade_hold"]),
+        rock(focus, config["rock_duration"], config["rock_angle"]),
     ]
 
 
 def states_recipe(keys: Keys) -> list[Segment]:
     if keys.states < 2:
         raise ValueError("The states recipe needs a structure with several states")
-    seconds = min(15.0, max(4.0, keys.states * 0.25))
-    return [play_states(keys.overview, seconds, keys.states, 10)]
+    config = RECIPE_DEFAULTS["states"]
+    seconds = min(ANIMATION_LIMITS["max_duration"], max(config["min_duration"], keys.states * config["seconds_per_state"]))
+    return [play_states(keys.overview, seconds, keys.states, config["rock_angle"])]
 
 
 def scenes_recipe(keys: Keys) -> list[Segment]:
     if len(keys.scenes) < 2:
         raise ValueError("The scenes recipe needs at least two saved scenes")
-    segments = [hold(keys.scenes[0], 1.5)]
+    config = RECIPE_DEFAULTS["scenes"]
+    segments = [hold(keys.scenes[0], config["hold_duration"])]
     for a, b in zip(keys.scenes, keys.scenes[1:]):
-        segments += [move(a, b, 2.5), hold(b, 1.5)]
+        segments += [move(a, b, config["transition_duration"]), hold(b, config["hold_duration"])]
     return segments
 
 
@@ -242,8 +251,8 @@ def _require_focus(keys: Keys) -> View:
 
 
 RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
-    "turntable": (turntable_recipe, "Full turn in 10s at constant speed; loops."),
-    "rock": (rock_recipe, "Swing ±25° over 6s; loops. Keeps the front in view."),
+    "turntable": (turntable_recipe, f"Full turn in {RECIPE_DEFAULTS['turntable']['duration']:g}s at constant speed; loops."),
+    "rock": (rock_recipe, f"Swing ±{RECIPE_DEFAULTS['rock']['rock_angle']:g}° over {RECIPE_DEFAULTS['rock']['duration']:g}s; loops. Keeps the front in view."),
     "reveal": (
         reveal_recipe,
         "Overview, ease in to look down into the focus pocket, then rock gently.",
@@ -253,28 +262,28 @@ RECIPES: dict[str, tuple[Callable[[Keys], list[Segment]], str]] = {
         "Overview with the site buried, push in, fade away the surface covering "
         "the pocket, then rock gently.",
     ),
-    "states": (states_recipe, "Play through all states while rocking ±10°."),
+    "states": (states_recipe, f"Play through all states while rocking ±{RECIPE_DEFAULTS['states']['rock_angle']:g}°."),
     "scenes": (scenes_recipe, "Fly between saved scenes, holding at each."),
 }
 
 
-def frames_for(recipe: str, keys: Keys, fps: int = 24, *, duration=None, rock_angle=None) -> list[Frame]:
+def frames_for(recipe: str, keys: Keys, fps: int = ANIMATION["fps"], *, duration=None, rock_angle=None) -> list[Frame]:
     if recipe not in RECIPES:
         raise ValueError(f"Unknown recipe {recipe!r}; choose from {', '.join(RECIPES)}")
     segments = RECIPES[recipe][0](keys)
     if rock_angle is not None:
-        if recipe != "rock" or not 0 < rock_angle <= 45:
-            raise ValueError("rock_angle requires the rock recipe and an angle in (0, 45]")
-        segments = [rock(keys.overview, 6, rock_angle)]
+        if recipe != "rock" or not 0 < rock_angle <= ANIMATION_LIMITS["max_rock_angle"]:
+            raise ValueError(f"rock_angle requires the rock recipe and an angle in (0, {ANIMATION_LIMITS['max_rock_angle']}]")
+        segments = [rock(keys.overview, RECIPE_DEFAULTS["rock"]["duration"], rock_angle)]
     seconds = sum(s for s, _ in segments)
     duration = seconds if duration is None else duration
-    if type(fps) is not int or not 1 <= fps <= 60:
-        raise ValueError("fps must be an integer from 1 to 60")
-    if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= 15:
-        raise ValueError("duration must be positive and at most 15 seconds; shorten long scene tours explicitly")
+    if type(fps) is not int or not 1 <= fps <= ANIMATION_LIMITS["max_fps"]:
+        raise ValueError(f"fps must be an integer from 1 to {ANIMATION_LIMITS['max_fps']}")
+    if type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= ANIMATION_LIMITS["max_duration"]:
+        raise ValueError(f"duration must be positive and at most {ANIMATION_LIMITS['max_duration']} seconds; shorten long scene tours explicitly")
     count = duration * fps
-    if not 4 <= count <= 360 or not math.isclose(count, round(count), abs_tol=1e-8):
-        raise ValueError("duration × fps must be an integer from 4 to 360")
+    if not ANIMATION_LIMITS["min_frames"] <= count <= ANIMATION_LIMITS["max_frames"] or not math.isclose(count, round(count), abs_tol=1e-8):
+        raise ValueError(f"duration × fps must be an integer from {ANIMATION_LIMITS['min_frames']} to {ANIMATION_LIMITS['max_frames']}")
     return compile_frames([(s * duration / seconds, f) for s, f in segments], fps)
 
 
@@ -284,18 +293,20 @@ def template(value: dict) -> dict:
         raise ValueError("Unsupported animation template fields")
     if type(value.get("version")) is not int or value["version"] != 1 or value.get("recipe") not in RECIPES:
         raise ValueError("Animation templates need version=1 and a known recipe")
-    result = {"fps": 24, "gif": False, **value}
-    if type(result["fps"]) is not int or not 1 <= result["fps"] <= 60:
-        raise ValueError("fps must be an integer from 1 to 60")
+    result = {"fps": ANIMATION["fps"], "gif": ANIMATION["gif"], **value}
+    if result["recipe"] == "rock":
+        result.setdefault("rock_angle", RECIPE_DEFAULTS["rock"]["rock_angle"])
+    if type(result["fps"]) is not int or not 1 <= result["fps"] <= ANIMATION_LIMITS["max_fps"]:
+        raise ValueError(f"fps must be an integer from 1 to {ANIMATION_LIMITS['max_fps']}")
     if type(result["gif"]) is not bool:
         raise ValueError("gif must be a boolean")
     for key in ("duration", "rock_angle"):
         if key in result and (type(result[key]) not in (int, float) or not math.isfinite(result[key]) or result[key] <= 0):
             raise ValueError(key + " must be a positive finite number")
-    if "duration" in result and result["duration"] > 15:
-        raise ValueError("duration must be at most 15 seconds")
-    if "rock_angle" in result and (result["recipe"] != "rock" or result["rock_angle"] > 45):
-        raise ValueError("rock_angle requires the rock recipe and an angle in (0, 45]")
+    if "duration" in result and result["duration"] > ANIMATION_LIMITS["max_duration"]:
+        raise ValueError(f"duration must be at most {ANIMATION_LIMITS['max_duration']} seconds")
+    if "rock_angle" in result and (result["recipe"] != "rock" or result["rock_angle"] > ANIMATION_LIMITS["max_rock_angle"]):
+        raise ValueError(f"rock_angle requires the rock recipe and an angle in (0, {ANIMATION_LIMITS['max_rock_angle']}]")
     if "focus" in result and (result["recipe"] not in {"reveal", "cutaway"} or not isinstance(result["focus"], str) or not result["focus"].strip()):
         raise ValueError("focus must be a nonempty PyMOL selection for reveal or cutaway")
     return result

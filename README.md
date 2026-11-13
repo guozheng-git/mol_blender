@@ -281,6 +281,20 @@ Optional settings live in `~/.config/co-pymol/blender.json`:
 `blender-render cluster connect --profile lab` connection. Run that in a terminal
 first, since SSH and MFA prompts stay with you.
 
+## Shared render defaults
+
+[`render_defaults.yaml`](render_defaults.yaml) is the shared source for image
+preview quality, CPU caps, animation FPS, recipe timings and animation limits.
+After editing it, run `python scripts/sync_render_defaults.py`; use `--check` to
+verify that the generated data is current. Wheel builds reject stale data, and
+Structure Studio packages the same values. PyMOL reads the data without importing
+the renderer. PyYAML is needed only by the authoring/build tool.
+
+Preset-specific output settings and explicit request options keep their existing
+precedence. The `limits` section defines enforced bounds, not request overrides.
+Recipe timings and the shorter legacy camera orbits have separate entries so
+centralizing their settings preserves their existing behavior.
+
 ## Claude Code and Codex
 
 Open this checkout in either agent and use the CLI above. The repository includes

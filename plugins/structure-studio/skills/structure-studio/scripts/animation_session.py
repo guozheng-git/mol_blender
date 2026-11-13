@@ -11,6 +11,7 @@ import sys
 import numpy as np
 import pymol2
 from animation_recipes import Keys, View, frames_for
+from render_defaults import ANIMATION
 from pymol_session import ligand_records, residue_selection
 
 
@@ -109,7 +110,9 @@ def prepare(cmd, config, *, width=None, height=None):
             cmd.set("state", frames[anchor].state, name)
     payload = build_render_payload(cmd, include_color_hints=True, all_states=recipe == "states")
     viewport = cmd.get_viewport()
-    width = width or (round(height * viewport[0] / viewport[1]) if height else 640)
+    if width is None and height is None:
+        width, height = ANIMATION["preview"]["width"], ANIMATION["preview"]["height"]
+    width = width or round(height * viewport[0] / viewport[1])
     height = height or max(1, round(width * viewport[1] / viewport[0]))
     output = {"width": width, "height": height, "animation": animation}
     from blender_render.animation import normalize

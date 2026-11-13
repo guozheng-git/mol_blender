@@ -78,18 +78,9 @@ Claude choices require their existing CLI on `PATH`; the Cursor choice writes
 they do not install Codex, Cursor, or Claude Code themselves. All are safe to
 re-run.
 
-Setup also installs the `co-pymol-notifications` agent skill for the selected
-client. Lab rendering uses the shared renderer's cluster connection; see the
+Lab rendering uses the shared renderer's cluster connection; see the
 [cluster guide](../shared-cluster.md). Client setup does not connect to a
 server or allocate compute.
-
-On macOS, setup also prepares **Blender Renders** and opens notification
-permission onboarding. Allow it once to receive clickable alerts when render
-images are downloaded and verified. Apple Command Line Tools are needed to
-build the helper. If that step cannot finish, setup prints a repair command and
-the PyMOL connection remains usable. `python -m co_pymol notifications status`, `test`,
-`setup` and `disable` check, test, repair and turn off alerts. Repeated setup
-preserves an opt-out; `setup <client> --no-notifications` skips onboarding.
 
 The client setup is global, so `pymol` is available from every session and
 there is no need to `cd` into this repo. It uses the recommended bundled stdio
@@ -228,17 +219,6 @@ from co_pymol import __init_plugin__; __init_plugin__()
 If that was the only thing in the file, you can delete `~/.pymolrc.py` entirely.
 
 **3. Uninstall the package**
-
-Remove the `co-pymol-notifications` skill directory
-installed for your client:
-`~/.agents/skills/` for Codex, `~/.cursor/skills/` for Cursor, or
-`~/.claude/skills/` for Claude Code. Keep any personal edits you want to retain.
-
-For notifications, run `python -m co_pymol notifications disable` using PyMOL's
-Python before uninstalling.
-Once render helpers have finished, you can remove the app identified by
-`python -m co_pymol notifications status` and `~/.config/co-pymol/notifications.json`.
-Removing the app means old notifications can no longer open their saved targets.
 
 ```bash
 /Applications/PyMOL.app/Contents/bin/python -m pip uninstall pymol-plugin-bridge

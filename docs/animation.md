@@ -5,6 +5,11 @@ The shared camera-orbit renderer and frame encoding were selectively adapted fro
 `d4da82647c902ed431cf6de087d38351a32aef01`. They run through the local CLI, PyMOL
 bridge and stdio MCP. No queue, paid service or remote runtime is required.
 
+FPS, orbit defaults, recipe timings and enforced limits come from
+[`render_defaults.yaml`](../render_defaults.yaml), shared with PyMOL and
+Structure Studio. Run `python scripts/sync_render_defaults.py` after editing it;
+the generated JSON and animation schema bounds are checked during wheel builds.
+
 ## Controls
 
 | CLI | PyMOL / MCP | Meaning |

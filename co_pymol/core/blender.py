@@ -167,7 +167,6 @@ class BlenderConfig:
     require_gpu: bool = False
     wait_seconds: int = 1800
     project_directory: str | None = None
-    notification_app: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> BlenderConfig:
@@ -188,7 +187,6 @@ class BlenderConfig:
             "render_home",
             "cluster_home",
             "project_directory",
-            "notification_app",
         ):
             if data.get(name) is None:
                 continue
@@ -802,7 +800,6 @@ class BlenderBridge:
             "png_path",
             "gpu",
             "error",
-            "notification",
         )
         result = {k: state[k] for k in fields if k in state}
         result.update(
