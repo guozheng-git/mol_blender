@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from functools import lru_cache
 from importlib.machinery import PathFinder
 from pathlib import Path
 
@@ -22,50 +23,36 @@ def capture_pse(cmd) -> bytes:
     return cPickle.dumps(session, 1)
 
 
-def capture_scene(
-    cmd, selection: str, state: int, *, all_states: bool = False
-) -> dict:
-    """Caller holds pymol_lock. Preserve DSS assignments and the live camera.
+@lru_cache(maxsize=1)
+def _exporter():
+    """The renderer's standalone exporter, loaded once without importing the renderer.
 
-    all_states adds every state's coordinates, for state animations.
+    PathFinder supports both installed files and Studio's bundled wheel.
     """
     path = Path(__file__).parents[2] / "blender_render/scene"
-    # PathFinder supports both installed files and Studio's bundled wheel.
-    # Load the standalone exporter without importing the renderer package.
     spec = PathFinder.find_spec("export", [str(path)])
     if spec is None or spec.loader is None:
         raise RuntimeError("Cannot load the Blender Render scene exporter")
     exporter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(exporter)
-    previous_ss = {}
-    cmd.iterate(
-        "all",
-        "previous_ss[(model, index)] = ss",
-        space={
-            "previous_ss": previous_ss,
-        },
+    return exporter
+
+
+def capture_scene(
+    cmd, selection: str, state: int, *, all_states: bool = False
+) -> dict:
+    """Caller holds pymol_lock. The exporter restores DSS and the camera itself.
+
+    all_states adds every state's coordinates, for state animations.
+    """
+    return _exporter().build_render_payload(
+        cmd,
+        selection,
+        state,
+        include_color_hints=True,
+        enabled_only=True,
+        all_states=all_states,
     )
-    view = cmd.get_view()
-    try:
-        return exporter.build_render_payload(
-            cmd,
-            selection,
-            state,
-            include_color_hints=True,
-            enabled_only=True,
-            all_states=all_states,
-        )
-    finally:
-        # The upstream exporter runs DSS. Its computed hints belong to the
-        # frozen export, not the user's manually annotated live scene.
-        cmd.alter(
-            "all",
-            "ss = previous_ss.get((model, index), ss)",
-            space={
-                "previous_ss": previous_ss,
-            },
-        )
-        cmd.set_view(view)
 
 
 def set_animation_frame(cmd, frame) -> None:

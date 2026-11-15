@@ -89,3 +89,24 @@ def test_live_coordinates_colors_enabled_objects_and_camera_survive_export(tmp_p
         assert cmd.count_atoms("saved_selection") == 1
         assert cmd.get_scene_list() == ["saved_view"]
         assert cmd.get_coords("two", state=2) == pytest.approx(second_state)
+
+
+def test_bridge_export_keeps_hand_annotated_secondary_structure():
+    """bridge_render exports a single live object; DSS must not overwrite its ss."""
+    pymol2 = pytest.importorskip("pymol2")
+    from blender_render.scene.export import build_render_payload
+
+    with pymol2.PyMOL() as instance:
+        cmd = instance.cmd
+        # DSS assigns this built helix 'H'; the user has annotated it as loop.
+        cmd.fab("AAAAAAAAAAAAAAAA", "helix", ss=1)
+        cmd.alter("all", "ss='L'")
+        view = cmd.get_view()
+        payload = build_render_payload(cmd, "(all)", -1, include_color_hints=True)
+        annotated = set()
+        cmd.iterate("all", "annotated.add(ss)", space={"annotated": annotated})
+        assert annotated == {"L"}
+        # The frozen export still carries the computed helix.
+        assert payload["ss_hints"]["by_chain_resi"][":8"] == "H"
+        assert cmd.get_view() == view
+        assert payload["dss"]["ran"] is True
