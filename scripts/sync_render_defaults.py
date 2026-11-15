@@ -13,7 +13,6 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-STUDIO = Path('plugins/structure-studio/skills/structure-studio')
 NUMBER = (int, float)
 PREVIEW = {'width': int, 'height': int, 'samples': int}
 SHAPE = {
@@ -66,12 +65,11 @@ def compile_defaults(root=ROOT):
     return value
 
 
-def generated_files(root=ROOT, *, studio=True):
+def generated_files(root=ROOT):
     value = compile_defaults(root)
     data = (json.dumps(value, indent=2, allow_nan=False) + '\n').encode()
+    # The one runtime copy. co-pymol and Structure Studio (via its bundled wheel) read it too.
     files = {Path('blender_render/render_defaults.json'): data}
-    if studio:
-        files[STUDIO / 'assets/render_defaults.json'] = data
     # The published JSON schema enforces the same bounds as the runtime.
     schema_path = Path('blender_render/style.schema.json')
     schema = json.loads((root / schema_path).read_text())
@@ -87,8 +85,8 @@ def generated_files(root=ROOT, *, studio=True):
     return files
 
 
-def synchronize(root=ROOT, *, check=False, studio=True):
-    for relative, data in generated_files(root, studio=studio).items():
+def synchronize(root=ROOT, *, check=False):
+    for relative, data in generated_files(root).items():
         path = root / relative
         if check:
             if not path.is_file() or path.read_bytes() != data:

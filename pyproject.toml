@@ -30,7 +30,7 @@ packages = ["blender_render", "blender_render.scene", "blender_render.hosted", "
 
 [tool.setuptools.package-data]
 blender_render = ["*.json", "*.txt"]
-co_pymol = ["instructions.md"]
+co_pymol = ["instructions.md", "scene/molecular-data.json"]
 
 [project.urls]
 Homepage = "https://github.com/magnusbauer/blender_render"

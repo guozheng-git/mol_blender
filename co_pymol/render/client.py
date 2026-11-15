@@ -405,8 +405,10 @@ class BlenderBridge:
                 viewport = payload.get("view", {}).get("viewport_px")
                 if height:
                     output["height"] = height
-                elif isinstance(viewport, list) and len(viewport) == 2 and viewport[0]:
-                    output["height"] = max(2, round(width * viewport[1] / viewport[0]))
+                elif isinstance(viewport, list) and len(viewport) == 2 and all(viewport):
+                    from co_pymol.scene.animation import fit_viewport
+
+                    output["height"] = fit_viewport(viewport, width)[1]
                 options.setdefault("overrides", {})["output"] = output
         request_id = uuid.uuid4().hex
         if _batch:

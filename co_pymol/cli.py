@@ -358,16 +358,16 @@ def submit_blender_animation(args: argparse.Namespace, cmd, recipe: str, frames)
 
 
 def cmd_animate(args: argparse.Namespace) -> int | None:
-    from co_pymol.scene.animation import choose_recipe, frames_for
+    from co_pymol.scene.animation import choose_recipe, fit_viewport, frames_for
     from co_pymol.scene.camera import keys_for
+    from co_pymol.scene.ligands import default_focus
     from co_pymol.scene.preview import build_cutaway, render_preview
     from co_pymol.scene.session import scene_facts
 
     with open_saved_session(args.session) as cmd:
         facts = scene_facts(cmd)
-        focus = args.focus or (
-            facts["ligands"][0]["selection"] if facts["ligands"] else None
-        )
+        # The same choice as Structure Studio: the largest real ligand, not an additive.
+        focus = args.focus or default_focus(cmd)
         if args.focus and not cmd.count_atoms(f"enabled and ({args.focus})"):
             raise ValueError(f"--focus {args.focus!r} matches no enabled atoms")
         recipe = args.recipe or choose_recipe(
@@ -384,9 +384,7 @@ def cmd_animate(args: argparse.Namespace) -> int | None:
             cmd.show("sticks", focus)
         if recipe == "cutaway":
             shell = build_cutaway(cmd, focus, keys.focus)
-        width = args.width
-        viewport = facts["viewport"]
-        height = args.height or round(width * viewport[1] / viewport[0])
+        width, height = fit_viewport(facts["viewport"], args.width, args.height)
         output = Path(args.out or Path(args.session).with_suffix(f".{recipe}.mp4"))
         render_preview(
             cmd, frames, output, fps=args.fps, width=width, height=height, shell=shell

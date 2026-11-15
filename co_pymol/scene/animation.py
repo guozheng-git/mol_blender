@@ -327,6 +327,23 @@ def template(value: dict) -> dict:
     return result
 
 
+def fit_viewport(viewport, width: int | None = None, height: int | None = None) -> tuple[int, int]:
+    """Movie size for a saved viewport: given sizes win; a missing one keeps its aspect ratio.
+
+    The encoder pads odd sizes, so no rounding to even numbers is needed here.
+    """
+    if width and height:
+        return width, height
+    if not width and not height:
+        raise ValueError("Give a width or a height to fit to the viewport")
+    view_width, view_height = viewport
+    if not (view_width and view_height):
+        raise ValueError("The session has no viewport size to keep its aspect ratio")
+    if width:
+        return width, max(1, round(width * view_height / view_width))
+    return max(1, round(height * view_width / view_height)), height
+
+
 def animation_payload(recipe: str, frames: list[Frame], fps: int, *, gif: bool = ANIMATION["gif"]) -> dict:
     """Translate a compiled recipe into the renderer's existing camera-path input."""
     animation = {"mode": "path", "path": [[float(v) for v in frame.view] for frame in frames],

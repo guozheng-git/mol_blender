@@ -17,10 +17,9 @@ import pymol2
 from camera import load_view, molstar_to_pymol, pymol_to_molstar
 import scene as scenes
 
-from molecular_data import (
-    PALETTE, LIGAND_CARBON, HIGHLIGHT_CARBON, SS_COLORS, PLDDT, ADDITIVES,
-    STANDARD, MODIFIED, COVALENT_MIN_HEAVY, ligand_key
-)
+from molecular_data import PALETTE, LIGAND_CARBON, HIGHLIGHT_CARBON, SS_COLORS, PLDDT, ADDITIVES
+# One ligand classification for Studio and co-pymol (re-exported for animation_session).
+from co_pymol.scene.ligands import ligand_records, residue_selection  # noqa: F401
 
 STYLES = ("overview", "surface", "site", "secondary", "confidence")
 
@@ -47,20 +46,10 @@ def parse_args(argv=None):
     p.add_argument("--scene", default="", help="Shared scene JSON (string or file); replaces --style, --chains and --highlight")
     p.add_argument("--background", default="white", help="white, black, or a #rrggbb color")
     p.add_argument("--png", default="", help="Also ray-trace a PNG here")
+    p.add_argument("--bundle", default="", help="Also write the renderer's scene bundle (JSON) of the saved session here")
     p.add_argument("--width", type=int, default=1600)
     p.add_argument("--height", type=int, default=1200)
     return p.parse_args(argv)
-
-
-def ligand_records(cmd, obj):
-    records, covalent = {}, {}
-    count = "store.setdefault((resn, chain, resi), 0); store[(resn, chain, resi)] += 1"
-    cmd.iterate(f"({obj}) and organic and not hydro", count, space={"store": records})
-    cmd.iterate(f"({obj}) and polymer and not hydro and not resn {'+'.join(STANDARD + MODIFIED)}", count, space={"store": covalent})
-    records.update({key: n for key, n in covalent.items() if n >= COVALENT_MIN_HEAVY})
-    out = [{"key": ligand_key(resn, chain, resi), "resn": resn, "chain": chain, "resi": resi, "atoms": n,
-            "additive": resn in ADDITIVES, "covalent": (resn, chain, resi) in covalent} for (resn, chain, resi), n in records.items()]
-    return sorted(out, key=lambda r: (r["additive"], -r["atoms"]))
 
 
 def color_hetero(cmd, selection):
@@ -80,11 +69,6 @@ def open_slab(cmd, obj, margin=5.0):
     view[15] = max(1.0, distance - radius - offset)
     view[16] = distance + radius + offset
     cmd.set_view(view)
-
-
-def residue_selection(obj, record):
-    chain = scenes.chain_selection(record["chain"])
-    return f"({obj} and {chain} and resi \\{record['resi']} and resn {record['resn']})"
 
 
 def show_ligands(cmd, obj, ligands):
@@ -264,6 +248,8 @@ def save(cmd, obj, args, output, result):
     result["pymol_view"] = view
     result["molstar_camera"] = pymol_to_molstar(view)
     cmd.save(str(output))
+    if args.bundle:
+        result["bundle"] = write_bundle(cmd, output, Path(args.bundle).expanduser().resolve())
     if args.png:
         png = Path(args.png).expanduser().resolve()
         png.parent.mkdir(parents=True, exist_ok=True)
@@ -272,6 +258,27 @@ def save(cmd, obj, args, output, result):
     result["atoms"] = cmd.count_atoms(obj)
     result["object"] = obj
     return result
+
+
+def write_bundle(cmd, session: Path, bundle: Path) -> str:
+    """Export the session just saved with co-pymol's capture, so the renderer never reloads it.
+
+    The payload matches what `blender-render render SESSION` would export from the
+    saved file, including its provenance, without starting a second PyMOL.
+    """
+    import hashlib
+
+    import studio_env
+    studio_env.use_bundled_helpers()
+    from co_pymol.scene.capture import capture_scene
+
+    payload = capture_scene(cmd, "all", -1)  # co-pymol's default selection: identical bundles.
+    payload.setdefault("provenance", {}).update(
+        filename=session.name, sha256=hashlib.sha256(session.read_bytes()).hexdigest(),
+        format=".pse", pymol_version=list(cmd.get_version())[:2])
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text(json.dumps(payload, allow_nan=False))
+    return str(bundle)
 
 
 def color_theme(cmd, theme, selection, chain_colors):
