@@ -29,13 +29,19 @@ def test_batch_recovery_only_resumes_saved_unfinished_jobs(bridge, monkeypatch):
         ("cancelled", {"status": "cancelled", "job_id": "cancelled-job"}),
     ):
         write_json(runs[preset] / "state.json", state)
+        # The client writes this receipt before uploading; job_id only once confirmed.
+        lab = {"profile": "test", "request_id": "r" * 32, "output": str(runs[preset] / "render.png")}
+        if "job_id" in state:
+            lab["job_id"] = state["job_id"]
+        write_json(runs[preset] / "render.cluster.json", lab)
 
     bridge.result(receipt["name"])
     for process in bridge._processes:
         process.wait(timeout=10)
 
-    # Only the confirmed unfinished job is observed and fetched.
-    assert calls(bridge) == ["status", "fetch"]
+    # The confirmed unfinished job is observed and fetched; the ambiguous one is
+    # only looked up by its request ID. Children run in parallel.
+    assert sorted(calls(bridge)) == ["fetch", "recover", "status"]
     states = {
         preset: json.loads((path / "state.json").read_text())
         for preset, path in runs.items()
@@ -44,6 +50,6 @@ def test_batch_recovery_only_resumes_saved_unfinished_jobs(bridge, monkeypatch):
     assert states["mint"]["job_id"] == "original-mint-job"
     assert states["neon"] == {"status": "completed", "job_id": "original-neon-job"}
     assert states["unknown"]["status"] == "needs_attention"
-    assert "will not resubmit" in states["unknown"]["error"]
+    assert "upload never arrived" in states["unknown"]["error"]
     assert states["cancelled"]["status"] == "cancelled"
     assert bridge.status(receipt["name"])["status"] == "needs_attention"

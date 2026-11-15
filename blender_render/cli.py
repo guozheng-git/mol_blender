@@ -16,6 +16,7 @@ def parser():
     commands.add_parser('dev', help='Preset authoring and isolated source previews (dev --help)')
     commands.add_parser('editor', help='Optional desktop chat bridge (editor --help)')
     commands.add_parser('cluster', help='Optional shared Slurm service and client (cluster --help)')
+    commands.add_parser('job', help='Submit, observe, fetch or cancel one render as JSON (job --help)')
     worker = commands.add_parser('worker', help='Optional warm local Blender worker')
     actions = worker.add_subparsers(dest='action', required=True)
     start = actions.add_parser('start', help='Start or reuse a worker for the configured local runtime')
@@ -171,6 +172,9 @@ def main(argv=None):
         if argv and argv[0] == 'cluster':
             from .cluster.cli import main as cluster_main
             return cluster_main(argv[1:])
+        if argv and argv[0] == 'job':
+            from .job_cli import main as job_main
+            return job_main(argv[1:])
         result = execute(parser().parse_args(argv))
         if result is not None:
             print(json.dumps(result, indent=2))

@@ -1,9 +1,10 @@
 """Detached helper run in Blender Render's Python, never in PyMOL's Python.
 
 PyMOL saves each request to its own folder and returns at once. This helper
-renders it with this checkout's renderer, locally (`blender_render.local`) or on
-the configured lab cluster (`blender_render.cluster.client`), and records progress
-in state.json. It never resubmits an ambiguous cluster submission.
+renders it with this checkout's renderer through the shared job API
+(`blender_render.jobs`), locally or on the configured lab cluster, and mirrors
+progress into state.json for chat. A lab run is identified by its receipt
+(render.cluster.json); an ambiguous submission is looked up, never resubmitted.
 """
 
 from __future__ import annotations
@@ -46,85 +47,73 @@ def _load_payload(directory: Path, request: dict) -> dict:
 
 
 def _render_local(directory: Path, request: dict, update) -> dict:
-    from blender_render.local import render_payload
+    from blender_render import jobs
 
     payload = _load_payload(directory, request)
     update(status="rendering", worker_pid=os.getpid())
-    result = render_payload(
+    return jobs.submit(
         payload,
-        output=directory / "render.png",
-        options=request["options"],
+        request["options"],
+        directory / "render.png",
         timeout=request["config"]["wait_seconds"],
         cancelled=(directory / "cancel.request").exists,
     )
-    return result
 
 
-def _render_cluster(directory: Path, request: dict, state: dict, update, recover):
-    from urllib.error import URLError
+def _render_cluster(directory: Path, request: dict, state: dict, update):
+    """Submit once, then follow the run by its receipt through the shared job API.
 
-    from blender_render.cluster.client import Client, RemoteError
-    from blender_render.cluster.protocol import stop_waiting
+    The receipt (render.cluster.json) is written before upload, so a restarted
+    helper always recovers the same job: an unconfirmed upload is looked up by its
+    request ID on the gateway, never sent again.
+    """
+    from blender_render import jobs
 
     cfg = request["config"]
     cancelled = directory / "cancel.request"
-    if not state.get("job_id"):
-        if cancelled.exists() and state["status"] == "starting":
-            update(status="cancelled")
-            return None
-        if recover or state["status"] != "starting":
-            raise RuntimeError(
-                "Submission outcome is unknown. Check `blender-render cluster status "
-                f"{directory / 'render.cluster.json'}`; this helper will not resubmit."
-            )
-    client = Client(cfg["cluster_profile"])
-    if not state.get("job_id"):
-        payload = _load_payload(directory, request)
-        update(status="submitting")
-        job = client.submit(payload, request["options"], directory / "render.png")
-        update(job_id=job["job_id"], status=job.get("status", "queued"))
-    job_id = state["job_id"]
-    deadline = time.monotonic() + cfg["wait_seconds"]
-    delay = 2
-    cancel_sent = False
-    while time.monotonic() < deadline:
-        try:
-            if cancelled.exists() and not cancel_sent:
-                client.api("POST", f"/v1/jobs/{job_id}/cancel")
-                cancel_sent = True
-                update(status="cancelling")
-            observed = client.status(job_id)
-        except (RemoteError, URLError, ConnectionError, TimeoutError, OSError) as exc:
-            # Observation only: reconnecting never submits another job.
-            update(status="recovering", error=f"{type(exc).__name__}: {exc}")
-            time.sleep(min(delay, max(0, deadline - time.monotonic())))
-            delay = min(delay * 2, 30)
-            continue
-        delay = 2
-        # "completed" locally means downloaded and verified, never just remote.
-        update(
-            status="cancelling"
-            if cancel_sent
-            else "downloading"
-            if observed["status"] == "completed"
-            else observed["status"],
-            remote={k: observed[k] for k in ("status", "stage") if k in observed},
-            error=None,
-        )
-        if observed["status"] == "completed":
-            update(status="downloading")
-            return client.fetch(job_id, directory / "render.png")
-        if stop_waiting(observed["status"]):
-            update(
-                status="cancelled" if observed["status"] == "cancelled" else "failed",
-                error=observed.get("error") or observed["status"],
-            )
-            return None
-        time.sleep(min(3, max(0, deadline - time.monotonic())))
-    raise TimeoutError(
-        "Stopped waiting; the cluster job may still be running. "
-        "Call blender_result to resume retrieval or blender_cancel."
-    )
+    receipt = jobs.receipt_for(directory / "render.png")
+    # A detached helper keeps the tunnel open: siblings and later status checks share it.
+    with jobs.lab_connection(cfg["cluster_profile"], keep=True):
+        if not state.get("job_id"):
+            if not receipt.exists():
+                # The client writes the receipt before uploading: without one, nothing was sent.
+                if cancelled.exists():
+                    update(status="cancelled")
+                    return None
+                update(status="submitting")
+                job = jobs.submit(_load_payload(directory, request), request["options"], directory / "render.png",
+                                  backend_name=jobs.LAB, profile=cfg["cluster_profile"])
+                update(job_id=job["job_id"], status=job.get("status", "queued"), error=None)
+            else:
+                observed = jobs.observe(receipt)
+                if not observed.get("job_id") and cancelled.exists():
+                    update(status="cancelled", error=None)  # The upload never arrived: nothing to cancel.
+                    return None
+                if not observed.get("job_id"):
+                    raise RuntimeError(observed.get("message") or "The gateway has not confirmed this submission.")
+                update(job_id=observed["job_id"], status=observed["status"], error=None)
+
+        def progress(observed):
+            # "completed" locally means downloaded and verified, never just remote.
+            status = "cancelling" if observed["cancel_requested"] else observed["status"]
+            update(status=status, remote={k: observed[k] for k in ("status", "stage") if k in observed},
+                   error=observed.get("error"))
+
+        final = jobs.wait(receipt, timeout=cfg["wait_seconds"], on_update=progress, cancelled=cancelled.exists)
+        status = final["status"]
+        if final.get("waiting_stopped"):
+            raise TimeoutError("Stopped waiting; the cluster job may still be running. "
+                               "Call blender_result to resume retrieval or blender_cancel.")
+        if status == "completed":
+            update(status="downloading", error=None)
+            return jobs.fetch(receipt)
+        if status == "submission_unknown":
+            # The gateway may still reconcile it into a real job: keep it recoverable.
+            raise RuntimeError("The gateway could not confirm the Slurm submission; it is kept for "
+                               "reconciliation. Do not resubmit; ask blender_result again later.")
+        update(status="cancelled" if status == "cancelled" else "failed",
+               error=final.get("error") or status)
+        return None
 
 
 def run(directory: Path, *, recover: bool = False) -> None:
@@ -148,7 +137,7 @@ def run(directory: Path, *, recover: bool = False) -> None:
             return
         try:
             if cfg.get("backend", "local") == "cluster":
-                result = _render_cluster(directory, request, state, update, recover)
+                result = _render_cluster(directory, request, state, update)
             else:
                 if (directory / "cancel.request").exists():
                     update(status="cancelled")

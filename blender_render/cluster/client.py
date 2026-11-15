@@ -30,10 +30,10 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def profile_path(name):
-    from ..config import config_root
+    from ..config import cluster_root
     if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', name):
         raise ValueError('Invalid cluster profile name')
-    return config_root() / 'clusters' / (name + '.json')
+    return cluster_root() / 'clusters' / (name + '.json')
 
 
 def configure(name, credential_file=None, ca_file=None, *, url=None):

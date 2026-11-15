@@ -136,6 +136,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKENDS = ("local", "cluster")
 
 
+def _recoverable(state: dict) -> bool:
+    """A lab run the helper can resume: a confirmed job, or a receipt to look it up by."""
+    receipt = Path(state.get("directory", "")) / "render.cluster.json"
+    return bool(state.get("job_id")) or (bool(state.get("directory")) and receipt.is_file())
+
+
 def _render_defaults() -> tuple[str | None, str]:
     """This checkout's render environment: repo-local .runtime, else the user config."""
     home = REPO_ROOT / ".runtime"
@@ -273,10 +279,14 @@ class BlenderBridge:
             PYTHONNOUSERSITE="1",
             PYTHONDONTWRITEBYTECODE="1",
         )
+        # One renderer home for both backends, so a lab render resolves presets like a
+        # local one. Lab profiles live apart: cluster_home, else the terminal's folder.
         env.pop("BLENDER_RENDER_HOME", None)
-        home = cfg.cluster_home if cfg.backend == "cluster" else cfg.render_home
-        if home:
-            env["BLENDER_RENDER_HOME"] = home
+        if cfg.render_home:
+            env["BLENDER_RENDER_HOME"] = cfg.render_home
+        env["BLENDER_RENDER_CLUSTER_HOME"] = cfg.cluster_home or str(
+            Path.home() / ".config/blender-render"
+        )
         return env
 
     def presets(self, *, images: bool = False) -> dict:
@@ -824,7 +834,7 @@ class BlenderBridge:
             if status == "cancelled"
             else "return_to_user"
         )
-        if status == "needs_attention" and state.get("job_id"):
+        if status == "needs_attention" and _recoverable(state):
             result["next_action"] = "blender_result"
         return result
 
@@ -898,7 +908,7 @@ class BlenderBridge:
             if hashlib.sha256(png).hexdigest() != state["png_sha256"]:
                 raise RuntimeError("Saved PNG changed; refusing to display it")
             return state, png
-        if state.get("job_id") and state["status"] not in {"cancelled", "failed"}:
+        if _recoverable(state) and state["status"] not in {"cancelled", "failed"}:
             request = json.loads((directory / "request.json").read_text())
             self._launch(BlenderConfig.from_dict(request["config"]), directory, "recover")
         return self.status(request_id), None

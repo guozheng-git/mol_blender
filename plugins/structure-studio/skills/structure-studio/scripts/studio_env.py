@@ -448,15 +448,15 @@ def shared_cluster_home() -> Path:
 
 
 def cluster_env() -> tuple[Path, dict]:
-    """The installed blender-render with the terminal's config folder, for `cluster` commands only.
+    """The installed blender-render for lab work: Studio's renderer home, the terminal's lab profiles.
 
-    Local renders keep Studio's own BLENDER_RENDER_HOME. Cluster commands drop it, so a
-    lab profile set up in Studio or in a terminal is the same profile. A BLENDER_RENDER_HOME
-    inherited from a shell (for example a checkout's .runtime) is dropped too, so the
-    folder never depends on how the app was launched.
+    BLENDER_RENDER_HOME stays Studio's, so a lab render resolves presets exactly like a
+    local one. BLENDER_RENDER_CLUSTER_HOME pins lab profiles and SSH connection state to
+    the terminal's folder, so a profile set up in Studio or in a terminal is the same
+    profile, whatever BLENDER_RENDER_HOME the app was launched with.
     """
     executable, env = renderer_env()
-    env.pop("BLENDER_RENDER_HOME", None)
+    env["BLENDER_RENDER_CLUSTER_HOME"] = str(shared_cluster_home())
     return executable, env
 
 

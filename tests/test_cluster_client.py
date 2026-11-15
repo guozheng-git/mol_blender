@@ -81,6 +81,34 @@ def test_real_http_submit_receipt_recovery_fetch_and_no_overwrite(live_service, 
     assert len(store.scheduler.submissions) == 1
 
 
+def test_job_command_submits_adopts_a_lost_reply_and_fetches_by_receipt(live_service, tmp_path):
+    """`blender-render job` over real HTTP: every step after submission starts from the receipt."""
+    from blender_render import job_cli
+    client, store = live_service
+    bundle = tmp_path / 'scene.bundle.json'
+    bundle.write_text(json.dumps(payload()))
+    output = tmp_path / 'job.png'
+
+    def job(*argv):
+        return job_cli.execute(job_cli.parser().parse_args([str(a) for a in argv]))
+
+    submitted = job('submit', bundle, '-o', output, '--backend', 'lab', '--profile', 'lab',
+                    '--width', 32, '--height', 24, '--samples', 1)
+    assert submitted['status'] == 'queued' and submitted['backend'] == 'lab'
+    assert submitted['connection'].startswith('not managed')  # A URL profile has no SSH tunnel.
+    receipt = Path(submitted['receipt'])
+    record = read_json(receipt)
+    del record['job_id']  # A lost reply after the gateway accepted the upload.
+    atomic_json(receipt, record)
+    observed = job('status', receipt)
+    assert observed['job_id'] == submitted['job_id'] and read_json(receipt)['job_id'] == submitted['job_id']
+    assert job('fetch', receipt)['status'] == 'queued'  # Not finished: observed, nothing downloaded.
+    original = completed(store, submitted['job_id'])
+    fetched = job('fetch', receipt, '--wait', 30, '--interval', 0.01)
+    assert output.read_bytes() == original.read_bytes() and fetched['outputs']['render.png'] == str(output)
+    assert len(store.scheduler.submissions) == 1
+
+
 def test_corrupt_download_never_publishes_partial_output(live_service, tmp_path):
     client, store = live_service
     output = tmp_path / 'corrupt.png'

@@ -19,19 +19,22 @@ STUDIO_HOME = "/studio/cache/blender-render"
 
 
 class Recorder:
-    """Stands in for subprocess.run; answers by the blender-render subcommand."""
+    """Stands in for subprocess.run; answers by the blender-render subcommand.
 
-    def __init__(self, replies, already_open=False):
+    Studio launches `blender-render job …` for renders and every lab step; the job
+    command itself connects once and closes only what it opened (tests/test_jobs.py).
+    """
+
+    def __init__(self, replies):
         self.calls = []
-        self.replies = {"cluster connect": {"status": "connected", "tunnel_reused": already_open},
-                        "cluster disconnect": {"status": "disconnected"}, **replies}
+        self.replies = replies
 
     def commands(self):
         return [" ".join(command[1:3]) for command, _ in self.calls]
 
     def __call__(self, command, **kwargs):
         self.calls.append((command, kwargs.get("env") or {}))
-        key = command[1] if command[1] != "cluster" else "cluster " + command[2]
+        key = command[1] if command[1] not in ("cluster", "job") else command[1] + " " + command[2]
         reply = self.replies[key]
         reply = reply(command) if callable(reply) else reply
         code, out = reply if isinstance(reply, tuple) else (0, reply)
@@ -65,11 +68,18 @@ def structure(tmp_path):
     return source
 
 
-def test_cluster_env_uses_the_terminals_folder_and_local_renders_keep_studios(studio_installed):
+def lab_env_ok(env, home):
+    """Lab commands: Studio's renderer home (same presets as local), the terminal's lab profiles."""
+    return (env["BLENDER_RENDER_HOME"] == STUDIO_HOME
+            and env["BLENDER_RENDER_CLUSTER_HOME"] == str(home / "home/.config/blender-render"))
+
+
+def test_cluster_env_uses_the_terminals_profiles_and_studios_renderer_home(studio_installed):
     _, local = studio_env.renderer_env()
     assert local["BLENDER_RENDER_HOME"] == STUDIO_HOME
     _, lab = studio_env.cluster_env()
-    assert "BLENDER_RENDER_HOME" not in lab  # Neither Studio's nor one inherited from a shell.
+    # Not one inherited from a shell (/shell/.runtime): profiles never depend on how the app was launched.
+    assert lab_env_ok(lab, studio_installed)
     assert studio_env.shared_cluster_home() == studio_installed / "home/.config/blender-render"
 
 
@@ -83,29 +93,43 @@ def test_profiles_are_read_from_the_shared_folder(studio_installed):
 def test_lab_render_submits_without_waiting_or_cpu_caps(studio_installed, monkeypatch):
     lab_profile(studio_installed)
     receipt = str(studio_installed / "out/1stp-mint_sky_assembly.cluster.json")
-    run = Recorder({"cluster submit": {"job_id": "a" * 32, "slurm_id": "22908125", "status": "queued", "receipt": receipt}})
+    run = Recorder({"job submit": {"job_id": "a" * 32, "slurm_id": "22908125", "status": "queued", "receipt": receipt,
+                                   "connection": "closed"}})
     monkeypatch.setattr(studio.subprocess, "run", run)
     args = studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab", "--out-dir", str(studio_installed / "out")])
     result = studio.cmd_render(args)
 
-    command, env = next(call for call in run.calls if call[0][1:3] == ["cluster", "submit"])
-    assert command[1:4] == ["cluster", "submit", command[3]] and command[command.index("--profile") + 1] == "lab"
+    assert run.commands() == ["job submit"]  # Connecting is the job command's business, not Studio's.
+    command, env = run.calls[0]
+    assert command[command.index("--backend") + 1] == "lab" and command[command.index("--profile") + 1] == "lab"
     assert command[command.index("--pymol-python") + 1] == "/studio/pymol/bin/python"
+    assert "--keep-connected" not in command
     assert "--wait" not in command and "--timeout" not in command and "--samples" not in command  # No CPU caps.
-    assert "BLENDER_RENDER_HOME" not in env
+    assert lab_env_ok(env, studio_installed)
     assert result["status"] == "queued" and result["slurm_id"] == "22908125" and "lab-fetch" in result["next"][0]
+    assert result["connection"] == "closed"
     pending = json.loads(Path(result["pending_file"]).read_text())
     assert pending["receipt"] == receipt and pending["profile"] == "lab"
 
 
-def test_local_render_is_unchanged(studio_installed, monkeypatch):
-    run = Recorder({"render": {"status": "completed", "outputs": {"render.png": "x.png"}}})
+def test_keep_connected_is_passed_to_the_job_command(studio_installed, monkeypatch):
+    lab_profile(studio_installed)
+    run = Recorder({"job submit": {"job_id": "a" * 32, "receipt": "r.cluster.json", "connection": "kept open"}})
+    monkeypatch.setattr(studio.subprocess, "run", run)
+    result = studio.cmd_render(studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab",
+                                                            "--keep-connected", "--out-dir", str(studio_installed / "out")]))
+    assert "--keep-connected" in run.calls[0][0] and result["connection"] == "kept open"
+
+
+def test_local_render_uses_the_same_job_command(studio_installed, monkeypatch):
+    run = Recorder({"job submit": {"status": "completed", "outputs": {"render.png": "x.png"}}})
     monkeypatch.setattr(studio.subprocess, "run", run)
     args = studio.parser().parse_args(["render", str(structure(studio_installed)), "--out-dir", str(studio_installed / "out")])
     studio.cmd_render(args)
     command, env = run.calls[0]
-    assert command[1] == "render" and env["BLENDER_RENDER_HOME"] == STUDIO_HOME
-    assert "--samples" in command  # This laptop still gets its CPU caps.
+    assert command[1:3] == ["job", "submit"] and command[command.index("--backend") + 1] == "local"
+    assert env["BLENDER_RENDER_HOME"] == STUDIO_HOME
+    assert "--samples" in command and "--timeout" in command  # This laptop still gets its CPU caps.
 
 
 def test_lab_render_without_a_connection_explains_how_to_connect(studio_installed, monkeypatch):
@@ -129,16 +153,30 @@ def pending_file(tmp_path):
 
 def test_lab_fetch_while_queued_returns_status_and_keeps_waiting(studio_installed, monkeypatch):
     path, _ = pending_file(studio_installed)
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster status": {"status": "queued", "job_id": "a" * 32}}))
+    run = Recorder({"job fetch": {"status": "queued", "job_id": "a" * 32, "connection": "closed"}})
+    monkeypatch.setattr(studio.subprocess, "run", run)
     result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
     assert result["status"] == "queued" and result["next"] and result["error"] is None
+    assert result["connection"] == "closed"
+    command = run.calls[0][0]
+    assert command[3] == str(path.with_suffix("").with_suffix(".cluster.json"))  # Observed by its receipt.
+    assert command[command.index("--wait") + 1] == "0.0"
 
 
-def test_lab_fetch_failed_job_stops_polling(studio_installed, monkeypatch):
+@pytest.mark.parametrize("state, error", [("failed", "GPU missing"), ("prepared", "upload never arrived")])
+def test_lab_fetch_stops_on_states_polling_cannot_change(studio_installed, monkeypatch, state, error):
     path, _ = pending_file(studio_installed)
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster status": {"status": "failed", "error": "GPU missing"}}))
+    reply = {"status": state, "error" if state == "failed" else "message": error}
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job fetch": reply}))
     result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
-    assert result["status"] == "failed" and result["error"] == "GPU missing" and result["next"] == []
+    assert result["status"] == state and error in result["error"] and result["next"] == []
+
+
+def test_lab_fetch_keeps_an_unconfirmed_slurm_submission_recoverable(studio_installed, monkeypatch):
+    path, _ = pending_file(studio_installed)
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job fetch": {"status": "submission_unknown", "job_id": "a" * 32}}))
+    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
+    assert result["status"] == "submission_unknown" and "lab-fetch" in result["next"][0]  # Check again later.
 
 
 def test_lab_fetch_completed_maps_outputs_and_reports_the_gpu(studio_installed, monkeypatch):
@@ -147,28 +185,23 @@ def test_lab_fetch_completed_maps_outputs_and_reports_the_gpu(studio_installed, 
     manifest.parent.mkdir()
     manifest.write_text(json.dumps({"cycles_device": {"device": "GPU", "compute_type": "CUDA",
                                                       "devices": ["NVIDIA A100 80GB PCIe"]}}))
-    fetched = {"status": "completed", "job_id": "a" * 32,
+    fetched = {"status": "completed", "job_id": "a" * 32, "connection": "closed",
                "outputs": {"render.png": str(output), "manifest.json": str(manifest)}}
-    run = Recorder({"cluster status": {"status": "completed"}, "cluster fetch": fetched})
+    run = Recorder({"job fetch": fetched})
     monkeypatch.setattr(studio.subprocess, "run", run)
-    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
-    assert result["device"]["summary"] == "Rendered on lab GPU (CUDA)"
+    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path), "--wait", "600"]))
+    assert run.commands() == ["job fetch"]  # Waiting, observing and fetching happen in one job command.
+    command = run.calls[0][0]
+    assert command[command.index("--wait") + 1] == "600.0" and command[command.index("--interval") + 1] == "15"
+    assert result["device"]["summary"] == "Rendered on lab GPU (CUDA)" and result["connection"] == "closed"
     assert result["outputs"]["render.png"] == str(output) and Path(result["result_file"]).is_file()
-    assert all("BLENDER_RENDER_HOME" not in env for _, env in run.calls)
-
-
-def test_lab_fetch_without_outputs_does_not_crash(studio_installed, monkeypatch):
-    path, _ = pending_file(studio_installed)
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster status": {"status": "completed"},
-                                                            "cluster fetch": {"status": "running"}}))
-    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
-    assert result["status"] == "running" and "try again" in result["message"]
+    assert all(lab_env_ok(env, studio_installed) for _, env in run.calls)
 
 
 def test_server_rejection_says_the_lab_server_may_be_too_old(studio_installed, monkeypatch):
     lab_profile(studio_installed)
     error = (1, "blender-render: HTTP 400: Style JSON validation failed: materials.ptm: Additional properties")
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster submit": error}))
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job submit": error}))
     args = studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab", "--preset", "northern_nights",
                                        "--out-dir", str(studio_installed / "out")])
     with pytest.raises(RuntimeError, match="(?s)may need a newer lab server.*materials.ptm"):
@@ -197,7 +230,7 @@ def test_ambiguous_submission_is_discoverable_and_recovers_without_resubmitting(
         return (1, "Cluster connection failed; recover the existing request before submitting again. "
                    "Recover with: blender-render cluster status " + str(receipt))
 
-    run = Recorder({"cluster submit": submit})
+    run = Recorder({"job submit": submit})
     monkeypatch.setattr(studio.subprocess, "run", run)
     result = studio.cmd_render(studio.parser().parse_args(
         ["render", str(structure(studio_installed)), "--lab", "--out-dir", str(out)]))
@@ -207,15 +240,14 @@ def test_ambiguous_submission_is_discoverable_and_recovers_without_resubmitting(
     assert pending["pending"] == [result["pending_file"]]
 
     def recover(command):
-        assert command[-1] == str(receipts[0])
-        return {"status": "completed", "job_id": "a" * 32}
+        assert command[3] == str(receipts[0])  # The job command looks it up by its receipt.
+        return {"status": "completed", "job_id": "a" * 32,
+                "outputs": {"render.png": str(receipts[0].with_suffix(".png"))}}
 
-    run.replies.update({"cluster status": recover,
-                        "cluster fetch": {"status": "completed", "job_id": "a" * 32,
-                                          "outputs": {"render.png": str(receipts[0].with_suffix(".png"))}}})
+    run.replies["job fetch"] = recover
     fetched = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", result["pending_file"]]))
     assert Path(fetched["result_file"]).is_file()
-    assert run.commands().count("cluster submit") == 1
+    assert run.commands().count("job submit") == 1
     assert studio.cmd_lab_pending(studio.parser().parse_args(["lab-pending", "--out-dir", str(out)]))["pending"] == []
 
 
@@ -238,7 +270,7 @@ def test_lab_animation_upload_uses_temporary_inputs_and_cleans_them(studio_insta
         assert all(path.is_file() for path in inputs)
         return {"status": "queued", "receipt": "r.cluster.json", "job_id": "a" * 32}
 
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster submit": submit}))
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job submit": submit}))
     out = studio_installed / "out"
     studio.cmd_render(studio.parser().parse_args(
         ["render", str(source), "--lab", "--recipe", "rock", "--out-dir", str(out)]))
@@ -246,14 +278,10 @@ def test_lab_animation_upload_uses_temporary_inputs_and_cleans_them(studio_insta
     assert not list(out.glob("*.bundle.json")) and not list(out.glob("*.overrides.json"))
 
 
-def test_disconnect_timeout_does_not_hide_submission_receipt(studio_installed, monkeypatch):
+def test_a_failed_disconnect_is_reported_without_hiding_the_receipt(studio_installed, monkeypatch):
     lab_profile(studio_installed)
-
-    def timeout(command):
-        raise subprocess.TimeoutExpired(command, 180)
-
-    run = Recorder({"cluster submit": {"status": "queued", "receipt": "r.cluster.json", "job_id": "a" * 32},
-                    "cluster disconnect": timeout})
+    run = Recorder({"job submit": {"status": "queued", "receipt": "r.cluster.json", "job_id": "a" * 32,
+                                   "connection": "disconnect failed: timed out"}})
     monkeypatch.setattr(studio.subprocess, "run", run)
     result = studio.cmd_render(studio.parser().parse_args(
         ["render", str(structure(studio_installed)), "--lab", "--out-dir", str(studio_installed / "out")]))
@@ -291,7 +319,7 @@ def test_lab_passthrough_uses_shared_profiles(studio_installed, monkeypatch):
     monkeypatch.setattr(studio.subprocess, "run", run)
     result = studio.cmd_lab(studio.parser().parse_args(["lab", "connection", "--profile", "lab"]))
     command, env = run.calls[0]
-    assert command[1:] == ["cluster", "connection", "--profile", "lab"] and "BLENDER_RENDER_HOME" not in env
+    assert command[1:] == ["cluster", "connection", "--profile", "lab"] and lab_env_ok(env, studio_installed)
     assert result == {"profile": "lab", "connection": None}
     assert studio.cmd_lab(studio.parser().parse_args(["lab"]))["profiles"] == []
 
@@ -327,7 +355,7 @@ def test_next_commands_quote_paths_with_spaces(studio_installed, monkeypatch):
     import shlex
     lab_profile(studio_installed)
     out = studio_installed / "Application Support" / "out"
-    run = Recorder({"cluster submit": {"job_id": "a" * 32, "receipt": str(out / "x.cluster.json")}})
+    run = Recorder({"job submit": {"job_id": "a" * 32, "receipt": str(out / "x.cluster.json")}})
     monkeypatch.setattr(studio.subprocess, "run", run)
     result = studio.cmd_render(studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab", "--out-dir", str(out)]))
     words = shlex.split(result["next"][0])
@@ -349,50 +377,10 @@ def test_render_record_keeps_the_device(tmp_path):
     assert doc["device"] == device
 
 
-def test_lab_render_opens_and_closes_its_own_connection(studio_installed, monkeypatch):
-    lab_profile(studio_installed)
-    run = Recorder({"cluster submit": {"job_id": "a" * 32, "receipt": "r.cluster.json"}})
-    monkeypatch.setattr(studio.subprocess, "run", run)
-    result = studio.cmd_render(studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab",
-                                                            "--out-dir", str(studio_installed / "out")]))
-    assert run.commands() == ["cluster connect", "cluster submit", "cluster disconnect"]
-    assert result["connection"] == "closed"
-
-
-def test_a_connection_opened_elsewhere_is_left_open(studio_installed, monkeypatch):
-    lab_profile(studio_installed)
-    run = Recorder({"cluster submit": {"job_id": "a" * 32, "receipt": "r.cluster.json"}}, already_open=True)
-    monkeypatch.setattr(studio.subprocess, "run", run)
-    result = studio.cmd_render(studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab",
-                                                            "--out-dir", str(studio_installed / "out")]))
-    assert "cluster disconnect" not in run.commands() and result["connection"].startswith("left open")
-
-
-def test_lab_fetch_waits_then_fetches_and_closes(studio_installed, monkeypatch):
-    path, output = pending_file(studio_installed)
-    states = iter(["queued", "running", "completed"])
-    monkeypatch.setattr(studio.time, "sleep", lambda seconds: None)
-    run = Recorder({"cluster status": lambda command: {"status": next(states)},
-                    "cluster fetch": {"status": "completed", "job_id": "a" * 32, "outputs": {"render.png": str(output)}}})
-    monkeypatch.setattr(studio.subprocess, "run", run)
-    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path), "--wait", "600"]))
-    assert run.commands() == ["cluster connect", "cluster status", "cluster status", "cluster status",
-                              "cluster fetch", "cluster disconnect"]
-    assert result["outputs"]["render.png"] == str(output) and result["connection"] == "closed"
-
-
-def test_lab_fetch_closes_even_when_still_queued(studio_installed, monkeypatch):
-    path, _ = pending_file(studio_installed)
-    run = Recorder({"cluster status": {"status": "queued"}})
-    monkeypatch.setattr(studio.subprocess, "run", run)
-    result = studio.cmd_lab_fetch(studio.parser().parse_args(["lab-fetch", str(path)]))
-    assert result["status"] == "queued" and run.commands()[-1] == "cluster disconnect"
-
-
 def test_first_use_without_saved_settings_says_what_to_ask(studio_installed, monkeypatch):
     lab_profile(studio_installed)
     error = (1, "blender-render: First connection needs: --ssh-host, --node, --remote-executable, --server-config")
-    monkeypatch.setattr(studio.subprocess, "run", Recorder({"cluster connect": error}))
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job submit": error}))
     with pytest.raises(RuntimeError, match="SSH alias.*login node"):
         studio.cmd_render(studio.parser().parse_args(["render", str(structure(studio_installed)), "--lab"]))
 
@@ -484,6 +472,39 @@ def test_changed_dependencies_stop_instead_of_rendering_with_old_code(renderer_l
     monkeypatch.setattr(studio_env, "_run", lambda command, **k: type("R", (), {"stdout": "bpy==4.2.0\n"})())
     with pytest.raises(studio_env.SetupError, match="pinned dependencies.*setup --background"):
         studio_env.renderer_env()
+
+
+@pytest.mark.parametrize("lab", [False, True])
+def test_session_stills_render_the_bundle_exported_with_the_session(studio_installed, monkeypatch, lab):
+    """The PyMOL run that saves the .pse also exports the payload; the renderer never reloads it."""
+    if lab:
+        lab_profile(studio_installed)
+    source = structure(studio_installed)
+    sessions = []
+
+    def session(command):
+        sessions.append(command)
+        bundle = Path(command[command.index("--bundle") + 1])
+        bundle.write_text('{"cif_text":"test"}')
+        return {"session": str(studio_installed / "1stp-view.pse"), "bundle": str(bundle)}
+
+    monkeypatch.setattr(studio, "run_pymol_session", session)
+    rendered = []
+
+    def render(command):
+        rendered.append(command)
+        assert Path(command[3]).is_file()  # Still present while the renderer reads it.
+        png = str(studio_installed / "out/1stp-view-mint_sky_assembly.png")
+        return ({"status": "queued", "receipt": png[:-4] + ".cluster.json", "job_id": "a" * 32} if lab
+                else {"status": "completed", "outputs": {"render.png": png}})
+
+    monkeypatch.setattr(studio.subprocess, "run", Recorder({"job submit": render}))
+    args = ["render", str(source), "--fit", "--out-dir", str(studio_installed / "out")] + (["--lab"] if lab else [])
+    studio.cmd_render(studio.parser().parse_args(args))
+    command = rendered[0]
+    assert Path(command[3]).name == "bundle.json"
+    assert "--pymol-python" not in command
+    assert "--bundle" in sessions[0]
 
 
 def test_requirement_pins_are_parsed_from_hash_locked_files():

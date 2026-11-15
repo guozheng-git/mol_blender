@@ -32,10 +32,10 @@ SSH = 'ssh'
 
 
 def state_path(profile, *, create=False):
-    from ..config import config_root
+    from ..config import cluster_root
     if not USER.fullmatch(profile):
         raise ValueError('Invalid cluster profile name')
-    directory = config_root() / 'cluster-connections'
+    directory = cluster_root() / 'cluster-connections'
     if create:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     return directory / (profile + '.json')
