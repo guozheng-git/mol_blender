@@ -2155,3 +2155,57 @@ and renderer identity scope remain unchanged.
 - Generated defaults, `uv lock --check` and Git whitespace checks passed. No
   desktop session was changed or lab job submitted. Temporary validation outputs,
   installations and source snapshots were removed.
+
+## One capture core and one job API (2026-11-15)
+
+Executed on Apple Silicon macOS (M3) from the `collapse-render-paths` worktree,
+branched from `pymol-merge` at 603e5b7. Renderer Python 3.11.15 with the
+checkout's `.runtime`; Studio's PyMOL 3.2 environment for real headless PyMOL.
+
+- Renderer/Studio suite: **603 passed, 52 skipped** (four existing warnings).
+  co-pymol suite under PyMOL's Python 3.11 (PyMOL + gemmi + `mcp<2`):
+  **201 passed**. Studio viewer Node tests: **11 passed**. Generated defaults
+  check and `git diff --check` passed.
+- Live-session preservation: on a built 16-residue helix annotated as loop,
+  `build_render_payload` (the `bridge_render` path) now leaves the live `ss` as
+  `L` and the camera unchanged while the payload still carries DSS helix hints.
+  Without the restore the live object was changed to `H`/`L`.
+- Studio still: `pymol_session.py --style site --bundle` on public 1STP wrote the
+  `.pse` and its scene bundle in one PyMOL run; `blender-render job submit
+  --backend local` rendered it at **480 × 360, 8 samples on the M3 Metal GPU in
+  12 s**. The image (streptavidin with biotin) was inspected.
+- co-pymol: `co-pymol render` on that `.pse` went through `BlenderBridge`, the
+  detached worker and `jobs.submit` to Blender, **completed on Metal in 10 s**
+  with the PNG digest, saved PSE and manifest GPU device recorded.
+- Client parity: Studio's bundle (re-exported from the saved `.pse`) and
+  co-pymol's bundle of the same session were identical apart from timestamps,
+  run IDs and Studio's file provenance. A first Studio bundle exported from the
+  in-memory session differed only in the PDB fallback's `CRYST1` Z field.
+- Wheel: built outside the checkout; it contains `jobs.py`, `job_cli.py`,
+  `co_pymol/scene/ligands.py` and `molecular-data.json`. A staged plugin with only
+  the wheel (no copied defaults or molecular data) ran `studio.py viewer
+  --standalone` and `presets` on the system **Python 3.9.6**; the page embedded
+  the shared classification data. This check found and fixed a Python 3.9
+  zipimport failure in `ligands.py`.
+- Lab, in-process: `blender-render job` submit/status/fetch, lost-reply adoption
+  and the PyMOL bridge's `job submit` ran over real HTTP against the test gateway
+  (token and open modes).
+- Lab, EBI cluster through the saved `lab` SSH profile (controller installed from
+  a83fedf, older than this client). The first attempt exposed a regression from
+  d4635e7: the connect helper runs in the installed controller and imported the
+  new `cluster.jsonio`; it now falls back to `cluster.common`. Then:
+  - `job submit --backend lab` of the Studio 1STP bundle (320 × 240, 8 samples,
+    rough) connected once, submitted Slurm job 29483707 and closed the tunnel and
+    gateway it had opened. Profiles came from `BLENDER_RENDER_CLUSTER_HOME` while
+    presets resolved from the local `.runtime`.
+  - A copy of its receipt with the job ID removed (a lost reply) was adopted by
+    `job status` after a fresh connect: same job ID, already running, saved back
+    to the receipt; no second job.
+  - `job fetch --wait` reconnected, polled by receipt, downloaded and verified the
+    artifacts and closed again. Manifest: **NVIDIA A100 80GB PCIe, CUDA**; the
+    image matched the local Metal render.
+  - `co-pymol render --wait` with a `cluster` backend and `require_gpu` ran the
+    detached worker through `jobs.submit`/`jobs.wait`/`jobs.fetch`: completed on
+    the **A100** in **261 s** including queue time; the worker left the tunnel open
+    as designed. Afterwards `cluster disconnect` reported no active jobs, and the
+    tunnel was closed as it had been before the checks.

@@ -86,7 +86,7 @@ blender-render cluster info --profile lab
 ```
 
 The file must be owned by you and mode `0600`. The client stores a private profile
-under `BLENDER_RENDER_HOME/clusters/` (or the ordinary user configuration root).
+under `clusters/` in the lab profile folder (see "Your own gateway over SSH").
 Delete the transfer copy after importing it. Tokens never appear in command-line
 arguments or normal output. Use `--ca-file` with `configure` for a private CA;
 certificate verification cannot be disabled. HTTPS is required except for a
@@ -152,6 +152,28 @@ An explicit rejection or a confirmed missing request can be submitted again with
 a new output name. Downloads never overwrite existing outputs. A failed integrity
 check leaves no partial render in the requested output location.
 
+### One job command for every client
+
+co-pymol, Structure Studio and the PyMOL bridge all submit and recover through
+`blender_render.jobs`, available as one JSON command line:
+
+```sh
+blender-render job submit scene.bundle.json -o renders/first.png --backend lab --profile lab
+blender-render job status renders/first.cluster.json
+blender-render job fetch renders/first.cluster.json --wait 900
+blender-render job cancel renders/first.cluster.json
+```
+
+`--backend local` renders on this computer instead. Lab subcommands connect once
+with the saved profile when its tunnel is closed and close only a tunnel they
+opened (`--keep-connected` leaves it running). Everything after submission starts
+from the receipt, so a run submitted by one client can be checked or fetched by
+any other. A receipt without a job ID is looked up by its request ID: a job the
+gateway accepted is adopted and its ID saved to the receipt; a request that never
+arrived is reported as `prepared` and is safe to submit again. A Slurm submission
+the gateway could not confirm (`submission_unknown`) stays recoverable rather
+than failed, because the administrator's `reconcile` may still turn it into a job.
+
 ## Your own gateway over SSH
 
 When you can log in to a Slurm login node with SSH keys and an administrator has
@@ -196,9 +218,12 @@ refreshed while keeping its job spool, credentials and local port, so existing
 receipts still work. Revocation is not needed. Invalid configuration updates
 leave the previous derived configuration intact.
 
-Profiles live in the default `~/.config/blender-render/clusters/` unless
-`BLENDER_RENDER_HOME` is set; Structure Studio's `studio.py lab` and
-`render --lab` use the same default folder, so either can set it up.
+Profiles and SSH connection state live under `BLENDER_RENDER_CLUSTER_HOME` when
+it is set, otherwise under `BLENDER_RENDER_HOME`, otherwise in the default
+`~/.config/blender-render/`. Structure Studio and co-pymol pin
+`BLENDER_RENDER_CLUSTER_HOME` to that default folder (co-pymol: `cluster_home`
+when configured) while keeping their own `BLENDER_RENDER_HOME`, so they share the
+terminal's lab profiles and a lab render resolves presets exactly like a local one.
 Studio saves its `.lab.json` recovery context before submission. If a response is
 lost or times out after the client has written a receipt, Studio returns
 `submission_unknown` with that receipt and a `lab-fetch` command; `lab-pending`
