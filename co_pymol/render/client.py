@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from itertools import count
 from pathlib import Path
 
-from co_pymol.render.records import write_json
+from co_pymol.render.records import RECEIPT, write_json
 
 _ADJECTIVES = (
     "amber",
@@ -138,7 +138,7 @@ BACKENDS = ("local", "cluster")
 
 def _recoverable(state: dict) -> bool:
     """A lab run the helper can resume: a confirmed job, or a receipt to look it up by."""
-    receipt = Path(state.get("directory", "")) / "render.cluster.json"
+    receipt = Path(state.get("directory", "")) / RECEIPT
     return bool(state.get("job_id")) or (bool(state.get("directory")) and receipt.is_file())
 
 

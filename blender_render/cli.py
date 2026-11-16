@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from .job_cli import add_render_options
 from .presets import DEFAULT_PRESET
 from .config import VERSION, load_config, save_config
 
@@ -52,12 +53,7 @@ def parser():
     render = commands.add_parser('render', help='Render a trusted PSE/CIF/PDB or exported JSON locally')
     render.add_argument('input')
     render.add_argument('-o', '--output', default='render.png')
-    choice = render.add_mutually_exclusive_group()
-    choice.add_argument('--preset', default=DEFAULT_PRESET)
-    choice.add_argument('--style-json')
-    render.add_argument('--overrides-json')
     render.add_argument('--catalog-dir')
-    render.add_argument('--preserve-view', action=argparse.BooleanOptionalAction, default=None)
     render.add_argument('--selection', default='(all)')
     render.add_argument('--pymol-python', default='')
     render.add_argument('--blender', default='')
@@ -69,15 +65,7 @@ def parser():
     render.add_argument('--open-blender', action='store_true', help='Save the scene and open desktop Blender after rendering')
     render.add_argument('--edit-bridge', action='store_true', help='Save and open desktop Blender with chat editing enabled')
     render.add_argument('--gui-blender', default='', help='Optional desktop Blender executable')
-    for name in ('width', 'height', 'samples'):
-        render.add_argument('--'+name, type=int)
-    for name in ('rough', 'transparent', 'color-follow', 'save-blend'):
-        render.add_argument('--'+name, action=argparse.BooleanOptionalAction, default=None)
-    render.add_argument('--animation', choices=('none', 'rock', '360'))
-    render.add_argument('--duration', type=float)
-    render.add_argument('--fps', type=int)
-    render.add_argument('--rock-angle', type=float)
-    render.add_argument('--gif', action=argparse.BooleanOptionalAction, default=None)
+    add_render_options(render)  # The same render options as `job submit` and `cluster submit`.
     movie = commands.add_parser('movie-export', help='Encode saved frames as GIF or MP4 without rendering again')
     movie.add_argument('archive')
     movie.add_argument('-o', '--output', required=True)
@@ -145,14 +133,12 @@ def execute(args):
         return {'movie': export(Path(args.archive).expanduser(), Path(args.output).expanduser())}
     if args.command == 'render':
         from .local import render_file
-        options = {'style_doc': json.loads(Path(args.style_json).expanduser().read_text())} if args.style_json else {'preset': args.preset}
-        if args.overrides_json:
-            options['overrides'] = json.loads(Path(args.overrides_json).expanduser().read_text())
-        for key in ('width', 'height', 'samples', 'rough', 'color_follow', 'save_blend', 'preserve_view', 'animation', 'duration', 'fps', 'rock_angle', 'gif'):
-            if getattr(args, key) is not None:
-                options[key] = getattr(args, key)
-        if args.transparent is not None:
-            options['transparent_background'] = args.transparent
+        from .job_cli import render_options
+        if args.preset and args.style_json:
+            raise ValueError('Choose --preset or --style-json, not both')
+        options = render_options(args)
+        if 'preset' not in options and 'style_doc' not in options:
+            options['preset'] = DEFAULT_PRESET
         return render_file(args.input, output=args.output, options=options, selection=args.selection,
             pymol_python=args.pymol_python, blender=args.blender, runtime_paths=args.runtime_path,
             runtime_wheels=args.runtime_wheels, ccd=args.ccd, timeout=args.timeout,

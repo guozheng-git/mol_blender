@@ -166,11 +166,15 @@ blender-render job cancel renders/first.cluster.json
 
 `--backend local` renders on this computer instead. Lab subcommands connect once
 with the saved profile when its tunnel is closed and close only a tunnel they
-opened (`--keep-connected` leaves it running). Everything after submission starts
+opened (`--keep-connected` leaves it running). Each client holds a lease while it
+uses the tunnel, so a tunnel another render (a co-pymol helper, another chat) is
+still using stays open; the last one to finish closes it. Everything after submission starts
 from the receipt, so a run submitted by one client can be checked or fetched by
 any other. A receipt without a job ID is looked up by its request ID: a job the
 gateway accepted is adopted and its ID saved to the receipt; a request that never
-arrived is reported as `prepared` and is safe to submit again. A Slurm submission
+arrived is reported as `prepared`. Submitting again to the same output sends the
+same request ID, which the gateway answers with the job it already has if the
+first upload did arrive, so a retry can never become a second job. A Slurm submission
 the gateway could not confirm (`submission_unknown`) stays recoverable rather
 than failed, because the administrator's `reconcile` may still turn it into a job.
 

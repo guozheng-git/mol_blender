@@ -4,7 +4,8 @@ PyMOL saves each request to its own folder and returns at once. This helper
 renders it with this checkout's renderer through the shared job API
 (`blender_render.jobs`), locally or on the configured lab cluster, and mirrors
 progress into state.json for chat. A lab run is identified by its receipt
-(render.cluster.json); an ambiguous submission is looked up, never resubmitted.
+(render.cluster.json); an unconfirmed upload is looked up, and resent only under
+its original request ID, so it can never become a second job.
 """
 
 from __future__ import annotations
@@ -19,9 +20,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 if __package__ in (None, ""):
-    from records import write_json
+    from records import RECEIPT, write_json
 else:
-    from .records import write_json
+    from .records import RECEIPT, write_json
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -64,34 +65,29 @@ def _render_cluster(directory: Path, request: dict, state: dict, update):
     """Submit once, then follow the run by its receipt through the shared job API.
 
     The receipt (render.cluster.json) is written before upload, so a restarted
-    helper always recovers the same job: an unconfirmed upload is looked up by its
-    request ID on the gateway, never sent again.
+    helper always finds the same request: an unconfirmed upload is looked up by its
+    request ID, and sent again under that same ID only if the gateway never got it.
     """
     from blender_render import jobs
 
     cfg = request["config"]
     cancelled = directory / "cancel.request"
-    receipt = jobs.receipt_for(directory / "render.png")
+    output = directory / "render.png"
+    receipt = directory / RECEIPT
     # A detached helper keeps the tunnel open: siblings and later status checks share it.
-    with jobs.lab_connection(cfg["cluster_profile"], keep=True):
+    # Recovering an existing receipt must not fail just because SSH does; polling backs off.
+    with jobs.lab_connection(cfg["cluster_profile"], keep=True, required=not receipt.exists()):
         if not state.get("job_id"):
-            if not receipt.exists():
-                # The client writes the receipt before uploading: without one, nothing was sent.
-                if cancelled.exists():
-                    update(status="cancelled")
-                    return None
-                update(status="submitting")
-                job = jobs.submit(_load_payload(directory, request), request["options"], directory / "render.png",
-                                  backend_name=jobs.LAB, profile=cfg["cluster_profile"])
-                update(job_id=job["job_id"], status=job.get("status", "queued"), error=None)
-            else:
-                observed = jobs.observe(receipt)
-                if not observed.get("job_id") and cancelled.exists():
-                    update(status="cancelled", error=None)  # The upload never arrived: nothing to cancel.
-                    return None
+            if cancelled.exists():
+                observed = jobs.observe(receipt) if receipt.exists() else {}
                 if not observed.get("job_id"):
-                    raise RuntimeError(observed.get("message") or "The gateway has not confirmed this submission.")
-                update(job_id=observed["job_id"], status=observed["status"], error=None)
+                    update(status="cancelled", error=None)  # Nothing reached the gateway: nothing to cancel.
+                    return None
+            else:
+                update(status="submitting")
+                observed = jobs.submit(_load_payload(directory, request), request["options"], output,
+                                       backend_name=jobs.LAB, profile=cfg["cluster_profile"])
+            update(job_id=observed["job_id"], status=observed.get("status", "queued"), error=None)
 
         def progress(observed):
             # "completed" locally means downloaded and verified, never just remote.

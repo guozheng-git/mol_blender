@@ -121,10 +121,17 @@ def execute(args):
                     ssl_certfile=args.tls_cert, ssl_keyfile=args.tls_key)
         return None
     if args.command == 'submit':
-        from ..job_cli import load_payload, render_options
-        payload = load_payload(args.input, pymol_python=args.pymol_python, selection=args.selection)
-        return Client(args.profile).submit(payload, render_options(args), args.output, wait=args.wait,
-                                           timeout=args.timeout)
+        from .. import jobs
+        from ..job_cli import LAB_PAYLOAD_LIMIT, render_options
+        from ..local import load_payload
+        payload = load_payload(args.input, pymol_python=args.pymol_python, selection=args.selection,
+                               limit=LAB_PAYLOAD_LIMIT)
+        result = jobs.submit(payload, render_options(args), args.output, backend_name=jobs.LAB, profile=args.profile)
+        if args.wait:
+            result = jobs.wait(result['receipt'], timeout=args.timeout)
+            if result['status'] == 'completed':
+                result = jobs.fetch(result['receipt'])
+        return result
     receipt = None
     if hasattr(args, 'job') and not re.fullmatch('[0-9a-f]{32}', args.job):
         receipt = read_json(args.job, 64 * 1024)
@@ -141,7 +148,10 @@ def execute(args):
         return client.api('POST' if args.command == 'cancel' else 'DELETE',
                           '/v1/jobs/' + identifier + ('/cancel' if args.command == 'cancel' else ''))
     if args.command == 'wait':
-        return client.wait(identifier, args.timeout)
+        from .. import jobs
+        if receipt:
+            return jobs.wait(args.job, timeout=args.timeout)
+        return jobs.poll(lambda: client.status(identifier), timeout=args.timeout)
     if args.command == 'fetch':
         output = args.output or (receipt['output'] if receipt else None)
         if not output:

@@ -70,7 +70,15 @@ class Client:
     """Follows the real receipt contract: written before upload, recovered by request ID."""
     def __init__(self, profile="default"):
         self.profile = profile
-    def submit(self, payload, options, output):
+    def submit(self, payload, options, output, request_id=None):
+        receipt = Path(output).with_suffix(".cluster.json")
+        if request_id:  # Resent under the receipt's own request ID.
+            saved = json.loads(receipt.read_text())
+            assert saved["request_id"] == request_id and not saved.get("job_id")
+            record("resend")
+            (root / "payload.json").write_text(json.dumps(payload))
+            receipt.write_text(json.dumps({**saved, "job_id": "job-1", "status": "queued"}))
+            return {"job_id": "job-1", "status": "queued", "receipt": str(receipt)}
         record("submitting:" + self.profile)
         while (root / "hold_submit").exists(): time.sleep(0.02)
         receipt = Path(output).with_suffix(".cluster.json")
@@ -739,7 +747,7 @@ def test_ambiguous_submission_never_retries(bridge):
     assert calls(bridge).count("submit") == 1
 
 
-def test_recovering_a_submission_the_gateway_never_received_does_not_resubmit(bridge):
+def test_a_submission_the_gateway_never_received_is_resent_under_its_request_id(bridge):
     (Path(bridge.config.render_home) / "ambiguous").touch()
     request_id = submit(bridge)
     directory = Path(wait_for(bridge, request_id, "needs_attention")["directory"])
@@ -750,9 +758,30 @@ def test_recovering_a_submission_the_gateway_never_received_does_not_resubmit(br
     for process in bridge._processes:
         process.wait(timeout=5)
     state = bridge.status(request_id)
-    assert state["status"] == "needs_attention"
-    assert "upload never arrived" in state["error"]
-    assert calls(bridge).count("recover") == 1  # Looked up by its receipt's request ID.
+    assert state["status"] == "completed" and state["job_id"] == "job-1"
+    assert calls(bridge).count("recover") == 1  # Looked up by its receipt's request ID first.
+    assert calls(bridge).count("resend") == 1  # Then sent again with that ID, never a new one.
+    assert calls(bridge).count("submit") == 1
+
+
+def test_a_helper_that_cannot_connect_over_ssh_still_recovers_by_its_receipt(bridge, fake_repo):
+    home = Path(bridge.config.render_home)
+    (home / "ambiguous").touch()
+    request_id = submit(bridge)
+    wait_for(bridge, request_id, "needs_attention")
+    for process in bridge._processes:
+        process.wait(timeout=5)
+    # Now the saved SSH connection cannot be opened (MFA, VPN down, login node away).
+    (fake_repo / "blender_render/cluster/connect.py").write_text(
+        "import os\nfrom pathlib import Path\n"
+        "def load_state(profile): return {'ssh_host': 'lab'}\n"
+        "def state_path(profile, create=False):\n"
+        "    return Path(os.environ['BLENDER_RENDER_HOME']) / 'connections' / (profile + '.json')\n"
+        "def connect(profile): raise RuntimeError('ssh: MFA required')\n")
+    (home / "ambiguous").unlink()
+    (home / "received").touch()
+    bridge.result(request_id)  # Recovery carries on with the saved profile.
+    assert wait_for(bridge, request_id, "completed")["job_id"] == "job-1"
     assert calls(bridge).count("submit") == 1
 
 

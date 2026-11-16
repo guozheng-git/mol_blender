@@ -2209,3 +2209,31 @@ checkout's `.runtime`; Studio's PyMOL 3.2 environment for real headless PyMOL.
     the **A100** in **261 s** including queue time; the worker left the tunnel open
     as designed. Afterwards `cluster disconnect` reported no active jobs, and the
     tunnel was closed as it had been before the checks.
+
+## Job recovery review fixes and base update (2026-11-16)
+
+Validated the pending review fixes, then rebased the six `collapse-render-paths`
+commits onto `pymol-merge` at 4be1a30, including its shared animation frame cap.
+The rebase was conflict-free; the range comparison preserved each change and the
+base's compatibility filtering for limits advertised by older gateways.
+
+- Renderer/Studio suite with real headless PyMOL enabled: **620 passed, 50 skipped**
+  in **63.79 s**, with four existing dependency/fixture warnings. Optional browser,
+  native Blender geometry and wheel checks account for the skips.
+- Full co-pymol suite in Studio's PyMOL Python 3.11: **202 passed** in **56.38 s**,
+  with the existing Pydantic settings warning. Test dependencies were installed
+  into a temporary target outside the managed environments. An initial desktop
+  PyMOL Python 3.10 run could not exercise these combined fixtures: they launch
+  renderer workers with the same interpreter, but the renderer requires Python
+  3.11 (`enum.StrEnum`). The successful run used the supported renderer version.
+- After rebasing, animation, shared-default, job, cluster client/server and Studio
+  cluster regression tests: **217 passed** in **8.67 s**. PyMOL animation and real
+  client-parity tests: **55 passed** in **31.31 s**.
+- Built a fresh wheel from the rebased source in a temporary directory outside
+  the checkout and installed it into a separate target. Both installed engine
+  inventory tests passed; every packaged co-pymol Python/data file matched source,
+  and shared ligand resources loaded without importing renderer, PyMOL or MCP
+  modules. Wheel/source parity and real Studio PyMOL checks: **3 passed**.
+- Studio viewer Node tests: **11 passed**. Generated-default and Git whitespace
+  checks passed. No new GPU render, live lab submission or visual acceptance check
+  was performed; the earlier local/lab render evidence is recorded above.

@@ -49,14 +49,8 @@ def render_options(args) -> dict:
     return options
 
 
-def load_payload(path, *, pymol_python: str = '', selection: str = '(all)') -> dict:
-    """A scene bundle (JSON) as is; any other trusted file is exported with PyMOL first."""
-    from .cluster.jsonio import read_json
-    source = Path(path).expanduser()
-    if source.suffix.lower() == '.json':
-        return read_json(source)
-    from .runtime import export_file
-    return export_file(source, python=pymol_python, selection=selection)
+# Lab uploads are bounded by the gateway's request limits; local renders are not.
+LAB_PAYLOAD_LIMIT = 20 * 1024**2
 
 
 def parser() -> argparse.ArgumentParser:
@@ -91,8 +85,10 @@ def parser() -> argparse.ArgumentParser:
 def execute(args) -> dict:
     from . import jobs
     if args.command == 'submit':
+        from .local import load_payload
         backend = jobs.backend(args.backend)
-        payload = load_payload(args.input, pymol_python=args.pymol_python, selection=args.selection)
+        payload = load_payload(args.input, pymol_python=args.pymol_python, selection=args.selection,
+                               limit=None if backend == jobs.LOCAL else LAB_PAYLOAD_LIMIT)
         options = render_options(args)
         if backend == jobs.LOCAL:
             return jobs.submit(payload, options, args.output, timeout=args.timeout)

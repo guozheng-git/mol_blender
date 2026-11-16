@@ -19,18 +19,23 @@ default; Slurm jobs keep one independent Blender process per submitted request.
 - Every client submits through one job API, `blender_render/jobs.py` (submit,
   observe, wait, fetch, cancel), exposed to processes that must not import the
   renderer as `blender-render job … --json`. A lab run is identified only by the
-  receipt the client writes before uploading; recovery observes it by request ID
-  and never resubmits. Lab commands connect once with the saved profile and close
-  only a tunnel they opened. Do not add another poll loop, job record or launcher.
+  receipt the client writes before uploading; recovery observes it by request ID,
+  and an upload the gateway never received is sent again only under that same
+  request ID (`jobs.submit` to the same output), never as a new job. Lab commands
+  connect once with the saved profile and close only a tunnel they opened and
+  nobody else holds a lease on. `jobs.poll` is the only poll loop; do not add
+  another poll loop, job record or launcher.
 - `co_pymol/` is the PyMOL-side MCP server; it runs in PyMOL's Python (3.10+) and must
   not import the renderer. Its detached `render/worker.py` runs in the render
   environment and calls `blender_render.jobs`. Keep it a
   sibling of `blender_render/` so the engine inventory is unaffected. Test it with
   PyMOL's Python: `python -m pytest tests/co_pymol`.
 - Every PyMOL capture goes through `build_render_payload`, which restores the
-  session's secondary structure and camera itself. Clients hand the renderer a
-  scene bundle (JSON), never a session for it to reload; Studio exports in the
-  same PyMOL run that saves its `.pse`.
+  session's secondary structure and camera itself. A client that prepares a
+  session (co-pymol's snapshot, Studio's styled `.pse`) exports its scene bundle in
+  that same PyMOL run and hands the renderer the JSON, never the session to reload.
+  A plain trusted file the client did not change (`studio.py render x.cif`,
+  `blender-render render x.pse`) is exported once by the renderer's `export_file`.
 - Keep the pure recipe compiler in `co_pymol/scene/animation.py` and reuse its
   PyMOL `scene/camera.py`, `scene/capture.py` and `scene/ligands.py` helpers (and
   `co_pymol/defaults.py`) from Structure Studio. Studio reads these helpers and

@@ -39,9 +39,10 @@ def test_batch_recovery_only_resumes_saved_unfinished_jobs(bridge, monkeypatch):
     for process in bridge._processes:
         process.wait(timeout=10)
 
-    # The confirmed unfinished job is observed and fetched; the ambiguous one is
-    # only looked up by its request ID. Children run in parallel.
-    assert sorted(calls(bridge)) == ["fetch", "recover", "status"]
+    # The confirmed unfinished job is observed and fetched. The unconfirmed upload is
+    # looked up by its request ID and, since the gateway never got it, resent under
+    # that same ID. Children run in parallel.
+    assert sorted(calls(bridge)) == ["fetch", "fetch", "recover", "resend", "status", "status"]
     states = {
         preset: json.loads((path / "state.json").read_text())
         for preset, path in runs.items()
@@ -49,7 +50,6 @@ def test_batch_recovery_only_resumes_saved_unfinished_jobs(bridge, monkeypatch):
     assert states["mint"]["status"] == "completed"
     assert states["mint"]["job_id"] == "original-mint-job"
     assert states["neon"] == {"status": "completed", "job_id": "original-neon-job"}
-    assert states["unknown"]["status"] == "needs_attention"
-    assert "upload never arrived" in states["unknown"]["error"]
+    assert states["unknown"]["status"] == "completed" and states["unknown"]["job_id"] == "job-1"
     assert states["cancelled"]["status"] == "cancelled"
-    assert bridge.status(receipt["name"])["status"] == "needs_attention"
+    assert bridge.status(receipt["name"])["status"] == "cancelled"  # One child was cancelled.
