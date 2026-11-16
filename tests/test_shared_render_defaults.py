@@ -78,7 +78,6 @@ assert len(pymol_animation.frames_for('rock', pymol_animation.Keys(overview=view
 
 from blender_render import animation, core
 from blender_render.scene import export
-from blender_render.cluster.config import Limits
 from blender_render.spec import resolve_options
 resolved = resolve_options({'animation': 'rock', 'width': 160, 'height': 120}, {})
 assert resolved['preset'] == 'northern_nights'
@@ -91,7 +90,7 @@ assert (output['width'], output['height'], output['samples']) == (180, 130, 13)
 assert output['animation']['duration'] == 2 and output['animation']['fps'] == 8
 assert output['animation']['rock_angle'] == 18
 assert animation.MAX_RGBA == 12 * 1024**3 and animation.MAX_ARCHIVE == 640 * 1024**2
-assert animation.MAX_FRAMES == export.MAX_STATES == Limits().max_frames == 400
+assert animation.MAX_FRAMES == export.MAX_STATES == 400
 assert core._state_coordinate_errors({'base': 1, 'coordinates': [[0, 0, 0]] * 400}) == []
 assert animation.normalize({'mode': 'path', 'fps': 40, 'path': [list(view)] * 400},
                            {'width': 10, 'height': 10})['duration'] == 10

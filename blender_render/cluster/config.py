@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 from typing import ClassVar
 
-from ..defaults import ANIMATION_LIMITS
 from .jsonio import read_json
 
 
@@ -13,7 +12,6 @@ class Limits:
     max_request_bytes: int = 20 * 1024**2
     max_pixels: int = 4096 * 4096
     max_samples: int = 512
-    max_frames: int = ANIMATION_LIMITS['max_frames']
     max_artifact_bytes: int = 1024**3
     max_active_per_user: int = 4
     max_active_total: int = 32

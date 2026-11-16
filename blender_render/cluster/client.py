@@ -120,7 +120,8 @@ class Client:
             payload = {key: value for key, value in payload.items() if key != 'polar_contacts'}
         document = validate_request({'protocol': PROTOCOL, 'request_id': uuid.uuid4().hex,
             'payload': payload, 'style': style},
-            Limits(**info['limits']))
+            # Older servers may still advertise limits this client no longer knows.
+            Limits(**{k: v for k, v in info['limits'].items() if k in Limits.__dataclass_fields__}))
         output.parent.mkdir(parents=True, exist_ok=True)
         record = {'protocol': PROTOCOL, 'profile': self.profile, 'url': self.url,
                   'request_id': document['request_id'], 'output': str(output), 'status': JobStatus.PREPARED}

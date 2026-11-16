@@ -14,17 +14,11 @@ import tempfile
 import time
 import zipfile
 
-from .defaults import ANIMATION, ANIMATION_LIMITS
+from .defaults import (ANIMATION, MAX_ARCHIVE, MAX_DURATION, MAX_FPS, MAX_FRAMES, MAX_RGBA,
+                       MAX_ROCK_ANGLE, MIN_FRAMES)
 
 CONTROLS = ('animation', 'duration', 'fps', 'rock_angle', 'gif')
 PATH_VIEW_LENGTH = 18  # one PyMOL get_view() per frame
-MAX_RGBA = ANIMATION_LIMITS['max_rgba_bytes']
-MAX_ARCHIVE = ANIMATION_LIMITS['max_archive_bytes']
-MAX_FRAMES = ANIMATION_LIMITS['max_frames']
-MIN_FRAMES = ANIMATION_LIMITS['min_frames']
-MAX_FPS = ANIMATION_LIMITS['max_fps']
-MAX_DURATION = ANIMATION_LIMITS['max_duration']
-MAX_ROCK_ANGLE = ANIMATION_LIMITS['max_rock_angle']
 
 
 def normalize(value, output):

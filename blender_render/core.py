@@ -172,13 +172,12 @@ def _looks_like_pdb_atoms(text: str) -> bool:
 
 def _state_coordinate_errors(states: Any) -> list[str]:
     """Per-state coordinates for state animations; shape only, order is checked in Blender."""
-    from blender_render.defaults import ANIMATION_LIMITS
-    max_states = ANIMATION_LIMITS['max_frames']
+    from blender_render.defaults import MAX_FRAMES
     if not isinstance(states, dict) or set(states) != {"base", "coordinates"}:
         return ["'state_coordinates' must contain exactly 'base' and 'coordinates'."]
     coordinates = states["coordinates"]
-    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= max_states:
-        return [f"'state_coordinates.coordinates' must list 2 to {max_states} states."]
+    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= MAX_FRAMES:
+        return [f"'state_coordinates.coordinates' must list 2 to {MAX_FRAMES} states."]
     if type(states["base"]) is not int or not 1 <= states["base"] <= len(coordinates):
         return ["'state_coordinates.base' must number one of the listed states."]
     length = len(coordinates[0]) if isinstance(coordinates[0], list) else 0

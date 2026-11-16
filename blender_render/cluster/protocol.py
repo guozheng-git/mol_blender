@@ -81,9 +81,6 @@ def validate_request(document, limits):
     if output['width'] * output['height'] > limits.max_pixels or output['samples'] > limits.max_samples:
         raise ValueError('Render exceeds server pixel/sample limits')
     animation = output.get('animation') or {}
-    frames = len(animation.get('path', [])) or animation.get('frames', 1)
-    if frames > limits.max_frames:
-        raise ValueError('Animation exceeds server frame limit')
     if animation.get('states'):
         coords = payload.get('state_coordinates')
         if not coords or max(animation['states']) > len(coords['coordinates']):
