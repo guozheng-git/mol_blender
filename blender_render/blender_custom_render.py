@@ -797,6 +797,7 @@ def _apply_auth_chain_override(load_result: Any, structure_path: Path) -> None:
 
 
 from blender_render.cycles_device import _configure_cycles_gpu_for_custom
+from blender_render.renderer_defaults import resolve_renderer
 
 
 def _ensure_biotite_ccd_database(*, before_execution: bool = False) -> None:
@@ -833,9 +834,9 @@ def _clear_scene_lights() -> None:
 
 def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> None:
     output = style_doc["output"]
-    renderer = style_doc["renderer"]
+    renderer = resolve_renderer(style_doc["renderer"])
 
-    engine = str(renderer.get("engine", "CYCLES")).upper()
+    engine = str(renderer["engine"]).upper()
     if engine == "EEVEE":
         engine = "BLENDER_EEVEE"
 
@@ -846,7 +847,7 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
     scene.render.image_settings.file_format = str(output.get("format", "PNG")).upper()
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.image_settings.color_depth = "8"
-    scene.render.film_transparent = bool(renderer.get("transparent_background", False))
+    scene.render.film_transparent = bool(renderer["transparent_background"])
     if isinstance(renderer.get("exposure"), (int, float)):
         scene.view_settings.exposure = float(renderer["exposure"])
     if isinstance(renderer.get("gamma"), (int, float)):
@@ -858,11 +859,11 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
 
     if engine == "CYCLES" and hasattr(scene, "cycles"):
         scene.cycles.samples = int(output.get("samples", 128))
-        scene.cycles.device = str(renderer.get("device", "GPU")).upper()
-        scene.cycles.use_adaptive_sampling = bool(renderer.get("adaptive_sampling", True))
-        scene.cycles.adaptive_threshold = float(renderer.get("adaptive_threshold", 0.01))
+        scene.cycles.device = str(renderer["device"]).upper()
+        scene.cycles.use_adaptive_sampling = bool(renderer["adaptive_sampling"])
+        scene.cycles.adaptive_threshold = float(renderer["adaptive_threshold"])
         try:
-            scene.cycles.seed = int(renderer.get("seed", 0))
+            scene.cycles.seed = int(renderer["seed"])
         except Exception:
             pass
         if hasattr(scene.cycles, "use_animated_seed"):
@@ -872,7 +873,7 @@ def _configure_renderer(scene: bpy.types.Scene, style_doc: dict[str, Any]) -> No
                 pass
         # Some host Blender builds are compiled without OIDN/OptiX denoiser.
         # Keep denoising disabled by default unless style explicitly asks for it.
-        denoise_enabled = bool(renderer.get("denoise", False))
+        denoise_enabled = bool(renderer["denoise"])
         if hasattr(scene.cycles, "use_denoising"):
             try:
                 scene.cycles.use_denoising = denoise_enabled

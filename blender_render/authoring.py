@@ -9,7 +9,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from .core import load_and_validate_style_json, validate_style_document
+from .core import load_and_validate_style_json, resolve_style_document, validate_style_document
 from .presets import catalog, preset_id, preset_path, required_capabilities
 from .spec import PresetDefinition, resolve_options, style_digest, validate_camera_policy
 
@@ -76,7 +76,7 @@ def resolve_authored(options: dict, payload: dict, root: Path) -> dict:
 def save_preset(identifier: str, style: dict, root: Path, *, description: str,
                 provenance: dict | None = None, replace: bool = False,
                 camera_policy: str = "preserve_input") -> dict:
-    validate_style_document(style)
+    style = resolve_style_document(style)
     validate_camera_policy(camera_policy, style)
     if not isinstance(description, str) or (provenance is not None and not isinstance(provenance, dict)):
         raise ValueError("Preset description must be text and provenance must be an object")

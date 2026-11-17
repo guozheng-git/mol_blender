@@ -1244,6 +1244,36 @@ existing user runtimes were not modified. Live Claude Artifact publication,
 in-chat operation, persistence and cross-chat reopening remain untested. Nothing
 was pushed, published or deployed.
 
+## Shared renderer defaults (2026-11-06)
+
+Centralized existing execution defaults and removed matching values from the 18
+preset JSON files (17 catalog entries plus the reference-exact file). Compared
+each complete resolved document with its `a83fedf` counterpart plus the previous
+runtime defaults: all settings match, including the three explicit CPU choices.
+Appearance fields, denoising overrides, seeds and the dried-paint transparency
+and sampling threshold retain their previous values.
+
+Source checks: `python -m pytest tests/test_renderer_defaults.py
+tests/test_style_schema.py tests/test_reference_presets.py tests/test_developer.py
+tests/test_developer_policy.py tests/test_local.py tests/test_scene_edit.py
+tests/test_cluster_jobs.py -q` — **236 passed, 1 skipped** in **1.70 s**. The skip
+is the optional FastMCP test. Coverage includes compact/full JSON equivalence,
+canonical render hashes, override precedence, invalid authored values, immutable
+inputs, materialized saved presets and reading older sparse saved presets.
+
+Built a wheel with `uv build --wheel`, installed it into a fresh uv environment
+outside the checkout, and ran copied renderer-default, schema, reference-preset
+and engine-package tests against the installed package: **85 passed** in
+**0.83 s**. The installed engine manifest and module locations were checked.
+
+An actual background **Blender 5.0.1** process applied the original renderer
+configuration function and the refactored function to separate fresh scenes for
+all 18 presets. Engine, dimensions, transparency, exposure, gamma, view transform,
+look, samples, adaptive sampling, denoising, seed and device information matched
+exactly. The GPU presets selected **Apple M3 Metal**; the three CPU presets
+remained on CPU. This was a scene-configuration check; no image was rendered or
+visually reviewed, and no Slurm job or desktop Blender window was opened.
+
 ## Cluster onboarding discovery and live preflight (2026-11-06)
 
 Inspected `main_merged` at `a83fedf`, including the PR #6 merge (`982faf1`).
@@ -2237,3 +2267,22 @@ base's compatibility filtering for limits advertised by older gateways.
 - Studio viewer Node tests: **11 passed**. Generated-default and Git whitespace
   checks passed. No new GPU render, live lab submission or visual acceptance check
   was performed; the earlier local/lab render evidence is recorded above.
+
+## PR #9 base merge (2026-11-17)
+
+Merged `main_merged` at `e7439e9` into `refactor/shared-renderer-defaults`
+at `d3490c1`. The only conflict was the appended validation history; both
+branches' complete records are preserved, including the original shared renderer
+defaults checks from November 6.
+
+- Full renderer/Studio suite (`tests`, excluding `tests/co_pymol`) with real
+  headless PyMOL, native Blender and browser checks enabled: **695 passed,
+  1 skipped** in **92.07 s**, with four existing dependency/fixture warnings.
+  The skipped wheel-parity test was run after building the new wheel:
+  **1 passed**, confirming that its engine inventory matches the merged source.
+- Installed that wheel into a fresh environment outside the checkout and ran
+  copied renderer-default, style-schema, reference-preset and engine-package
+  tests against the installed package: **85 passed** in **1.34 s**.
+
+These are merge regression checks; they do not repeat the earlier live SSH,
+Slurm or installed desktop-app acceptance workflows.

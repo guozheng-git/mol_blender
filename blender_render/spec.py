@@ -144,7 +144,7 @@ def resolve_options(options: dict, payload: dict, *, timeout: int = 600,
         style = core._apply_rough_style_overrides(style)
     # Transport controls destinations; a style can never choose staging paths.
     style["output"].update(filename="render.png", format="PNG", blend_filename="render.blend")
-    core.validate_style_document(style)
+    style = core.resolve_style_document(style)
     return {
         "preset": identifier, "style_doc": style, "output_name": "render.png", "job_timeout_seconds": timeout,
         "keep_temp": options.get("keep_temp", False), "save_blend": style["output"]["save_blend"],
