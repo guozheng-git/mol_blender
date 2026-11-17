@@ -8,109 +8,37 @@ import json
 import os
 from pathlib import Path
 import sys
-import numpy as np
 import pymol2
-from animation_recipes import Keys, View, frames_for
-from pymol_session import ligand_records, residue_selection
-
-
-def _rotation(view: View) -> np.ndarray:
-    return np.array(view[:9]).reshape(3, 3).T
-
-
-def _framed(cmd, view: View, selection: str) -> View:
-    """Zoom on selection at view's orientation, without clipping the rest."""
-    cmd.set_view(view)
-    cmd.zoom(selection, 1, complete=1)
-    framed = list(cmd.get_view())
-    distance = -framed[11]
-    extent = np.ptp(cmd.get_coords("enabled"), axis=0).max()
-    framed[15], framed[16] = max(1.0, distance - extent), distance + extent
-    return tuple(framed)
-
-
-def pocket(focus: str) -> str:
-    return f"({focus}) or byres (enabled and polymer within 4 of ({focus}))"
-
-
-def opening_view(cmd, view: View, focus: str) -> View:
-    """Look down into the pocket: from the surrounding bulk toward the focus."""
-    centre = cmd.get_coords(focus).mean(axis=0)
-    shell = cmd.get_coords(f"enabled and polymer within 12 of ({focus})")
-    rotation = _rotation(view)
-    if shell is not None:
-        outward = centre - shell.mean(axis=0)
-        if np.linalg.norm(outward) > 0.5:
-            z = outward / np.linalg.norm(outward)
-            up = rotation[1] - np.dot(rotation[1], z) * z
-            if np.linalg.norm(up) < 1e-3:  # looking straight up/down already
-                up = rotation[0] - np.dot(rotation[0], z) * z
-            y = up / np.linalg.norm(up)
-            rotation = np.array([np.cross(y, z), y, z])
-    oriented = tuple(rotation.T.flatten()) + tuple(view[9:])
-    return _framed(cmd, oriented, pocket(focus))
-
-
-def keys_for(cmd, recipe: str, focus: str | None) -> Keys:
-    overview = tuple(cmd.get_view())
-    scenes = []
-    for name in cmd.get_scene_list() if recipe == "scenes" else ():
-        cmd.scene(name, "recall", animate=0, color=0, active=0, rep=0, frame=0)
-        scenes.append(tuple(cmd.get_view()))
-    target = None
-    if focus and recipe == "reveal":
-        target = opening_view(cmd, overview, focus)
-    elif focus and recipe == "cutaway":
-        # Push straight in: the fade, not a turn, opens the way to the site.
-        target = _framed(cmd, overview, pocket(focus))
-    cmd.set_view(overview)
-    return Keys(
-        overview=overview,
-        focus=target,
-        scenes=tuple(scenes),
-        states=cmd.count_states("enabled"),
-    )
-
+from render_defaults import ANIMATION
 
 
 def prepare(cmd, config, *, width=None, height=None):
-    from blender_render.export import build_render_payload
+    from co_pymol.scene.animation import fit_viewport, frames_for, template
+    from co_pymol.scene.camera import keys_for
+    from co_pymol.scene.capture import capture_animation
+
+    config = template(config)
     if any(value is not None and (type(value) is not int or value < 1) for value in (width, height)):
         raise ValueError("Animation dimensions must be positive integers")
     recipe = config["recipe"]
     focus = config.get("focus")
     if recipe in {"reveal", "cutaway"}:
         if not focus:
-            ligands = [l for l in ligand_records(cmd, "enabled") if not l["additive"]]
-            if not ligands:
+            from co_pymol.scene.ligands import default_focus
+            focus = default_focus(cmd, "enabled")  # The same choice as `co-pymol animate`.
+            if not focus:
                 raise ValueError("This recipe needs --focus or an enabled non-additive ligand")
-            focus = residue_selection("enabled", ligands[0])
         focus = f"enabled and ({focus})"
         if not cmd.count_atoms(focus):
             raise ValueError("The animation focus matches no enabled atoms")
     keys = keys_for(cmd, recipe, focus)
     frames = frames_for(recipe, keys, config["fps"], duration=config.get("duration"),
                         rock_angle=config.get("rock_angle"))
-    animation = {"mode": "path", "path": [[float(v) for v in f.view] for f in frames],
-                 "fps": config["fps"], "gif": config["gif"]}
-    anchor = 0
-    if recipe == "cutaway":
-        lid = [round(f.lid_opacity, 6) for f in frames]
-        anchor = next(i for i, opacity in enumerate(lid) if opacity == 0)
-        animation.update(lid=lid, anchor=anchor)
-    if recipe == "states":
-        animation["states"] = [f.state for f in frames]
-        if set(animation["states"]) != set(range(1, keys.states + 1)):
-            raise ValueError("The movie is too short to show every state; increase duration or FPS")
-    cmd.set_view(frames[anchor].view)
-    if frames[anchor].state:
-        # A saved object-level state overrides the global state in PyMOL.
-        for name in cmd.get_object_list("enabled"):
-            cmd.set("state", frames[anchor].state, name)
-    payload = build_render_payload(cmd, include_color_hints=True, all_states=recipe == "states")
-    viewport = cmd.get_viewport()
-    width = width or (round(height * viewport[0] / viewport[1]) if height else 640)
-    height = height or max(1, round(width * viewport[1] / viewport[0]))
+    payload, animation = capture_animation(cmd, recipe, frames, config["fps"], gif=config["gif"])
+    anchor = animation.get("anchor", 0)
+    if width is None and height is None:
+        width, height = ANIMATION["preview"]["width"], ANIMATION["preview"]["height"]
+    width, height = fit_viewport(cmd.get_viewport(), width, height)
     output = {"width": width, "height": height, "animation": animation}
     from blender_render.animation import normalize
     animation = output["animation"] = normalize(animation, output)

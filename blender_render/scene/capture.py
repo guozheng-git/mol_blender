@@ -17,9 +17,9 @@ import bpy
 from mathutils import Matrix, Vector
 
 if __package__ in (None, ''):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from blender_render.scene_edit import apply_bindings, changed, convert
+from blender_render.scene.edit import apply_bindings, changed, convert
 
 TEXT = 'Blender Render - editable preset.json'
 TAG = 'blender_render_edit_id'
@@ -474,9 +474,10 @@ def extract(scene, metadata, current, camera_policy):
 def main():
     from blender_render.developer import source_files
     request = json.loads(Path(sys.argv[sys.argv.index('--') + 1]).read_text())
-    if source_files(Path(__file__).resolve().parent) != request['source_files']:
+    package = Path(__file__).resolve().parents[1]
+    if source_files(package) != request['source_files']:
         raise RuntimeError('Scene extractor source snapshot changed')
-    lock = json.loads(Path(__file__).with_name('runtime.lock.json').read_text())
+    lock = json.loads((package / 'runtime.lock.json').read_text())
     if bpy.app.version_string != lock['blender']:
         raise ValueError('Scene extraction requires configured Blender ' + lock['blender'])
     bpy.ops.wm.open_mainfile(filepath=request['scene'], load_ui=False, use_scripts=False)

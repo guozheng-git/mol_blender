@@ -86,7 +86,7 @@ blender-render cluster info --profile lab
 ```
 
 The file must be owned by you and mode `0600`. The client stores a private profile
-under `BLENDER_RENDER_HOME/clusters/` (or the ordinary user configuration root).
+under `clusters/` in the lab profile folder (see "Your own gateway over SSH").
 Delete the transfer copy after importing it. Tokens never appear in command-line
 arguments or normal output. Use `--ca-file` with `configure` for a private CA;
 certificate verification cannot be disabled. HTTPS is required except for a
@@ -151,6 +151,89 @@ administrator to reconcile it; do not create a replacement job speculatively.
 An explicit rejection or a confirmed missing request can be submitted again with
 a new output name. Downloads never overwrite existing outputs. A failed integrity
 check leaves no partial render in the requested output location.
+
+### One job command for every client
+
+co-pymol, Structure Studio and the PyMOL bridge all submit and recover through
+`blender_render.jobs`, available as one JSON command line:
+
+```sh
+blender-render job submit scene.bundle.json -o renders/first.png --backend lab --profile lab
+blender-render job status renders/first.cluster.json
+blender-render job fetch renders/first.cluster.json --wait 900
+blender-render job cancel renders/first.cluster.json
+```
+
+`--backend local` renders on this computer instead. Lab subcommands connect once
+with the saved profile when its tunnel is closed and close only a tunnel they
+opened (`--keep-connected` leaves it running). Each client holds a lease while it
+uses the tunnel, so a tunnel another render (a co-pymol helper, another chat) is
+still using stays open; the last one to finish closes it. Everything after submission starts
+from the receipt, so a run submitted by one client can be checked or fetched by
+any other. A receipt without a job ID is looked up by its request ID: a job the
+gateway accepted is adopted and its ID saved to the receipt; a request that never
+arrived is reported as `prepared`. Submitting again to the same output sends the
+same request ID, which the gateway answers with the job it already has if the
+first upload did arrive, so a retry can never become a second job. A Slurm submission
+the gateway could not confirm (`submission_unknown`) stays recoverable rather
+than failed, because the administrator's `reconcile` may still turn it into a job.
+
+## Your own gateway over SSH
+
+When you can log in to a Slurm login node with SSH keys and an administrator has
+installed a matching controller and image (see below), one command connects this
+computer without a shared service:
+
+```sh
+blender-render cluster connect --profile lab --ssh-host mycluster --node login-03.cluster.example \
+  --remote-executable /shared/install/controller/bin/blender-render \
+  --server-config /shared/install/server-gpu.json
+blender-render cluster submit structure.cif --profile lab -o renders/first.png
+blender-render cluster disconnect --profile lab
+```
+
+`connect` sends a small helper over SSH stdin to the controller's Python. It
+creates a private per-connection directory beside the site configuration, with
+its own spool and token database; Slurm, image and limits stay as the
+administrator validated them. It starts (or reuses) a gateway bound to
+`127.0.0.1` on the **pinned node**, opens an SSH tunnel to that same node, and
+imports a fresh credential into the ordinary profile. The token is streamed from
+SSH into a private file, imported and deleted; it is never printed. Jobs run under
+**your own** Slurm account. The gateway is always token-authenticated, even if the
+site configuration selects open access, because every user on a login node can
+reach its loopback interface. Before trusting a port, the helper checks with `ss`
+(or `lsof`) that its own gateway process holds it. The client also requires `ss`
+or `lsof` to verify that its dedicated SSH process owns the local forwarding port
+before sending credentials. The tunnel does not use a shared SSH ControlMaster.
+
+Later `connect --profile lab` calls reuse the saved settings, reopen a dead tunnel
+and restart a stopped gateway with the same credential, so receipts of earlier
+jobs still fetch. `disconnect` closes the tunnel and stops the gateway; queued
+Slurm jobs keep running. `--revoke` also revokes the credential and forgets the
+connection. `connection` shows the saved settings and whether the tunnel is open.
+Changing the saved host, node, controller or site-config path stops the old
+connection before opening the new one; it cannot silently reuse the old tunnel.
+Local profile changes and remote gateway lifecycle operations are serialized.
+If another operation is still running after ten seconds, retry once it finishes.
+
+After a site-config update, run `disconnect` without `--keep-gateway`, then
+`connect` again. A stopped gateway's derived configuration is validated and
+refreshed while keeping its job spool, credentials and local port, so existing
+receipts still work. Revocation is not needed. Invalid configuration updates
+leave the previous derived configuration intact.
+
+Profiles and SSH connection state live under `BLENDER_RENDER_CLUSTER_HOME` when
+it is set, otherwise under `BLENDER_RENDER_HOME`, otherwise in the default
+`~/.config/blender-render/`. Structure Studio and co-pymol pin
+`BLENDER_RENDER_CLUSTER_HOME` to that default folder (co-pymol: `cluster_home`
+when configured) while keeping their own `BLENDER_RENDER_HOME`, so they share the
+terminal's lab profiles and a lab render resolves presets exactly like a local one.
+Studio saves its `.lab.json` recovery context before submission. If a response is
+lost or times out after the client has written a receipt, Studio returns
+`submission_unknown` with that receipt and a `lab-fetch` command; `lab-pending`
+also finds it. Recover that request before considering another submission.
+
+Check whether your site permits short-lived user services on login nodes.
 
 ## Build once, reuse the uv environments
 

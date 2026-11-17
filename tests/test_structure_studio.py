@@ -406,7 +406,7 @@ def test_background_setup_lock(tmp_path, monkeypatch):
     assert studio_env.running_setup() is None
     (tmp_path / "setup.lock").write_text(json.dumps({"pid": os.getpid(), "log": "x"}))
     assert studio_env.running_setup()["pid"] == os.getpid()
-    studio_env._wait_until(lambda: False, "nothing")  # our own lock never blocks
+    studio_env._wait_until(lambda: {}, lambda current: False, "nothing")  # our own lock never blocks
     (tmp_path / "setup.lock").write_text(json.dumps({"pid": 2 ** 22 + 12345, "log": "x"}))
     assert studio_env.running_setup() is None  # a dead installer is ignored
     assert studio_env.doctor()["render_ready"] is False

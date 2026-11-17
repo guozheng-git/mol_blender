@@ -7,7 +7,7 @@ from datetime import datetime
 import pwd
 import time
 
-from .common import one_line
+from .jsonio import one_line
 
 
 class SubmissionUnknown(RuntimeError):
@@ -186,7 +186,7 @@ class Slurm:
 
     def find_submission(self, identifier, created_at):
         """Recover an ambiguous sbatch outcome by its exact unique job name and Unix owner."""
-        from .common import job_id
+        from .protocol import job_id
         name = 'br-' + job_id(identifier)
         owner = pwd.getpwuid(os.getuid()).pw_name
         pending = self.run([self.config.squeue, '--noheader', '--user=' + owner,

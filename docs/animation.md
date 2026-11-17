@@ -5,6 +5,11 @@ The shared camera-orbit renderer and frame encoding were selectively adapted fro
 `d4da82647c902ed431cf6de087d38351a32aef01`. They run through the local CLI, PyMOL
 bridge and stdio MCP. No queue, paid service or remote runtime is required.
 
+FPS, orbit defaults, recipe timings and enforced limits come from
+[`render_defaults.yaml`](../render_defaults.yaml), shared with PyMOL and
+Structure Studio. Run `python scripts/sync_render_defaults.py` after editing it;
+the generated JSON and animation schema bounds are checked during wheel builds.
+
 ## Controls
 
 | CLI | PyMOL / MCP | Meaning |
@@ -18,7 +23,7 @@ bridge and stdio MCP. No queue, paid service or remote runtime is required.
 | `--animation none` | `animation=none` | Disable animation embedded in a preset |
 
 Duration × FPS must be an integer from 4 to 360. Decoded frames are limited to
-1 GiB and their lossless archive to 512 MiB. Lower the dimensions, duration or FPS
+10 GiB and their lossless archive to 512 MiB. Lower the dimensions, duration or FPS
 if the limit is exceeded. Raw-view rendering is incompatible with animation.
 `--rough` retains motion and style while lowering render quality. GIF timing is
 quantized to 10 ms; use MP4 when precise frame timing matters.
@@ -46,6 +51,8 @@ on macOS. On Linux or a cluster, install/load an FFmpeg build with these encoder
 alongside the configured native Blender runtime. This branch does not build an
 Apptainer image. Encoder availability is checked before launching Blender.
 Rendering and encoding share the request deadline (600 seconds by default).
+MP4 uses standard YUV 4:2:0 H.264 for native player compatibility. Keep the PNG
+archive when exact rendered pixels are needed; the MP4 is a lossy presentation.
 MP4 pads odd dimensions to even values without cropping. Both movie formats use
 white behind transparent pixels; lossless PNGs retain the rendered alpha.
 
@@ -78,13 +85,23 @@ tool; movie playback depends on the client's support for local media files.
 See [validation](validation.md#local-animation-port) for executed Mac checks and
 untested GUI/client behavior.
 
-## Structure Studio recipes
+## Shared PyMOL and Structure Studio recipes
 
-The Claude plugin adds reusable `turntable`, `rock`, `reveal`, `cutaway`, `states`
-and `scenes` templates. See its
+Both clients use `co_pymol/scene/animation.py` for `turntable`, `rock`, `reveal`,
+`cutaway`, `states` and `scenes`. Its sibling `camera.py` measures camera keys and
+`capture.py` captures the anchor scene while preserving the caller's camera,
+colors, enabled objects, secondary structure and pinned molecular states. See Studio's
 [animation reference](../plugins/structure-studio/skills/structure-studio/references/animations.md)
 for commands, prerequisites and quality controls. Existing `--animation rock|360`
 commands retain their defaults.
+
+`python -m co_pymol animate scene.pse --blender --recipe rock --duration 2
+--fps 8 --rock-angle 17` uses the same recipe compiler as Studio. The PyMOL CLI
+also accepts `--gif`/`--no-gif` for Blender movies. All named recipes use sampled
+camera paths, including rock and turntable. Duration overrides scale the whole
+timeline; segment rounding preserves the exact requested total frame count.
+State movies must include every molecular state. PyMOL's native preview retains
+its ghost-shell cutaway display, mapping the shared lid opacity to transparency.
 
 The shared renderer also accepts `output.animation.mode = "path"` in a style or
 output override. `path` is a list of 4–360 PyMOL views (18 finite numbers each),

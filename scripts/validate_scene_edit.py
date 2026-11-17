@@ -79,7 +79,7 @@ def main():
     os.environ['BLENDER_RENDER_HOME'] = str(home)
     from blender_render import engine, warm_worker
     from blender_render.local import render_file
-    from blender_render.scene_edit import inspect_scene, save_from_blend
+    from blender_render.scene.edit import inspect_scene, save_from_blend
     from PIL import Image, ImageChops, ImageStat
     evidence = {'passed': False, 'engine_build': engine.engine_identity()['engine_build'], 'cases': {}}
     evidence_path = root / 'evidence.json'

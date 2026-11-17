@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from .config import config_root, load_config
+from ..config import config_root, load_config
 
 
 def changed(before, after):
@@ -109,7 +109,7 @@ def apply_bindings(metadata, current):
 
 
 def blender_executable(blender='', *, gui=False):
-    from .core import _detect_host_blender_executable
+    from ..core import _detect_host_blender_executable
     config = load_config()
     value = blender or (config.get('gui_blender') if gui else None) or config.get('blender')
     path = Path(value or _detect_host_blender_executable()).expanduser().resolve()
@@ -127,7 +127,7 @@ def blender_executable(blender='', *, gui=False):
 def open_scene(path, *, blender='', edit_bridge=False):
     """Launch a separate desktop process; no code embedded in the scene runs."""
     if edit_bridge:
-        from .editor import open_editor
+        from ..editor import open_editor
         return open_editor(path, blender=blender)
     path = Path(path).expanduser().resolve()
     if path.suffix.lower() != '.blend' or not path.is_file():
@@ -147,7 +147,7 @@ def open_scene(path, *, blender='', edit_bridge=False):
 
 def inspect_scene(path, *, blender='', timeout=120):
     """Read a captured scene using a fresh, isolated, autoexec-disabled Blender."""
-    from .developer import snapshot_source, isolated_environment, digest_file
+    from ..developer import snapshot_source, isolated_environment, digest_file
     if not math.isfinite(timeout) or not 5 <= timeout <= 3600:
         raise ValueError('Scene inspection timeout must be between 5 and 3600 seconds')
     path = Path(path).expanduser().resolve()
@@ -156,7 +156,7 @@ def inspect_scene(path, *, blender='', timeout=120):
     executable = blender_executable(blender)
     with tempfile.TemporaryDirectory(prefix='blender-preset-') as temporary:
         root = Path(temporary)
-        identity = snapshot_source(Path(__file__).resolve().parent.parent, root / 'source')
+        identity = snapshot_source(Path(__file__).resolve().parents[2], root / 'source')
         # Freeze bytes before opening. The user's scene is never written by import.
         import shutil
         shutil.copyfile(path, root / 'edited.blend')
@@ -165,7 +165,7 @@ def inspect_scene(path, *, blender='', timeout=120):
                    'source_files': identity['files']}
         (root / 'request.json').write_text(json.dumps(request))
         command = [str(executable), '--background', '--factory-startup', '--disable-autoexec',
-                   '--python-exit-code', '1', '--python', str(root / 'source/blender_render/scene_capture.py'),
+                   '--python-exit-code', '1', '--python', str(root / 'source/blender_render/scene/capture.py'),
                    '--', str(root / 'request.json')]
         with (root / 'inspect.log').open('w') as log:
             process = subprocess.Popen(command, cwd=root, env=isolated_environment(root),
@@ -189,8 +189,8 @@ def inspect_scene(path, *, blender='', timeout=120):
 def save_from_blend(path, identifier, *, description='', catalog_dir=None, blender='',
                     camera_policy='preserve_input', replace=False, allow_partial=False,
                     report=None, timeout=120):
-    from .authoring import _local_path, save_preset
-    from .core import validate_style_document
+    from ..authoring import _local_path, save_preset
+    from ..core import validate_style_document
     catalog = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
     destination = _local_path(identifier, catalog)
     if destination.exists() and not replace:

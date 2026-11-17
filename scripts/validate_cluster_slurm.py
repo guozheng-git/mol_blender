@@ -39,7 +39,8 @@ def main():
     from blender_render.animation import unpack
     from blender_render.cluster.auth import add_user, revoke_user
     from blender_render.cluster.client import Client, RemoteError, configure, profile_path
-    from blender_render.cluster.common import TERMINAL, atomic_json, digest_file
+    from blender_render.cluster.jsonio import atomic_json, digest_file
+    from blender_render.cluster.protocol import is_terminal, stop_waiting
     from blender_render.cluster import doctor
     from blender_render.cluster.config import ServerConfig
     from blender_render.cluster.server import create_app
@@ -81,7 +82,7 @@ def main():
                 print(json.dumps({'job_id': identifier, 'slurm_id': status.get('slurm_id'),
                                   'status': status['status']}), flush=True)
                 previous = status['status']
-            if status['status'] in TERMINAL or status['status'] == 'submission_unknown':
+            if stop_waiting(status['status']):
                 return status
             if time.monotonic() >= deadline:
                 raise TimeoutError('Acceptance deadline reached for ' + identifier)
@@ -240,7 +241,7 @@ with pymol2.PyMOL() as p:
                 status = client.status(identifier)
                 if status['status'] == 'running':
                     break
-                assert status['status'] not in TERMINAL, status
+                assert not is_terminal(status['status']), status
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Cancellation probe did not start before its deadline')
                 time.sleep(3)
@@ -268,7 +269,7 @@ with pymol2.PyMOL() as p:
         cleanup_errors = []
         for path in config.spool.glob('*/job.json'):
             record = json.loads(path.read_text())
-            if record['status'] not in TERMINAL and record.get('slurm_id'):
+            if not is_terminal(record['status']) and record.get('slurm_id'):
                 try:
                     scheduler.cancel(record['slurm_id'])
                 except Exception as exc:

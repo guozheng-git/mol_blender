@@ -4,12 +4,57 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 import pytest
 
 from blender_render import authoring, core, developer
 from blender_render.presets import preset_path, required_capabilities
 from blender_render.spec import resolve_options, style_digest
+
+
+def test_cancellation_reaps_preview_process_group_and_cleans_snapshot(tmp_path):
+    from blender_render.errors import RenderCancelled
+
+    # Use the real snapshot/launcher with a harmless runner and child process.
+    # This detects killing only the caller instead of the isolated render group.
+    package = tmp_path / 'checkout/blender_render'
+    package.mkdir(parents=True)
+    (package / 'blender_custom_render.py').touch()
+    (package / 'developer.py').write_text('''
+import json, os, subprocess, sys, time
+from pathlib import Path
+config = json.loads(Path(sys.argv[2]).read_text())
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+Path(config['output'], 'pids.json').write_text(json.dumps(
+    {'runner': os.getpid(), 'child': child.pid, 'snapshot': config['root']}))
+child.wait()
+''')
+    bundle = tmp_path / 'bundle.json'
+    bundle.write_text('{}')
+    ccd = tmp_path / 'ccd'
+    ccd.touch()
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    output = tmp_path / 'output'
+    pids = output / 'pids.json'
+    started = time.monotonic()
+    def cancelled():
+        if time.monotonic() - started > 10:
+            raise TimeoutError('Probe runner did not start')
+        return pids.exists()
+
+    with pytest.raises(RenderCancelled):
+        developer.preview(checkout=package.parent, bundle=bundle, options={},
+                          catalog_dir=tmp_path, output=output, blender=Path(sys.executable),
+                          runtime_paths=[runtime], ccd=ccd, cancelled=cancelled)
+    observed = json.loads(pids.read_text())
+    assert not Path(observed['snapshot']).exists()
+    # The grandchild may briefly be a zombie before the OS reaps it. It must
+    # never remain running after the render API confirms cancellation.
+    for pid in (observed['runner'], observed['child']):
+        status = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True, text=True)
+        assert not status.stdout.strip() or status.stdout.strip().startswith('Z')
 
 
 @pytest.fixture

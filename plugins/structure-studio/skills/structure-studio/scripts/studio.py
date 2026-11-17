@@ -21,11 +21,13 @@ import artifact_files  # noqa: E402
 import scene as scenes  # noqa: E402
 import studio_env  # noqa: E402
 import structure_io  # noqa: E402
-import animation_recipes  # noqa: E402
+studio_env.use_bundled_helpers()
+from co_pymol.scene import animation as animation_recipes  # noqa: E402
+from render_defaults import ANIMATION, IMAGE  # noqa: E402
 
 PRESETS = HERE.parent / "references" / "presets.json"
-CPU_LONG_EDGE = 1280
-CPU_SAMPLES = 64
+CPU_LONG_EDGE = IMAGE["cpu"]["long_edge"]
+CPU_SAMPLES = IMAGE["cpu"]["samples"]
 
 
 def output_dir(explicit: str = "") -> Path:
@@ -43,7 +45,7 @@ def output_dir(explicit: str = "") -> Path:
 def unique(path: Path) -> Path:
     """The renderer never overwrites, so pick the next free name (also avoiding NAME.render/)."""
     candidate, n = path, 2
-    while candidate.exists() or candidate.with_suffix(".render").exists():
+    while any(candidate.with_suffix(s).exists() for s in (candidate.suffix, ".render", ".cluster.json", ".lab.json")):
         candidate = path.with_name(f"{path.stem}-{n}{path.suffix}")
         n += 1
     return candidate
@@ -155,7 +157,7 @@ def prepare_animation(args, source: Path, recipe: dict, staging: Path) -> tuple[
     # The helper fits the movie to the saved viewport; explicit sizes win.
     defaults = {k: summary[k] for k in ("width", "height") if getattr(args, k) is None}
     if args.samples is None and not args.full_quality:
-        defaults["samples"] = 32
+        defaults["samples"] = ANIMATION["preview"]["samples"]
     return bundle, overrides, summary, defaults
 
 
@@ -208,8 +210,11 @@ def _snapshot(directory: str) -> tuple[str, str]:
 
 def cmd_render(args):
     recipe = animation_template(args)
-    args.preset = args.preset or ("cyan_mint_cutaway" if recipe and recipe["recipe"] == "cutaway" else "mint_sky_assembly")
-    executable, env = studio_env.renderer_env()
+    args.preset = args.preset or (IMAGE["cutaway_preset"] if recipe and recipe["recipe"] == "cutaway" else IMAGE["preset"])
+    args.lab = args.lab_profile if args.lab else None
+    if args.lab and args.lab not in studio_env.cluster_profiles():
+        raise ValueError(lab_error("No cluster profile '" + args.lab + "'"))
+    executable, env = studio_env.cluster_env() if args.lab else studio_env.renderer_env()
     directory = output_dir(args.out_dir)
     name_hint = ""
     if args.workspace:
@@ -244,17 +249,30 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
             extra += ["--view", json.dumps(camera.get("structure_studio_view", camera))]
         if args.fit:
             extra.append("--fit")
+        if not recipe:
+            # Export in the same PyMOL run that saves the session; the renderer never reloads it.
+            extra += ["--bundle", str(staging / "bundle.json")]
         session = run_pymol_session([str(source), "-o", str(unique(directory / f"{source.stem}-{tag}.pse")), *extra])
         source = Path(session["session"])
     label = Path(args.style_json).stem if args.style_json else args.preset
     suffix = f"-{recipe['recipe']}" if recipe else ""
     output = unique(Path(args.output).expanduser() if args.output else directory / f"{source.stem}-{label}{suffix}.png")
     animation = None
+    lab = getattr(args, "lab", None)
+    render_input = Path(session["bundle"]) if session and session.get("bundle") else source
     if recipe:
-        source, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
+        render_input, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
     else:
-        adjusted = cpu_defaults(args)
-    command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
+        # The CPU caps protect this computer; a lab GPU gets the requested quality.
+        adjusted = {} if lab else cpu_defaults(args)
+    # One launcher for both backends: `blender-render job submit`.
+    command = ["submit", str(render_input), "-o", str(output), "--backend", "lab" if lab else "local"]
+    if lab:
+        command += ["--profile", lab] + (["--keep-connected"] if args.keep_connected else [])
+        if render_input.suffix.lower() != ".json":
+            command += ["--pymol-python", str(studio_env.pymol_python())]
+    else:
+        command += ["--timeout", str(args.timeout)]
     command += ["--style-json", args.style_json] if args.style_json else ["--preset", args.preset]
     if recipe:
         command += ["--overrides-json", str(overrides)]
@@ -273,14 +291,58 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
         command.append("--no-preserve-view")
     if args.animation:
         command += ["--animation", args.animation]
-    print(f"[structure-studio] Rendering {source.name} with {label}…", file=sys.stderr, flush=True)
     started = time.time()
-    result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
-    if result.returncode:
-        raise RuntimeError("Render failed:\n" + (result.stderr or result.stdout)[-4000:])
-    payload = json.loads(result.stdout)
-    payload.update(preset=label, seconds=round(time.time() - started, 1), cpu_adjustments=adjusted,
-                   input=str(Path(args.structure).expanduser().resolve()))
+    context = {"preset": label, "cpu_adjustments": adjusted, "input": str(Path(args.structure).expanduser().resolve()),
+               "session": session, "animation": animation, "output": str(output), "started": started,
+               "args": {k: getattr(args, k, "") for k in ("workspace", "url", "job", "label", "note", "scene", "view")}}
+    if lab:
+        print(f"[structure-studio] Submitting {source.name} with {label} to lab profile {lab}…", file=sys.stderr, flush=True)
+        return submit_lab(command, (executable, env), args, context)
+    print(f"[structure-studio] Rendering {source.name} with {label}…", file=sys.stderr, flush=True)
+    rendered = run_job(*command, runtime=(executable, env), timeout=args.timeout + 120, lab=False)
+    return finish_render(rendered, context)
+
+
+def submit_lab(command: list[str], runtime: tuple[Path, dict], args, context: dict) -> dict:
+    """Save Studio's workspace context, then submit; the job command connects once.
+
+    The .lab.json file only remembers what to do with the result (workspace, labels).
+    The run itself is identified by the renderer's receipt, like every other client's.
+    """
+    output = Path(context["output"]).resolve()
+    pending_path = output.with_suffix(".lab.json")
+    context.update(output=str(output), profile=args.lab, receipt=str(output.with_suffix(".cluster.json")))
+    pending = artifact_files.write_json(context, pending_path, exclusive=True)
+    try:
+        submitted = run_job(*command, runtime=runtime, timeout=args.timeout + 300)
+        context.update(receipt=submitted["receipt"], job_id=submitted.get("job_id"))
+        artifact_files.write_json(context, pending_path)
+    except (RuntimeError, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
+        if not Path(context["receipt"]).is_file():
+            pending_path.unlink(missing_ok=True)  # The client never reached its upload step.
+            raise
+        submitted = {"status": "submission_unknown", "connection": "unknown",
+                     "message": str(exc) + "\nDo not submit again; use lab-fetch to recover this request."}
+    return {**submitted, "status": submitted.get("status", "queued"),
+            "job_id": submitted.get("job_id"), "slurm_id": submitted.get("slurm_id"),
+            "receipt": context["receipt"], "pending_file": pending, "preset": context["preset"],
+            "connection": submitted.get("connection"), "next": [lab_fetch_command(pending)]}
+
+
+def lab_fetch_command(pending: str) -> str:
+    return shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", pending])
+
+
+def finish_render(payload: dict, context: dict) -> dict:
+    """Shared tail of local and lab renders: session, animation, device and workspace steps."""
+    output = Path(context["output"])
+    args = argparse.Namespace(**context["args"])
+    payload.update(preset=context["preset"], seconds=round(time.time() - context["started"], 1),
+                   cpu_adjustments=context["cpu_adjustments"], input=context["input"])
+    device = render_device(payload)
+    if device:
+        payload["device"] = device
+    session, animation = context.get("session"), context.get("animation")
     if session:
         payload["outputs"]["session.pse"] = session["session"]
     if animation:
@@ -291,6 +353,98 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
     result_file = artifact_files.write_json(payload, str(output.with_suffix(".result.json")))
     payload["result_file"] = result_file
     return payload
+
+
+def render_device(payload: dict) -> dict | None:
+    """What actually rendered it, from the renderer's manifest (never a guess)."""
+    manifest = payload.get("outputs", {}).get("manifest.json")
+    if not manifest or not Path(manifest).is_file():
+        return None
+    device = json.loads(Path(manifest).read_text()).get("cycles_device") or {}
+    where = "lab" if payload.get("job_id") else "this computer"
+    kind = device.get("device", "unknown")
+    detail = f" ({device['compute_type']})" if kind == "GPU" and device.get("compute_type") else ""
+    return {**device, "summary": f"Rendered on {where} {kind}{detail}"}
+
+
+def lab_error(text: str) -> str:
+    text = (text or "").strip()[-2000:]
+    if "First connection needs" in text:
+        return ("This computer has no saved lab connection yet. Ask the user for their SSH alias, login node, "
+                "controller path and site config, then run `studio.py lab connect`.\n" + text)
+    if "No cluster profile" in text:
+        return ("No lab connection on this computer. Connect first: python3 studio.py lab connect "
+                "(the same profile as `blender-render cluster connect` in a terminal).\n" + text)
+    if "Style JSON validation failed" in text or "HTTP 400" in text or "HTTP 422" in text:
+        return "The lab server rejected this render; this style may need a newer lab server.\n" + text
+    if "Cluster connection failed" in text or "Connection refused" in text:
+        return ("The lab server is not reachable (disconnected, or the tunnel closed). Reconnect with "
+                "`python3 studio.py lab connect`; queued jobs keep running and their receipts still fetch.\n" + text)
+    return "Lab submission failed:\n" + text
+
+
+def run_job(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None, lab: bool = True) -> dict:
+    """`blender-render job …`: the renderer's one launcher for local renders and every lab step.
+
+    Lab steps connect once with the saved profile and close only a tunnel they opened.
+    """
+    executable, env = runtime if runtime is not None else studio_env.cluster_env()
+    result = subprocess.run([str(executable), "job", *command], capture_output=True, text=True, env=env, timeout=timeout)
+    if result.returncode:
+        text = result.stderr or result.stdout
+        raise RuntimeError(lab_error(text) if lab else "Render failed:\n" + text[-4000:])
+    return json.loads(result.stdout)
+
+
+def run_cluster(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None) -> dict | list:
+    """`blender-render cluster …` passthrough for connection management (studio.py lab …)."""
+    executable, env = runtime if runtime is not None else studio_env.cluster_env()
+    result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=timeout)
+    if result.returncode:
+        raise RuntimeError(lab_error(result.stderr or result.stdout))
+    return json.loads(result.stdout) if result.stdout.strip() else {}
+
+
+def cmd_lab_pending(args):
+    """Lab renders submitted earlier from this folder that have not been fetched yet."""
+    directory = output_dir(args.out_dir)
+    pending = [str(p) for p in sorted(directory.rglob("*.lab.json")) if not p.with_name(p.name[:-len(".lab.json")] + ".result.json").exists()]
+    return {"pending": pending, "folder": str(directory),
+            "next": [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", p]) for p in pending]}
+
+
+# Polling again will not change these. "prepared": the upload never reached the gateway,
+# so no job exists and rendering again is safe (the message says so).
+FINISHED = {"failed", "cancelled", "expired", "prepared"}
+
+
+def cmd_lab_fetch(args):
+    """Check a queued lab render; when it has finished, download and verify it like a local render.
+
+    The job command waits, observes by receipt (never resubmitting) and fetches.
+    """
+    context = json.loads(Path(args.pending).expanduser().read_text())
+    command = ["fetch", context["receipt"], "--wait", str(max(0.0, args.wait)), "--interval", "15"]
+    fetched = run_job(*command, *(["--keep-connected"] if args.keep_connected else []),
+                      timeout=max(0.0, args.wait) + 900)
+    if "outputs" in fetched:
+        return {**finish_render(fetched, context), "connection": fetched.get("connection")}
+    state = fetched.get("status")
+    # A Slurm submission the gateway could not confirm may still be reconciled: check again later.
+    return {"status": state, "job_id": fetched.get("job_id"), "slurm_id": fetched.get("slurm_id"),
+            "error": (fetched.get("error") or fetched.get("message")) if state in FINISHED else None,
+            "message": fetched.get("message"), "connection": fetched.get("connection"),
+            "next": [] if state in FINISHED else [lab_fetch_command(args.pending)]}
+
+
+def cmd_lab(args):
+    """Run `blender-render cluster ARGS` with the terminal's shared lab profiles."""
+    command = list(args.cluster_args)
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        return {"profiles": studio_env.cluster_profiles(), "folder": str(studio_env.shared_cluster_home() / "clusters")}
+    return run_cluster(*command)
 
 
 def _workspace_steps(args, payload: dict, output: Path) -> dict:
@@ -313,7 +467,7 @@ def _workspace_steps(args, payload: dict, output: Path) -> dict:
     session_ids = " ".join(f"<id of {Path(p).name}>" for p in (session or {}).get("parts", []))
     steps = [f"Artifact publish url={url} asset=true file_paths=[\"{payload['outputs']['render.png']}\"]"]
     steps += [f"Artifact publish url={url} asset=true file_path=\"{part}\"" for part in (session or {}).get("parts", [])]
-    steps.append(f"python3 {Path(__file__).resolve()} record {result_file} --image <id of the PNG>"
+    steps.append(f"python3 {shlex.quote(str(Path(__file__).resolve()))} record {shlex.quote(result_file)} --image <id of the PNG>"
                  + (f" --session {session_ids}" if session else "")
                  + (f" --label {shlex.quote(args.label)}" if args.label else "") + f" -o {record_file}")
     steps.append(f"ArtifactData set url={url} collection=renders doc_id={job} file_path={record_file} if_version=<placeholder version>")
@@ -544,7 +698,7 @@ def parser():
 
     s = sub.add_parser("render", help="Render with Blender + Molecular Nodes using a preset")
     s.add_argument("structure", help=".cif/.pdb (optionally .gz) or a .pse session")
-    s.add_argument("--preset", help="Default: mint_sky_assembly; cyan_mint_cutaway for the cutaway recipe")
+    s.add_argument("--preset", help=f"Default: {IMAGE['preset']}; {IMAGE['cutaway_preset']} for the cutaway recipe")
     s.add_argument("--style-json", default="")
     s.add_argument("-o", "--output", default="")
     s.add_argument("--out-dir", default="")
@@ -574,6 +728,19 @@ def parser():
     s.add_argument("--fps", type=int)
     s.add_argument("--rock-angle", type=float)
     s.add_argument("--timeout", type=float, default=900)
+    s.add_argument("--lab", action="store_true",
+                   help="Submit to the lab GPU server instead of rendering here; returns queued, fetch with lab-fetch")
+    s.add_argument("--lab-profile", default="lab", help="Cluster profile for --lab (shared with the terminal)")
+    s.add_argument("--keep-connected", action="store_true", help="With --lab: leave the tunnel and gateway open after submitting")
+
+    s = sub.add_parser("lab", help="Run `blender-render cluster ...` with the terminal's shared lab profiles (connect, disconnect, connection, list, status, cancel …)")
+    s.add_argument("cluster_args", nargs=argparse.REMAINDER)
+    s = sub.add_parser("lab-fetch", help="Check a queued lab render and, when finished, download and verify it")
+    s.add_argument("pending", help="The .lab.json file printed by `render --lab`")
+    s.add_argument("--wait", type=float, default=0, help="Seconds to keep checking before returning (polls every 15 s)")
+    s.add_argument("--keep-connected", action="store_true", help="Leave the tunnel and gateway open afterwards")
+    s = sub.add_parser("lab-pending", help="List lab renders submitted from this folder that have not been fetched")
+    s.add_argument("--out-dir", default="")
 
     s = sub.add_parser("workspace", help="Prepare a live workspace artifact for one structure or PyMOL session")
     s.add_argument("structure", help=".cif/.pdb (optionally .gz) or a .pse session (needs `setup --only pymol`)")
@@ -654,7 +821,7 @@ def main(argv=None):
         parser().error("unrecognized arguments: " + " ".join(extra))
     handlers = {"setup": cmd_setup, "doctor": lambda a: studio_env.doctor(), "fetch": cmd_fetch, "info": cmd_info,
                 "presets": cmd_presets, "recipes": cmd_recipes, "render": cmd_render, "viewer": cmd_viewer, "workspace": cmd_workspace,
-                "meta": cmd_meta, "scene": cmd_scene, "restore": cmd_restore, "unpack": cmd_unpack, "record": cmd_record,
+                "meta": cmd_meta, "scene": cmd_scene, "restore": cmd_restore, "unpack": cmd_unpack, "record": cmd_record, "lab": cmd_lab, "lab-fetch": cmd_lab_fetch, "lab-pending": cmd_lab_pending,
                 "session": lambda a: cmd_session(a, extra)}
     try:
         result = handlers[args.command](args)

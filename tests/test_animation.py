@@ -41,6 +41,30 @@ def test_invalid_before_dispatch(options):
         resolve_options(options, {})
 
 
+@pytest.mark.parametrize('mode', ['rock', 'path'])
+def test_ten_gib_decoded_frame_budget(mode):
+    view = [1., 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, -20]
+    config = ({'mode': 'rock', 'fps': 16, 'duration': 8} if mode == 'rock'
+              else {'mode': 'path', 'fps': 16, 'path': [view] * 128})
+    # 128 frames at 5120 x 4096 are exactly 10 GiB decoded, in both modes.
+    assert animation.normalize(config, {'width': 5120, 'height': 4096})
+    with pytest.raises(ValueError, match='10 GiB'):
+        animation.normalize(config, {'width': 5120, 'height': 4097})
+
+
+def test_full_size_cutaway_passes_before_dispatch():
+    view = [1., 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, -20]
+    result = resolve_options({'preset': 'cyan_mint_cutaway', 'overrides': {'output': {
+        'width': 1280, 'height': 1115, 'animation': {
+            'mode': 'path', 'fps': 24, 'path': [view] * 276,
+            'anchor': 168, 'lid': [1.] * 168 + [0.] * 108,
+        },
+    }}}, {})
+    output = result['style_doc']['output']
+    assert (output['width'], output['height']) == (1280, 1115)
+    assert output['animation']['duration'] == 11.5
+
+
 @pytest.mark.parametrize('preset', [p['id'] for p in __import__('blender_render.presets', fromlist=['catalog']).catalog()])
 def test_every_preset_resolves_animation(preset):
     result = resolve_options({'preset':preset,'animation':'360','duration':1,'fps':4,'width':320,'height':240}, {})
@@ -99,6 +123,27 @@ def test_real_export_transparency_and_later_gif(archive,tmp_path):
     animation.encode(frames,dict(fps=4,frames=4),tmp_path/'white.gif')
     with Image.open(tmp_path/'white.gif') as im: assert im.convert('RGB').getpixel((0,0))==(255,255,255)
     animation.encode(frames,dict(fps=4,frames=4),tmp_path/'odd.mp4')
+
+
+@pytest.mark.skipif(sys.platform != 'darwin' or not shutil.which('swift') or not shutil.which('ffmpeg'),
+                    reason='Needs the native macOS decoder and FFmpeg')
+def test_mp4_colours_in_native_macos_decoder(tmp_path):
+    from PIL import Image
+    colours = [(0, 0, 0), (50, 137, 185), (44, 184, 128), (250, 18, 166)]
+    frames = tmp_path / 'colour-patches'
+    frames.mkdir()
+    for index, colour in enumerate(colours):
+        Image.new('RGB', (64, 48), colour).save(frames / f'{index:04d}.png')
+    output = tmp_path / 'colours.mp4'
+    animation.encode(frames, dict(fps=4, frames=4), output)
+    result = subprocess.check_output(['swift', '-suppress-warnings',
+                                      str(Path(__file__).with_name('native_video_colours.swift')),
+                                      str(output)], text=True, timeout=60)
+    decoded = json.loads(result)
+    assert len(decoded) == len(colours)
+    # Allow normal YUV quantization, but catch wrong colour matrices/channels.
+    assert max(abs(a - b) for actual, expected in zip(decoded, colours)
+               for a, b in zip(actual, expected)) <= 8
 
 
 @pytest.mark.parametrize('cancel', [True, False])

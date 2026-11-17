@@ -16,7 +16,7 @@ if __package__ in (None, ''):
 
 def blender_main(request):
     import bpy
-    from blender_render import scene_capture as capture
+    from blender_render.scene import capture
     from blender_render.editor_controls import metadata
     from blender_render.developer import source_files
     from blender_render.cycles_device import _configure_cycles_gpu_for_custom

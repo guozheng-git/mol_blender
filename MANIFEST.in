@@ -1,4 +1,6 @@
 include LICENSE THIRD_PARTY_NOTICES.md AGENTS.md CLAUDE.md
+include render_defaults.yaml
+recursive-include blender_render *.html
 recursive-include LICENSES *.txt
 recursive-include docs *.md *.json
 recursive-include examples *.cif *.json *.png *.pse *.py

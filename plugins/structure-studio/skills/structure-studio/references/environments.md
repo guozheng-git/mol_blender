@@ -28,7 +28,7 @@ Versions are pinned to the renderer's `runtime.lock.json`. The renderer verifies
 
 ## claude.ai
 
-A fresh sandbox may lack a runtime. Run `setup` only after the user authorizes installation; inspecting or viewing structures must not trigger it. The viewer needs no setup. Long commands can hit the tool's time limit, so run renders in the background and poll if needed. Present deliverables from `/mnt/user-data/outputs`.
+A fresh sandbox may lack a runtime. A request to render, animate or make a PyMOL session authorizes installing what it needs (`setup --background`); inspecting or viewing structures must not trigger it. After a plugin update the next render replaces only the renderer wheel, offline, when its build identity differs from the installed one; if the update also changed pinned dependencies it stops and asks for `setup --background`. The viewer needs no setup. Long commands can hit the tool's time limit, so run renders in the background and poll if needed. Present deliverables from `/mnt/user-data/outputs`.
 
 ## Claude Code
 

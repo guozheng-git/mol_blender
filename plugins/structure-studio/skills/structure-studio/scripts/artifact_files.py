@@ -11,11 +11,13 @@ import base64
 import gzip
 import hashlib
 import json
+import os
 import re
 import struct
 import time
 import zlib
 from pathlib import Path, PureWindowsPath
+from tempfile import mkstemp
 
 PART_CHARS = 15 * 1024 * 1024
 ENCODING = "gzip+base64"
@@ -273,11 +275,25 @@ def record(render: dict, assets: dict, *, label: str = "", note: str = "", scene
         doc["camera"] = camera
     if render.get("animation"):
         doc["animation"] = render["animation"]
+    if render.get("device"):
+        doc["device"] = render["device"]
     return doc
 
 
-def write_json(data: dict, path: str) -> str:
+def write_json(data: dict, path: str | Path, *, exclusive: bool = False) -> str:
+    """Publish durable JSON atomically, optionally reserving a new filename."""
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(data, indent=2))
+    fd, temporary = mkstemp(prefix=".json-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, allow_nan=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if exclusive:
+            os.link(temporary, target)
+        else:
+            os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return str(target.resolve())

@@ -1,6 +1,6 @@
 """Camera, DSS, and color export contracts without starting a UI."""
 import pytest
-from blender_render.export import build_render_payload, _collect_color_hints, _collect_secondary_structure_hints
+from blender_render.scene.export import build_render_payload, _collect_color_hints, _collect_secondary_structure_hints
 
 
 class Scene:
@@ -59,7 +59,7 @@ def test_empty_cif_uses_explicit_pdb_fallback():
 
 @pytest.mark.parametrize('fail', [False, True])
 def test_modified_residue_dss_restores_identity_even_on_failure(fail):
-    from blender_render.export import _run_dss_assignment
+    from blender_render.scene.export import _run_dss_assignment
     class Modified:
         atoms = [dict(model='one',index=1,resn='PTR'),dict(model='two',index=1,resn='SEP'),dict(model='two',index=2,resn='TPO')]
         def iterate(self, selection, expression, space):
@@ -76,7 +76,7 @@ def test_modified_residue_dss_restores_identity_even_on_failure(fail):
 
 
 def test_polar_contacts_are_deduplicated_and_interchain_only():
-    from blender_render.export import _collect_polar_contacts
+    from blender_render.scene.export import _collect_polar_contacts
     class Contacts:
         def count_atoms(self, selection): return 1
         def iterate(self, selection, expression, space):

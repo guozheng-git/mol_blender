@@ -174,11 +174,12 @@ def _looks_like_pdb_atoms(text: str) -> bool:
 
 def _state_coordinate_errors(states: Any) -> list[str]:
     """Per-state coordinates for state animations; shape only, order is checked in Blender."""
+    from blender_render.defaults import MAX_FRAMES
     if not isinstance(states, dict) or set(states) != {"base", "coordinates"}:
         return ["'state_coordinates' must contain exactly 'base' and 'coordinates'."]
     coordinates = states["coordinates"]
-    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= 360:
-        return ["'state_coordinates.coordinates' must list 2 to 360 states."]
+    if not isinstance(coordinates, list) or not 2 <= len(coordinates) <= MAX_FRAMES:
+        return [f"'state_coordinates.coordinates' must list 2 to {MAX_FRAMES} states."]
     if type(states["base"]) is not int or not 1 <= states["base"] <= len(coordinates):
         return ["'state_coordinates.base' must number one of the listed states."]
     length = len(coordinates[0]) if isinstance(coordinates[0], list) else 0
@@ -190,6 +191,15 @@ def _state_coordinate_errors(states: Any) -> list[str]:
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
             return [f"State {index} coordinates must be finite numbers."]
     return []
+
+
+#: Top-level fields of an exported structure payload. The cluster rejects anything else,
+#: so a request can never carry sessions, paths or scripts.
+PAYLOAD_KEYS = frozenset({
+    "version", "generated_at_utc", "selection", "state", "run_id", "structure_summary",
+    "view", "dss", "ss_hints", "cif_text", "pdb_text", "color_hints", "provenance",
+    "state_coordinates", "polar_contacts",
+})
 
 
 def validate_payload_document(payload: dict[str, Any]) -> dict[str, Any]:
@@ -637,6 +647,8 @@ def _extract_gpu_info(stdout: str, stderr: str) -> list[str]:
 
 
 def _apply_rough_style_overrides(style_doc: dict[str, Any]) -> dict[str, Any]:
+    from blender_render.defaults import IMAGE
+    quality = IMAGE["rough"]
     rough_doc = json.loads(json.dumps(style_doc))
     output = rough_doc.get("output")
     if not isinstance(output, dict):
@@ -658,9 +670,9 @@ def _apply_rough_style_overrides(style_doc: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         samples_i = 128
 
-    output["width"] = max(320, width_i // 2)
-    output["height"] = max(240, height_i // 2)
-    output["samples"] = max(8, min(32, max(1, samples_i // 2)))
+    output["width"] = max(quality["min_width"], width_i // quality["scale"])
+    output["height"] = max(quality["min_height"], height_i // quality["scale"])
+    output["samples"] = max(quality["min_samples"], min(quality["max_samples"], max(1, samples_i // quality["scale"])))
     rough_doc["output"] = output
     return rough_doc
 
