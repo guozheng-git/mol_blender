@@ -10,7 +10,10 @@ import platform
 from contextlib import contextmanager
 import tempfile
 
-from .common import ARTIFACTS, Limits, atomic_json, digest_file, read_json, validate_request
+from .config import Limits
+from .jsonio import atomic_json, digest_file, read_json
+from .. import outputs
+from .protocol import JobStatus, validate_request
 
 
 @contextmanager
@@ -39,9 +42,9 @@ def run(directory):
         fcntl.flock(lock, fcntl.LOCK_EX)
         if (directory / 'result.json').exists() or (directory / 'cancel.requested').exists():
             return 0
-        receipt = {'status': 'failed', 'finished_at': time.time()}
+        receipt = {'status': JobStatus.FAILED, 'finished_at': time.time()}
         try:
-            envelope = read_json(directory / 'request.json', 20 * 1024**2 + 64 * 1024)
+            envelope = read_json(directory / 'request.json', Limits().max_request_bytes + 64 * 1024)
             limits = Limits(**envelope['limits'])
             identity = generate_manifest(Path(__file__).resolve().parents[1])['engine_build']
             if identity != envelope['engine_build']:
@@ -61,7 +64,7 @@ def run(directory):
             artifacts = {}
             for name, filename in result['outputs'].items():
                 path = Path(filename).resolve()
-                if name not in ARTIFACTS or not path.is_relative_to(directory / 'out') or not path.is_file():
+                if name not in outputs.NAMES or not path.is_relative_to(directory / 'out') or not path.is_file():
                     raise ValueError('Invalid render artifact')
                 size = path.stat().st_size
                 if not 0 < size <= limits.max_artifact_bytes:
@@ -70,7 +73,7 @@ def run(directory):
                                    'sha256': digest_file(path)}
             if 'render.png' not in artifacts:
                 raise ValueError('Renderer returned no PNG')
-            receipt = {'status': 'completed', 'finished_at': time.time(), 'engine_build': identity,
+            receipt = {'status': JobStatus.COMPLETED, 'finished_at': time.time(), 'engine_build': identity,
                        'artifacts': artifacts}
         except Exception:
             (directory / 'worker-error.log').write_text(traceback.format_exc())
@@ -78,7 +81,7 @@ def run(directory):
         finally:
             (directory / 'request.json').unlink(missing_ok=True)
             atomic_json(directory / 'result.json', receipt)
-        return 0 if receipt['status'] == 'completed' else 1
+        return 0 if receipt['status'] == JobStatus.COMPLETED else 1
 
 
 def main():

@@ -9,7 +9,7 @@ _PACKAGE_ROOT = str(Path(globals().get("__script__", __file__)).resolve().parent
 if _PACKAGE_ROOT not in sys.path:
     sys.path.insert(0, _PACKAGE_ROOT)
 from blender_render.presets import DEFAULT_PRESET
-from blender_render.export import build_render_payload, _normalize_cli_string, _parse_bool
+from blender_render.scene.export import build_render_payload, _normalize_cli_string, _parse_bool
 
 
 def try_load_preview(cmd_obj, output_png):

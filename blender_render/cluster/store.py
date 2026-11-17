@@ -8,7 +8,9 @@ import shutil
 import subprocess
 import time
 
-from .common import ARTIFACTS, TERMINAL, atomic_json, job_id, json_bytes, read_json, validate_request
+from .jsonio import atomic_json, json_bytes, read_json
+from .. import outputs
+from .protocol import JobStatus, is_terminal, job_id, validate_request
 from .slurm import SubmissionUnknown
 
 
@@ -61,15 +63,15 @@ class Store:
 
     def refresh(self, record):
         directory = self.directory(record['job_id'])
-        if record['status'] in TERMINAL:
+        if is_terminal(record['status']):
             return record
-        if record['status'] == 'submitting':
-            record['status'] = 'submission_unknown'
+        if record['status'] == JobStatus.SUBMITTING:
+            record['status'] = JobStatus.SUBMISSION_UNKNOWN
             self.save(record)
         result = directory / 'result.json'
-        if result.is_file() and record['status'] != 'cancelling':
+        if result.is_file() and record['status'] != JobStatus.CANCELLING:
             data = read_json(result, 64 * 1024)
-            if data['status'] in ('completed', 'failed'):
+            if data['status'] in (JobStatus.COMPLETED, JobStatus.FAILED):
                 record.update(status=data['status'], finished_at=data['finished_at'])
                 self.save(record)
                 return record
@@ -80,33 +82,33 @@ class Store:
                 return record  # A scheduler outage is not a job failure.
             failed = {'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY', 'NODE_FAIL', 'BOOT_FAIL',
                       'DEADLINE', 'PREEMPTED', 'REVOKED', 'SPECIAL_EXIT'}
-            if state == 'COMPLETED' and record['status'] != 'cancelling':
+            if state == 'COMPLETED' and record['status'] != JobStatus.CANCELLING:
                 # Shared filesystems may expose the worker receipt after Slurm's
                 # accounting update. Allow metadata propagation before failing.
                 record.setdefault('completion_seen_at', time.time())
                 if time.time() - record['completion_seen_at'] < 60:
-                    record['status'] = 'finalizing'
+                    record['status'] = JobStatus.FINALIZING
                     self.save(record)
                     return record
             if state in failed or state == 'CANCELLED' or state == 'COMPLETED':
-                status = 'cancelled' if state == 'CANCELLED' or record['status'] == 'cancelling' else 'failed'
+                status = JobStatus.CANCELLED if state == 'CANCELLED' or record['status'] == JobStatus.CANCELLING else JobStatus.FAILED
                 # Slurm completion without the worker's verified result is not success.
                 record.update(status=status, finished_at=time.time(), scheduler_state=state)
-            elif state in {'RUNNING', 'COMPLETING'} and record['status'] != 'cancelling':
-                record['status'] = 'running'
+            elif state in {'RUNNING', 'COMPLETING'} and record['status'] != JobStatus.CANCELLING:
+                record['status'] = JobStatus.RUNNING
             self.save(record)
         return record
 
     def public(self, record):
         result = {key: record[key] for key in ('job_id', 'status', 'created_at', 'slurm_id', 'finished_at') if key in record}
         result['engine_build'] = record['engine_build']
-        if record['status'] == 'completed':
+        if record['status'] == JobStatus.COMPLETED:
             receipt = read_json(self.directory(record['job_id']) / 'result.json', 64 * 1024)
             result['artifacts'] = {name: {k: item[k] for k in ('bytes', 'sha256')}
                                    for name, item in receipt['artifacts'].items()}
-        if record['status'] == 'submission_unknown':
+        if record['status'] == JobStatus.SUBMISSION_UNKNOWN:
             result['message'] = 'Submission outcome unknown. Contact the administrator; do not submit again.'
-        if record['status'] == 'failed':
+        if record['status'] == JobStatus.FAILED:
             result['message'] = 'Render failed. The administrator can inspect the private job log.'
         return result
 
@@ -123,31 +125,31 @@ class Store:
                 return self.public(self.refresh(record))
             records = [self.refresh(read_json(p, 64 * 1024)) for p in self.root.glob('*/job.json')]
             limits = self.config.limits
-            active = [r for r in records if r['status'] not in TERMINAL]
+            active = [r for r in records if not is_terminal(r['status'])]
             if (len(active) >= limits.max_active_total or
                     sum(r['owner'] == owner for r in active) >= limits.max_active_per_user or
-                    sum(r['owner'] == owner and r['status'] != 'expired' for r in records) >= limits.max_retained_per_user):
+                    sum(r['owner'] == owner and r['status'] != JobStatus.EXPIRED for r in records) >= limits.max_retained_per_user):
                 raise Quota('Job quota reached; wait for completion or delete retained jobs')
             used = sum(p.stat().st_size for p in self.root.rglob('*') if p.is_file() and not p.is_symlink())
             if used + len(json_bytes(document)) > limits.max_spool_bytes:
                 raise Quota('Server storage quota reached')
             directory.mkdir(mode=0o700)
             record = {'job_id': identifier, 'owner': owner, 'request_sha256': digest,
-                      'status': 'submitting', 'created_at': time.time(), 'engine_build': self.engine_build}
+                      'status': JobStatus.SUBMITTING, 'created_at': time.time(), 'engine_build': self.engine_build}
             self.save(record)  # Persist before sbatch: a crash must never cause duplicate work.
             atomic_json(directory / 'request.json', {'request': document,
                 'limits': vars(limits), 'engine_build': self.engine_build,
                 'execution': {'gpus': self.config.gpus}})
             try:
-                record.update(slurm_id=self.scheduler.submit(directory, identifier), status='queued')
+                record.update(slurm_id=self.scheduler.submit(directory, identifier), status=JobStatus.QUEUED)
             except SubmissionUnknown:
-                record['status'] = 'submission_unknown'
+                record['status'] = JobStatus.SUBMISSION_UNKNOWN
             except (OSError, subprocess.SubprocessError) as exc:
                 atomic_json(directory / 'submission-error.json', {
                     'type': type(exc).__name__, 'message': str(exc)[-4000:],
                     'stdout': str(getattr(exc, 'stdout', '') or '')[-4000:],
                     'stderr': str(getattr(exc, 'stderr', '') or '')[-4000:]})
-                record.update(status='failed', finished_at=time.time())
+                record.update(status=JobStatus.FAILED, finished_at=time.time())
             self.save(record)
             return self.public(record)
 
@@ -155,8 +157,8 @@ class Store:
         with self.locked():
             record = self.owned(owner, identifier)
             # A gateway crash during sbatch is ambiguous, never a license to resubmit.
-            if record['status'] == 'submitting':
-                record['status'] = 'submission_unknown'
+            if record['status'] == JobStatus.SUBMITTING:
+                record['status'] = JobStatus.SUBMISSION_UNKNOWN
                 self.save(record)
             return self.public(self.refresh(record))
 
@@ -170,7 +172,7 @@ class Store:
     def open_artifact(self, owner, identifier, name):
         with self.locked():
             record = self.refresh(self.owned(owner, identifier))
-            if record['status'] != 'completed' or name not in ARTIFACTS:
+            if record['status'] != JobStatus.COMPLETED or name not in outputs.NAMES:
                 raise NotFound('Artifact not found')
             directory = self.directory(identifier)
             receipt = read_json(directory / 'result.json', 64 * 1024)
@@ -189,12 +191,12 @@ class Store:
     def cancel(self, owner, identifier):
         with self.locked():
             record = self.refresh(self.owned(owner, identifier))
-            if record['status'] not in TERMINAL:
+            if not is_terminal(record['status']):
                 if not record.get('slurm_id'):
                     raise Conflict('Unknown submission needs administrator reconciliation before cancellation')
                 self.scheduler.cancel(record['slurm_id'])
                 (self.directory(identifier) / 'cancel.requested').touch(mode=0o600)
-                record['status'] = 'cancelling'
+                record['status'] = JobStatus.CANCELLING
                 self.save(record)
             return self.public(record)
 
@@ -208,13 +210,13 @@ class Store:
             else:
                 path.unlink()
         # Retain only an ownership/idempotency tombstone, never structure data.
-        record['status'] = 'expired'
+        record['status'] = JobStatus.EXPIRED
         self.save(record)
 
     def delete(self, owner, identifier):
         with self.locked():
             record = self.refresh(self.owned(owner, identifier))
-            if record['status'] not in TERMINAL:
+            if not is_terminal(record['status']):
                 raise Conflict('Cancel and wait for a terminal state before deletion')
             self.expire(record)
             return self.public(record)
@@ -223,17 +225,17 @@ class Store:
         with self.locked():
             for path in self.root.glob('*/job.json'):
                 record = self.refresh(read_json(path, 64 * 1024))
-                if (record['status'] in TERMINAL - {'expired'} and
+                if (is_terminal(record['status']) and record['status'] != JobStatus.EXPIRED and
                     time.time() - record['finished_at'] > self.config.limits.retention_seconds):
                     self.expire(record)
 
     def reconcile(self, identifier):
         with self.locked():
             record = read_json(self.directory(identifier) / 'job.json', 64 * 1024)
-            if record['status'] not in {'submitting', 'submission_unknown'}:
+            if record['status'] not in {JobStatus.SUBMITTING, JobStatus.SUBMISSION_UNKNOWN}:
                 return self.public(self.refresh(record))
             found = self.scheduler.find_submission(identifier, record['created_at'])
             if found:
-                record.update(slurm_id=found, status='queued')
+                record.update(slurm_id=found, status=JobStatus.QUEUED)
                 self.save(record)
             return self.public(self.refresh(record))

@@ -54,7 +54,7 @@ def main():
     config_home.mkdir(mode=0o700)
     (config_home / 'config.json').write_text(json.dumps(runtime))
     os.environ['BLENDER_RENDER_HOME'] = str(config_home)
-    from blender_render.cluster.common import atomic_json, digest_file
+    from blender_render.cluster.jsonio import atomic_json, digest_file
     from blender_render.cluster.config import ServerConfig
     from blender_render.cluster.auth import add_user
     from blender_render.cluster.client import Client, configure

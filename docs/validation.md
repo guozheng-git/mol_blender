@@ -1198,3 +1198,1042 @@ tests; no new Slurm/Apptainer run or service deployment was performed. All rende
 ran in background processes without opening another desktop Blender window.
 Local manifests, resolved styles, reference decisions and audit results are kept
 in ignored renders/style-onboarding/northern_nights artifacts.
+
+## Fresh Structure Studio installation (2026-11-05)
+
+Cloned GitHub into a separate directory. The default branch was `main` at
+`1690762888aff97cb3020348ce7befc9a6363da9`, with neither the Claude marketplace
+nor Structure Studio. Switched that new clone to remote `main_merged` at
+`a83fedf34996ef40d2337d7702fbfa04d22197e1`, built both ZIPs and the wheel using
+`build_release.py`, and passed `verify_release.py`.
+
+Tested on Apple Silicon macOS with separate Claude configuration directories,
+Python installations, virtual environments, renderer configuration and empty uv
+caches. Existing Git, system Python, Claude Code and FFmpeg were prerequisites;
+this was not a pristine OS or Linux/claude.ai sandbox test. Existing uv 0.8.22
+could not download pinned Python 3.11.15. An isolated uv 0.13.7 installation
+resolved that prerequisite without updating the user's uv or shell profile.
+
+- Claude Code accepted the source marketplace install, but its installed plugin
+  lacked the renderer wheel. Its wheel lookup failed with the instruction to use
+  a staged release package. Registration alone does not establish render readiness.
+- Extracted the newly built plugin ZIP and registered it through a temporary
+  local marketplace in another empty Claude configuration. Manifest validation
+  passed with missing-description/author warnings. No model invocation was used.
+- Fetched public 1STP. Workspace generation from the bundled public CIF worked
+  before setup and created no runtime. Explicit managed setup then installed
+  Python 3.11.15, PyMOL and bpy in **141.74 s**. Doctor reported both ready.
+- Installed engine identity matched the release manifest; all **17 presets**,
+  including Northern Nights, and **six recipes** were present. No external
+  renderer or existing development runtime was configured.
+- Rendered the downloaded 1STP through the installed plugin with a workspace
+  snapshot: a **384×288, 8-sample** default still took **242.18 s**, and a
+  **320×240, 8-sample**, 16-frame cutaway took **53.13 s**. Both manifests report
+  Apple M3 Metal GPU execution. These are first-run observations, not benchmarks.
+- MP4 decoded completely: 16 frames, 2 seconds. GIF decoded with 16 frames and
+  infinite looping; its duration was 2.01 seconds. An initial exact-2-second GIF
+  assertion failed; the follow-up records and permits the 10 ms timing difference.
+- Restored PSE, Blender scene, MP4, GIF, frame archive and recipe with matching
+  hashes. Reopened PSE in the fresh PyMOL environment and the Blender scene in
+  fresh bpy with embedded scripts disabled. Inspected the mint still and closed/
+  opened cutaway frames; these are small execution previews, not final demo art.
+
+Evidence and packages are retained in the separate fresh-install artifact folder,
+including `fresh-install-evidence.json` and per-step logs. The source clone and
+existing user runtimes were not modified. Live Claude Artifact publication,
+in-chat operation, persistence and cross-chat reopening remain untested. Nothing
+was pushed, published or deployed.
+
+## Cluster onboarding discovery and live preflight (2026-11-06)
+
+Inspected `main_merged` at `a83fedf`, including the PR #6 merge (`982faf1`).
+The cluster client, server and job tests passed: **87 passed**, one existing
+Starlette TestClient deprecation warning, **3.39 s**. CLI help for cluster
+administration, doctor and the real acceptance script also ran successfully.
+
+Connected to the existing authorized Linux x86_64 cluster and found the retained
+onboarding installation from `493eb39`. Its configured private Apptainer is
+**1.5.4**, Python is **3.11.15**, and the current Slurm client reports **25.11.8**.
+The system `singularity` is SingularityCE **4.4.2**; the successful checks used
+the explicitly configured Apptainer, not that system alternative.
+
+Fresh `cluster doctor` runs using that installation passed for CPU,
+`--gres=gpu:1`, and `--gpus=a100:1`, with no warnings (**1.87 s**, **1.93 s**,
+and **1.83 s**, respectively). Each checked the SIF checksum, gateway/container
+identity, Python compatibility and actual Slurm dry run. An exploratory GPU dry
+run with an explicit GPU partition was rejected by the site's submission policy;
+the retained configurations correctly omit the partition and let the site select
+it from the GPU request. No launcher change was needed.
+
+Read the retained November 3 `evidence.json` files: CPU, generic-GPU and typed-GPU
+acceptance all record `passed: true`. They record CPU, **NVIDIA H200 NVL/CUDA**
+and **NVIDIA A100 80GB PCIe/CUDA**, respectively, for both still and rocking
+renders, with saved Blender scenes reopened and compute-node Apptainer **1.5.4**.
+These are historical acceptance results inspected today, not new render runs.
+
+The retained gateway/image pair has engine identity
+`3dc2a7a49f30115c4ac9b23c003d009b96f63d10ae1c87eb3fb9ca295ffc6af2`
+and SIF SHA-256
+`a12a1ff7254dcb0b2b54edaf8e536bb4b1793e9e8ccfc5fd6c72e4ff458c3e73`.
+Current `main_merged` has engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+The fresh preflight therefore establishes readiness of the retained installation,
+not full acceptance of the current renderer. Testing the current revision requires
+a matching gateway and worker release followed by new CPU/GPU acceptance outputs.
+
+Onboarding is currently a repository skill plus CLI workflow. The stdio MCP and
+Structure Studio command parser expose no cluster onboarding command, and the
+plugin packaging script does not include the repository onboarding skill,
+server templates or acceptance script. The two local Structure Studio ZIPs also
+lack these onboarding resources. No new render allocation, persistent service,
+deployment or publication was made during this check. Private cluster connection
+details remain outside version control.
+
+## Current main_merged cluster acceptance (2026-11-06)
+
+Built a fresh release from a clean detached checkout of **`a83fedf`**, preserving
+the working branch and its existing documentation edits. `verify_release.py`
+verified the wheel and both Structure Studio ZIPs against that revision. Installed
+the wheel into a new pinned Linux controller environment outside the checkout;
+**87 cluster tests passed in 8.31 s**, with one existing Starlette TestClient
+deprecation warning.
+
+Verified the existing base SIF's recorded SHA-256 and confirmed unchanged runtime
+contracts and dependency locks before using `Apptainer-update.def`. The update
+installed only the new application wheel offline. Linux environments and the
+reused managed Python remained at their original absolute paths. No Mac runtime
+was copied and no render job installed dependencies. The two-CPU image build ran
+in a real Slurm allocation and completed in **1:46**. The site's debug QoS permits
+only two CPUs per user; an initial four-CPU build allocation was cancelled before
+the image build, and the corrected submission respected that limit. Site-specific
+render settings stayed in private server configurations; no renderer or launcher
+source changes were required.
+
+The new gateway and worker both report engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+The updated SIF SHA-256 is
+`933141132d10e16877a2b526886cac70b0e720864cd44aed5c4ce127c0c81433`.
+
+Ran the unchanged `scripts/validate_cluster_slurm.py` with `--cancel-running`,
+using the installed wheel, fresh private output directories, real PyMOL,
+temporary authenticated loopback gateways, Slurm and Apptainer. All three final
+`evidence.json` files record **`passed: true`**:
+
+- CPU: two CPUs, 8 GiB, no GPU, **64.61 s**.
+- Generic GPU: four CPUs, 8 GiB, `--gres=gpu:1`, **582.38 s**.
+- Typed GPU: four CPUs, 8 GiB, `--gpus=a100:1`, **578.66 s**.
+
+Times include queueing and verification and are not renderer benchmarks. Both GPU
+configurations left partition selection to the site and recorded one **NVIDIA
+A100 80GB PCIe / CUDA** for both still and animation. CPU manifests recorded CPU
+execution. Each preflight checked the new image checksum, matching build identity
+and actual Slurm request. Gateway and compute-node Apptainer were **1.5.4**;
+Slurm was **25.11.8**. Runtime manifests report Python **3.11.15**, Blender
+**5.0.1**, Molecular Nodes **4.5.10**, NumPy **1.26.4** and Biotite **1.6.0**.
+
+Each run rendered public **1STP** as a 192×144 still and four-frame rocking movie
+at four samples, then cancelled a separate probe after observing it running.
+Verified downloads, original-request recovery, idempotency, ownership, token
+revocation and deletion passed. Saved Blender scenes reopened with embedded
+scripts disabled. MP4 decoding, changing frame hashes, four-frame looping GIFs,
+session-bundle restoration and reopening the restored PyMOL/Blender files passed.
+After downloading the evidence locally, all **33 artifact hashes** matched.
+CPU and CUDA stills and sampled rocking frames were visually inspected: the
+mint structure remains in frame against the pale background. These are small
+execution previews, not final-quality figure review.
+
+After a chat daemon restart, the first generic-GPU harness ended before recording
+its final verdict, despite completing both renders. Its `passed: false` evidence
+was preserved. Confirmed its allocations were terminal, retained diagnostics and
+removed its temporary job data. The successful generic-GPU rerun and typed-GPU
+run used detached logging, independent output directories and the same immutable
+release. No interrupted request was silently resubmitted.
+
+Final checks confirmed every acceptance/build allocation had ended, all temporary
+listeners were closed, credentials were removed and test spools contained only
+ownership/idempotency tombstones. Removed the temporary local build checkout.
+Release artifacts, configurations, manifests, rendered outputs and evidence are
+retained in ignored local artifacts and the isolated cluster installation. No
+persistent production service was changed and nothing was pushed or published.
+
+## Cluster configure credential input (2026-11-06)
+
+Inspected the CLI parser, credential importer and administrator credential writer
+on `a83fedf`. `cluster configure` is flag-only: it requires either
+`--credential-file` (JSON containing exactly `url` and `token`) or `--url` (an
+explicitly unauthenticated service). It has no token argument, stdin token reader
+or hidden prompt. Profile naming and a separate CA file are optional flags.
+
+A real CLI smoke check used a synthetic token and an isolated temporary
+`BLENDER_RENDER_HOME`, with stdin closed throughout. File import succeeded,
+stdout contained only profile and URL, the saved profile had mode `0600`, and
+a credential file with mode `0644` was rejected without printing the token.
+Running configure without the required flags exited with usage status `2`.
+The command retains the transfer file after importing it. No real credential
+was read, no existing profile changed and no server connection was attempted.
+The cluster-client tests passed: **18 passed in 3.16 s**.
+
+**Outstanding client reachability gate:** run `blender-render cluster info
+--profile lab` from the actual Studio runtime and configuration, using the lab's
+real endpoint, administrator-issued credential file and CA where required. The
+synthetic import above and real cluster-side loopback acceptance do not establish
+Studio-to-lab connectivity or authentication. This session's default Studio home
+has no configured runtime or cluster profile; no such live client check was run.
+
+## Mac-to-cluster gateway reachability (2026-11-06)
+
+Started a bounded, temporary authenticated loopback gateway from the validated
+`a83fedf` controller and SIF on the authorized cluster. Forwarded a Mac loopback
+port over SSH, keeping gateway startup and forwarding on the same SSH connection
+so a different login-node selection could not redirect the tunnel.
+
+Transferred a real, newly issued mode-0600 credential file over SSH. From the Mac
+CLI, outside the checkout and with an isolated configuration directory, imported
+that file using `cluster configure --credential-file`, with stdin closed. The
+subsequent `cluster info` succeeded and reported token authentication, version
+`0.4.0rc4` and the expected engine identity
+`43c25dac0610d31f67ac7698aff4ea1f97d7011b5ee6c1b23130c75df5d263ef`.
+An unauthenticated request returned HTTP 401; after explicit token revocation,
+the imported credential was also rejected with HTTP 401. No token was printed.
+
+Confirmed both the gateway and local tunnel closed, remote credentials were
+removed, the temporary local credential/profile directory was removed, and no
+render jobs were submitted. Redacted evidence is retained in ignored local
+artifacts. This establishes real Mac CLI authentication and API reachability over
+SSH. It does not establish direct HTTPS access, a persistent gateway deployment,
+or execution from the Claude app's installed Structure Studio runtime; that last
+client integration check remains outstanding.
+
+## Mac submit and fetch through a temporary gateway (2026-11-06)
+
+Using the validated `a83fedf` controller and SIF, started a temporary authenticated
+loopback gateway with a fresh private spool. Gateway preflight passed, including
+the matching image identity and real Slurm dry run. Connected the Mac through an
+SSH tunnel on the same SSH connection, imported a newly issued private credential
+file, and verified the gateway identity with `cluster info`.
+
+Submitted exactly one public **1STP** still from the Mac CLI using
+`mint_sky_assembly`, **192×144 pixels and four samples**. Local PyMOL exported
+the CIF with secondary structure assigned; the selection excluded solvent.
+The real Slurm job completed with exit code `0:0` and a **4:02 allocation**.
+The fetched manifest confirms **NVIDIA A100 80GB PCIe / CUDA** execution,
+Blender **5.0.1**, Molecular Nodes **4.5.10**, Python **3.11.15**, NumPy **1.26.4**
+and Biotite **1.6.0**. The Mac submit-through-fetch check took **257.61 s**,
+including queueing, startup, rendering, status polling and download; this is not
+a pure rendering benchmark.
+
+Fetched the PNG, manifest and resolved style through the gateway API. All three
+artifact sizes and SHA-256 hashes matched the gateway's metadata. Decoded and
+visually inspected the PNG: the mint cartoon and ligand are visible and framed
+against the pale background. This is a tiny execution preview, not a final figure.
+
+After verification, deleted the completed remote job data through the API,
+retaining its ownership/idempotency tombstone. Revoked the credential and observed
+HTTP 401, closed the gateway and tunnel, and removed temporary local/remote
+credentials and the local test profile. Slurm accounting confirms the allocation
+ended. Evidence and the fetched image remain in ignored local artifacts. This
+establishes actual Mac CLI submission and fetching through the gateway; it was
+not executed from the Claude app's installed Structure Studio session.
+
+## Saved lab profile submit and fetch (2026-11-06)
+
+Ran the requested Mac CLI submission of `examples/1stp.cif` through the existing
+`lab` profile with the installed PyMOL application's Python interpreter (verified
+that `pymol2` imports). Used `mint_sky_assembly`, 192×144 pixels and four samples,
+with the default selection. One Slurm job, `22967374`, progressed from queued to
+running to completed. The gateway's creation-to-finish interval was **247.05 s**;
+this includes scheduling and startup and is not a rendering-only benchmark.
+
+Fetched `renders/lab-1stp.png`, its manifest and resolved style using the saved
+receipt. Fetch verified all artifact sizes and SHA-256 digests. Decoded the PNG
+as 192×144 RGBA and visually inspected it: the mint cartoon and ligand are visible
+and framed against the pale background. The manifest records Blender 5.0.1,
+Molecular Nodes 4.5.10, Python 3.11.15, NumPy 1.26.4 and Biotite 1.6.0. The existing
+profile, connection and completed job were retained. No renderer code changed;
+this was a real submit/status/wait/fetch runtime check.
+
+## Lab connection review fixes (2026-11-10)
+
+Validated the connection and Studio recovery fixes in an isolated editable
+installation on macOS with Python 3.11.5 and the optional cluster dependencies.
+The relevant suite passed **215 tests, with one skipped**, in **36.13 seconds**:
+
+```sh
+python -m pytest tests/test_cluster_connect.py tests/test_cluster_client.py \
+  tests/test_cluster_jobs.py tests/test_cluster_server.py \
+  tests/test_structure_studio_cluster.py tests/test_structure_studio.py \
+  tests/test_structure_studio_animation.py -q
+```
+
+Connection tests ran real helper and gateway processes plus local TCP forwarding
+through `tests/fake_ssh.py`. New regressions verify that an occupied local port is
+never contacted or sent a credential; changed node/controller settings replace
+the old connection; simultaneous connections create one gateway and tunnel;
+and stopped gateways accept validated site-config updates without deleting the
+job spool or, without revocation, changing the credential or local port.
+Invalid updates preserve the last valid configuration.
+
+Studio tests simulate lost, timed-out and malformed submission responses after
+receipt creation, then recover the existing request without a second submit.
+They also verify pending-context reservation and atomic updates, preservation of
+successful submission results when disconnect times out, and cleanup of temporary
+animation inputs. The cluster-client suite additionally exercises receipt
+recovery and artifact downloads over real local HTTP with a simulated scheduler.
+
+`git diff --check` passed. The only warning was Starlette's existing deprecation
+of the httpx-backed test client. No real SSH login, Slurm allocation, Blender
+render or visual acceptance check was performed for these fixes; these tests do
+not establish lab-host or GPU integration.
+
+## Lab connection consolidation (2026-11-10)
+
+Validated the shared installer guard, listener startup supervision, cluster
+command runner, atomic JSON writers and readiness snapshots in the isolated
+macOS Python 3.11.5 environment. With the optional cluster and FastMCP dependencies
+installed and `STRUCTURE_STUDIO_TEST_WHEEL` pointing to the newly staged wheel,
+the full `python -m pytest -q` suite passed **571 tests, with 49 skipped**, in
+**54.89 seconds**. An initial run lacked FastMCP and failed eight hosted-adapter
+tests; installing the repository's pinned optional dependency resolved them.
+
+New regression checks use real competing Python processes to verify that setup,
+background setup and renderer refresh share exclusive ownership even before
+progress metadata is available. A waiting refresher rechecks readiness and does
+not install twice. The installation callbacks only write test markers; no
+PyMOL or Blender runtime was installed. Failed installation releases the guard.
+Readiness checks read state and both build identities once per operation.
+
+Listener-probe timeouts and failed gateway-record publication terminate and reap
+real child processes. Failed publication leaves no partial record or temporary
+file. Existing tests continue to cover private file modes, exclusive Studio
+recovery-record reservation, failed atomic updates and ambiguous submissions.
+
+Built the wheel and Studio plugin/skill archives with `scripts/build_plugin.py`.
+Installed the wheel into a separate environment, copied the connection tests and
+their fixtures outside the checkout, and passed **all 23 connection tests** in
+**27.48 seconds** against the installed package. These tests run real local
+gateway/helper processes and fake SSH forwarding. The staged Studio `doctor`
+and `lab` profile-listing commands also passed outside the checkout in a temporary
+home with Python isolation enabled.
+
+`git diff --check` passed. The full suite emitted dependency deprecation warnings
+and the expected warning from its deliberately duplicated ZIP member. No real
+SSH login, Slurm job, GPU render or desktop-app acceptance test was performed.
+
+## co-pymol merged into the repository (2026-11-09)
+
+Merged co-pymol's history into this repository as the top-level `co_pymol`
+package, beside `blender_render` so the renderer's engine inventory is unchanged.
+Its Blender tools now use this checkout's renderer: `backend="local"` calls
+`blender_render.local.render_payload`; `backend="cluster"` (alias `lab`) uses the
+saved `blender-render cluster` profile through `blender_render.cluster.client`.
+The separate pinned backend checkout and its setup skill were removed.
+
+Ran both paths from the installed PyMOL application's Python (3.10, `pymol2`)
+using `examples/2trx.cif` as a cartoon with chain A coloured salmon,
+`mint_sky_assembly`, 480 px wide and eight samples, captured with `capture_scene`
+and submitted with `BlenderBridge.submit`:
+
+- **Local:** the detached helper rendered on the Apple M3 GPU (Metal) in 13 s.
+  The PNG was visually inspected: PyMOL colours were kept and the scene was framed
+  as captured. The completion notification was sent.
+- **Lab:** after `blender-render cluster connect --profile lab` (the gateway was
+  already running), job `55280959b09f60677a4f724cc5e6c1cd` completed in 250 s
+  including Slurm scheduling. The fetched manifest records an NVIDIA A100 80GB PCIe
+  (CUDA). The download was digest-verified by the cluster client and notified.
+
+## Lab reconnection guidance (2026-11-09)
+
+Updated repository and PyMOL MCP instructions to check the saved cluster
+connection before an authorized lab submission and attempt one noninteractive
+reconnect before asking the user to sign in. Local receipts, gateway acceptance
+and GPU execution remain distinct; reconnecting must not duplicate submissions.
+
+Real runtime observation: the configured profile reported `tunnel_open=false`.
+Invoking the existing `connect('lab')` implementation returned `connected`,
+`gateway_started=false` and `tunnel_reused=false`: it opened a new local tunnel
+to the existing gateway without interactive authentication. The accumulated SSH
+log contained timeouts, broken pipes and unreachable-host errors, but did not
+establish the exact cause or time of this disconnect. This check establishes
+reconnection only, not successful rendering or visual correctness.
+
+Using PyMOL's Python, `python -m pytest tests/co_pymol/test_blender.py
+tests/co_pymol/test_skills.py` passed all **89 tests** (one Pydantic forward-reference
+warning). No renderer or transport code changed.
+
+## Cutaway fade regression and decoded-frame limit (2026-11-09)
+
+Raised the decoded animation-frame allowance from 1 GiB to 10 GiB; frame-count,
+archive-size and duration bounds remain unchanged. Boundary tests exercise both
+camera-orbit and camera-path inputs at exactly 10 GiB and one row beyond it. A
+276-frame, 1280 x 1115 request now passes normalization (about 1.47 GiB decoded).
+A wheel containing only the limit change was installed outside the checkout and
+verified with `EngineSeal`. A corresponding staged lab image passed the worker
+identity check and cluster doctor, including Slurm dry-run submission. It has
+**not been activated**; those checks do not establish a GPU render with that image.
+
+Reproduced the reported cutaway artifact using the saved public 8EA6 payload and
+Cyan Mint Cutaway colours. The lid's Boolean intersection included cut-plane caps
+coincident with the permanent cutaway caps. Its initial zero-opacity still also
+left the lid render-visible, unlike subsequent zero-opacity frames. A fresh
+400 x 357, 16-sample Apple Metal render showed the dark/jagged planes immediately
+before the lid disappeared, even after filling its empty material slots.
+
+The fix marks caps using a private cutter copy and removes only those faces from
+the baked fading shell; it also initializes visibility consistently with frame
+updates. The original cutter and material assignments are preserved. Recipe
+camera paths, palette and timing are unchanged. A fresh four-frame render took
+23.68 s including the isolated runner. Visually inspected opacity 0.1, 0.0001,
+and two zero-opacity frames: the overlapping planes were absent. The anchor and
+next identical-view frame differed by mean 0.086 channel levels (0-255), with no
+pixel differing by more than 30; near-zero versus hidden was 1.558, versus 10.669
+before cap removal. Low-sample transparency noise remains in that comparison.
+
+With `BLENDER_RENDER_TEST_BLENDER` selecting the real Blender executable,
+`python -m pytest` on animation, animation-path, lid, cutout-plane, cluster-client,
+cluster-server, cluster-jobs, cluster-connect and Structure Studio animation tests
+passed **222 tests** in 17.94 s (two existing warnings). The real Blender geometry
+regression checks a half cube has five exterior faces and no cut-plane cap,
+including when the original cutter shares the surface material; it verifies
+initial/frame visibility and that temporary cutter objects/materials are removed.
+
+History inspection found the original recipe's lid algorithm unchanged since
+its October introduction/refactor. The retained older validation preview uses
+1STP at 160 x 120 and 12 frames; it does not establish why a deleted earlier user
+render appeared correct. Evidence is retained under ignored
+`.validation/indigo-lynx-cutaway/`. The lab cutaway update is held for user review
+of the corrected fade video; no existing completed job has been resubmitted.
+
+For user review, rendered the unchanged original path from 4.5 through 7.5 s:
+73 frames at 24 fps, 400 x 357, 16 samples, in 109.86 s including the runner.
+Inspected closed, mid-fade, near-zero and adjacent open frames. Encoded review
+video is 3.041667 s (73 frames); the side-by-side comparison uses the corresponding
+original frames on the left and corrected frames on the right. Review files are
+under the original render's ignored `review/` directory. The two-module candidate
+wheel (limit and lid only) was installed into an isolated environment outside the
+checkout and passed `EngineSeal`; it is staged locally, not deployed to the lab.
+
+### Follow-up: back-wall pop during the reviewed fade
+
+User review found a remaining defect around the end of the three-second clip.
+Adjacent frames had a distinct jump at clip frame 60 (2.5 s), despite an identical
+camera: the zero-opacity lid was switched to `hide_render=True`. Diagnostic
+renders of the same saved Blender scene separated sample count, transparent-ray
+depth and visibility. With 256 samples and an entirely transparent lid still
+present, Cycles' default depth of eight left dark patches at the back of the
+cutaway. Raising only that depth to 64 removed the localized dark patches:
+compared with hiding the lid, maximum channel difference fell from 72 to 24,
+and pixels with a channel difference over 30 fell from 222 to zero. Increasing
+samples alone did not remove them. These are actual Apple Metal renders, not
+mock-based evidence.
+
+The revised fix raises transparent depth to at least 64 only when constructing
+an animated cutaway lid, preserves an already-higher value, and keeps the fully
+transparent shell render-visible through the end of the fade. This supersedes
+the earlier initialization/hide fix above; there is no visibility switch at zero.
+The original cap removal remains. The review sample count is raised from 16 to
+64 as a preview-quality choice; preset defaults, recipe camera path and timing
+are unchanged. Relevant animation/path/lid/cutout/recipe tests passed **122 tests**
+in 1.95 s with the real Blender executable enabled (one existing zip warning).
+The real Blender test now checks the depth floor, preservation of a depth of 96,
+and consistent visibility at zero opacity. The updated two-module candidate wheel
+passed an installed `EngineSeal` check outside the checkout. Deployment remains
+on hold for user review.
+
+The revised 73-frame review completed in 301.17 s including the isolated runner,
+at 400 x 357, 64 samples, Apple Metal. Visually inspected the rear wall from
+1.67 through 2.54 s. The adjacent-frame mean change at 2.5 s fell from 1.571 in
+the first review to 0.094 channel levels; its maximum per-channel change was 15
+with no pixels over 30. Changes immediately before/after were 0.104 and 0.063,
+so the earlier isolated jump is absent in this check. The revised MP4 and a
+previous-preview/revised-preview comparison are saved in the ignored `review/`
+folder. FFprobe verified 73 frames, 24 fps and 3.041667 s; the MP4 is padded to
+400 x 358. No lab renderer configuration or existing job was changed.
+
+### Approved lab deployment and GPU acceptance
+
+After the user approved the revised video, activated the two-module update on
+the existing lab gateway and Slurm image. The installed controller and container
+both report engine `08e4c3729725c8c3b95b5d15b976c0599865b5d8afb5a01a22f8ab924c1a1f2e`.
+Only `animation.py` and `animation_blender.py` changed relative to the previous lab
+wheel, plus regenerated package identity/RECORD metadata. The pinned Linux
+runtime stayed at its original absolute path. The image passed worker identity,
+cluster doctor and Slurm dry-run checks. A staging helper initially used the
+wrong scheduler class name; correcting the helper and rerunning doctor passed
+before any live configuration changed.
+
+No jobs were active at the gateway switch. Backed up the previous wheel and both
+server configurations, updated the controller and both image/checksum settings,
+then reconnected the existing profile with the same credentials and private spool.
+The old image and rollback files are retained. The active controller confirms a
+10,737,418,240-byte decoded-frame limit and accepts a 276-frame, 1280 x 1115,
+11.5-second path. Earlier notes that deployment is pending are now superseded.
+
+Real acceptance job `3b0c5967db48d05aaedfcc262c2897e1` (Slurm `25467384`) completed
+in **272.53 s including scheduling**, rendering four diagnostic fade frames from
+the saved 8EA6 payload at 400 x 357 and 64 samples. Its manifest records an
+**NVIDIA A100 80GB PCIe (CUDA)**, Blender 5.0.1, Molecular Nodes 4.5.10, Python
+3.11.15, NumPy 1.26.4 and Biotite 1.6.0. Downloads passed client digest checks.
+Visually inspected the frames. Near-zero versus zero opacity differed by mean
+0.134 channel levels, maximum 20, with zero pixels over 30. Reopened the fetched
+Blender scene in a background process with embedded script execution disabled:
+transparent depth is 64, both lids remain render-visible at full transparency,
+their exterior face counts are 11,716 and 11,038, and no marker material remains.
+This was a new bounded acceptance job; no previous full render was resubmitted.
+
+## Follow-up report after deployment (2026-11-10)
+
+The user reported another back-wall artifact in a subsequent render. The newest
+local animation, `golden-seal`, records the deployed `08e4c3729725...` engine;
+its actually loaded `animation_blender.py` SHA-256 equals the current source
+(`150bf3d0eeab9fbe1b7536699ee53eba1c001d22a4040ba9d825e72e3b015315`). The live
+gateway still reports that engine. This rules out an older lid implementation
+for that saved video. It uses a different framing (800 x 925, 32 samples) from
+the approved short preview. Inspecting its complete frame sequence did not yet
+establish the exact remaining defect reported by the user; a timestamp was
+requested. The near-zero/zero fade transition is small in this video as well.
+
+Rendered a four-view local diagnostic from this exact saved payload at 400 x 463,
+16 samples, in 25.68 s, then inspected its evaluated cut faces. The two permanent
+back caps are coplanar within floating-point precision and overlap in projection.
+A bounded diagnostic offset of one cutter changed some overlap pixels, but this
+alone does not establish the cause of the reported glitch. No additional
+production code or lab renderer changes were made. Evidence is under ignored
+`.validation/golden-seal-cutaway/`; do not treat this investigation as a confirmed
+third fix. The previous GPU acceptance covered a small fade sample, not all
+camera positions in the full recipe.
+
+### Rear-wall depth refinement
+
+The user's clarification identified thin, jagged shapes in the fully open still,
+not only a fade transition. In a background Blender diagnostic, hiding the
+combined interior mesh removed the small ribbon fragments; a narrow irregular
+surface gap remained. Moving the rear plane forward concealed these background
+features. A prototype convex backing extended outside the molecular silhouette
+and was rejected. No backing mesh or additional Boolean algorithm was added.
+
+Changed Cyan Mint Cutaway's `ligand_cutout_plane_scales.back` from 0.9 to 0.35
+on both surface layers. Compared 0.6, 0.35 and 0.2 using fresh shared-pipeline
+stills at 640 x 740, 64 samples, Apple M3 Metal. The 0.6 setting retained a pointed
+background fragment; 0.2 obscured more of the ligand. Inspected the 0.35 close-up:
+the rear plane covers the thin background fragments while retaining the central
+ligand and main ribbons. This deliberately reduces visible pocket depth; it does
+not alter atomic coordinates or the native interior mesh. The manifest confirms
+0.35 for both surfaces. `tests/test_reference_presets.py`, `tests/test_style_schema.py`
+and `tests/test_animation_path.py`: **82 passed**.
+
+Full motion validation remains pending at this entry. A 400 x 463, 32-sample
+local diagnostic is rendering the entire 276-frame path. The final lab request,
+`smooth-mint-cutaway`, reuses the saved scene and original path at 800 x 925,
+32 samples, 24 fps and 11.5 seconds. Slurm accepted job `25552525` (gateway job
+`ed300c713a02b79a1979af534c6ad451`); the persistent CoPyMOL worker handles retrieval
+and the configured macOS completion notification. The earlier 0.6 lab preview
+is a separate diagnostic, not this final request. Local clients resolve the
+revised preset and send its complete style to the existing lab renderer; its
+bundled preset and engine image have not been redeployed for this data change.
+
+### Depth workaround rejected; direct comparison with main
+
+The final 0.35 lab animation completed on the A100 and was downloaded and
+digest-verified; its notification was submitted to macOS. The user reported
+that the blue side now looked broken. Inspection of the open still and rocking
+frames confirms that the prior depth refinement is not an accepted fix. Restored
+both back scales to 0.9 and restored the reference documentation. The preset file
+again has SHA-256 `98e8d06f73bdbf5122548ec15425c7a92f05457c42e514f265b19377d05025d1`,
+exactly matching both `main` and the gallery's recorded preset hash. The depth
+refinement entry above records a rejected experiment, not a shipping change.
+
+Fetched `origin/main` and compared commit `1690762888aff97cb3020348ce7befc9a6363da9`
+in an isolated detached worktree. Plane construction, frame axes, cap materials,
+Boolean modifier setup and coordinate mapping functions are unchanged between
+main and this branch. The plane-cut application adds the later optional fading
+lid hook. All shared renderer modules actually loaded by the local 0.35 still
+and the completed lab job have matching SHA-256 hashes; this does not mean that
+the animation implementation is identical to main, which only supports camera
+rock/360 animation.
+
+Rendered two controls directly from main using the same saved 8EA6 payload,
+64 samples, Apple M3 Metal, with no animation or fading shell. At the gallery's
+recorded orthographic view, the 640 x 429 image reproduces its composition and
+cutaway appearance (13.66 s). At the user's saved perspective close-up, the
+640 x 740 image still contains the rear fragments (18.73 s). Thus those static
+features also occur with main's original code at this view: the camera-aligned
+cut crosses a different part of the molecule. A smooth wall at every viewing
+angle is not established by the gallery example. The two controls, manifests
+and source comparison are retained in ignored validation output.
+
+The earlier local full-motion diagnostic resolved to 400 x 925, not the intended
+400 x 463: its copied output overrides retained the original height. It is not
+evidence of matching full-frame composition. No additional lab image or animation
+was submitted during this comparison, and the live PyMOL view was not changed.
+
+### Animation from the approved main-gallery view
+
+The user approved the main-gallery preview as the basis for another cutaway
+animation. Prepared a frozen copy of its full style and gallery view, preserving
+the original 0.9 back depth, orthographic camera, materials, lights and surface
+selections. The recipe's fully open anchor is exactly that view. Its overview is
+15% wider, followed by the existing cutaway timing and a 12-degree rock. A private
+headless PyMOL saved a PSE with the gallery orientation; the live session stayed
+unchanged. Full output is 276 frames, 24 fps, 11.5 seconds, 800 x 536, 64 samples.
+
+A five-frame check sampled the closed shell, mid-fade, fully open anchor and both
+rocking extrema. Slurm initially held job `25577723` for `MaxGRESPerAccount`, then
+allocated one A100 on a GPU node. While it was pending, the identical local check
+completed in 30.96 s on Metal. The Slurm check subsequently completed and its
+downloads passed digest checks. Inspected its PNGs: the anchor reproduces the
+approved view, with no reported blue-wall defect visible at either sampled rock
+extreme. Camera matrix and orthographic scale match the approved main render
+within 1e-6; style selections and camera configuration match exactly. Mean RGB
+channel difference from the approved still is 0.350/255 (Metal check: 0.218/255).
+This establishes these sampled frames, not complete temporal verification.
+
+After inspecting the Slurm check, submitted the full `gallery-cutaway` request
+through the persistent worker, with the same frozen style and saved scene. Output
+and recovery receipts are in the user's ignored `pymol/gallery-cutaway/` folder;
+an alias in the configured PyMOL render directory makes it discoverable there too.
+The complete movie remains pending at this entry. No renderer or preset source
+was changed for this new request.
+
+### Frame-preserving MP4 export
+
+The user reported flashing in the complete gallery animation despite the sampled
+previews looking correct, and specifically asked to investigate the MP4 export.
+The full Slurm render had completed on an A100. Decoded and compared all 276 MP4
+frames against their matching, checksum-verified archived PNGs. Frame count,
+ordering and 11.5-second timing are correct. The original lossy YUV 4:2:0 encode
+has mean rear-region error 2.642/255 during the rock, and maximum channel error
+85. These differences alone do not establish that encoding caused every reported
+flash; five representative images also cannot prove complete temporal stability.
+
+Tested an all-intra CRF-8 YUV encode and a lossless RGB encode from the same
+archive, with no new rendering. The former still changes colour pixels; the
+latter decodes exactly to every original RGB pixel in all 276 frames. macOS
+AVFoundation's native decoder successfully read all 276 frames of the RGB MP4
+with completed status and no error. Diagnostic renders that hid the transparent
+lid or slightly offset a back cutter were not adopted as geometry fixes.
+
+Changed shared MP4 encoding to lossless `libx264rgb`, CRF 0, all-intra RGB, while
+retaining white alpha compositing and odd-dimension padding. Added a real FFmpeg
+round-trip test containing moving one-pixel colour detail, verifying every
+decoded pixel and frame plus padding. Relevant animation, path and local API
+tests: **98 passed**. Re-exported the actual archive through this changed shared
+function and verified all 276 decoded frames byte for byte; native macOS decoding
+also passes for that exported file. The full movie is about 61 MiB rather than
+562 KiB. Geometry, camera, palette and timing are unchanged.
+
+Promoted the verified export to the user's existing `render.mp4`, preserving the
+original as `render-original-compressed.mp4` and recording a separate local
+re-encoding receipt with both hashes. The original remote manifest is retained.
+The source change is in the working tree. Built an encoder-only wheel from the
+previously deployed lab wheel, replacing only `animation.py` and generated
+integrity metadata. Verified its engine seal outside the checkout; runtime pins
+and the existing geometry implementation are unchanged. In the candidate Linux
+image, encoded and decoded four moving RGB-detail frames and verified every
+pixel exactly. Worker identity, image digest, cluster doctor and Slurm submission
+dry-run checks passed. With no active gateway render jobs, activated the new
+controller and image, then verified the reconnected gateway reports engine
+`8c0b6d562449c3b093770cdf2b79abdfc70cbe6e0eb4b54a8df589fec3c2cba5`.
+The previous image, wheel and server configurations remain available for rollback.
+No additional GPU render was needed for this encoding-only change.
+This proves PNG-to-video pixel preservation, not a visual guarantee that the
+underlying rendered frame sequence contains no temporal artifact.
+
+### Rejected RGB export and coincident rear caps
+
+The user reported that the 10:31 replacement still flashes and displays wrong
+colours. Its timestamp and digest confirmed it was the replacement, not a stale
+file. The native decoder check above only counted frames: extracting its actual
+BGRA pixels revealed a severe colour conversion error (mean channel error
+32.30/255 at frame 184, versus 2.63 for the compatible YUV export). FFmpeg's exact
+RGB round trip did not establish native playback colour correctness. Restored a
+YUV 4:2:0 export, rolled the lab controller and image back to the previous engine,
+and replaced the RGB regression with a real AVFoundation colour-patch check.
+The 10 GiB frame budget and the preceding lid fixes remain intact.
+
+Inspected the actual saved scene's Boolean cap polygons. The blue and mint rear
+caps overlap, with depths differing only by floating-point noise. A material-ID
+render makes their competing intersections visible as red/green speckles. Across
+23 sampled rocking frames, moving one rear plane forward by 0.0001 world units
+removes the interior mixed-colour patches. This diagnoses coincident geometry,
+rather than MP4 compression. The earlier whole-region mean error obscured this
+small but visible defect.
+
+Added deterministic separation for repeated cut planes in the shared renderer:
+the first surface retains its requested plane, later matching planes move inward
+by 0.1% of the cut radius. Only coincident plane equations are adjusted; requested
+and resolved equations are saved on the objects, and actual insets are recorded
+in the manifest. Both the permanent cut and fading lid use the same cutter. A
+real Blender Boolean test checks three overlapping surfaces have distinct,
+ordered cap depths and an unrelated plane stays unchanged. Relevant tests pass
+(105 initial passes plus the corrected runtime-configured geometry test).
+The new source rendered all 108 frames from the open anchor through the full rock
+at 640 x 429 / 64 samples on Metal (320.5 s). The manifest records zero inset for
+the first surface and 0.00011058 world units for the second. Its anchor differs
+from the approved main-gallery still by mean 0.385/255 across RGB channels.
+Rendered material-ID diagnostics for all 107 subsequent frames from that saved
+scene: the broad mixed-colour patches are absent, leaving at most ten mixed
+interior-mask pixels along antialiased material junctions. The original diagnostic
+had 114–1579 such pixels across its 23 sampled frames. Native AVFoundation decoded
+all 108 preview frames; the first frame's mean RGB error against the PNG is
+0.775/255, and its cyan/mint colours were visually inspected.
+
+Built a wheel containing only the shared cut-plane correction and the compatible
+encoder comment relative to the prior deployed renderer. Verified its engine seal
+outside the checkout; runtime pins are unchanged. The Linux image passes worker
+identity, YUV 4:2:0 encoding, cluster doctor and Slurm submission dry-run checks.
+Activated controller and image engine
+`ff8b33faf71dd3e30a982b4d40b26dfab178b7519ea8c217832dee07a22642e1`, retaining
+rollback files. Submitted a new full 276-frame animation with the original saved
+scene, camera path, palette and dimensions. Its result uses a separate output
+folder to distinguish it from the rejected 10:31 video.
+The user viewed the new rocking preview and confirmed: "Rear wall looks stable."
+Full Slurm job `25609712` reports CUDA on an NVIDIA A100 80GB PCIe and is still
+rendering at this entry. The persistent worker will retrieve its existing job;
+a separate bounded local verifier waits for that receipt and then checks all
+276 native-decoded frames, frame timing, exact preset/camera provenance and the
+resolved cap separation. It writes a verification receipt beside the movie and
+never submits or cancels jobs. Full-movie verification is pending, not claimed
+by the successful preview checks above.
+
+The full Slurm render subsequently completed and was retrieved successfully.
+Its background verifier passed all 276 native-decoded frames at 24 fps / 11.5 s,
+confirmed the original resolved preset and camera were unchanged, and verified
+the same cap separation as the user-approved preview. Mean native RGB error
+against the PNGs is 2.514/255 (maximum frame mean 2.766/255), consistent with the
+compatible lossy export. Inspected the delivered rear-wall frame and its cyan/mint
+colours. Final MP4 SHA-256:
+`53cea286e7311743b33a5e489665f4bd42cc7f49b76d46f2b7356549db143850`.
+The live lab gateway still reports the corrected engine above. Source and tests
+remain uncommitted in the `pymol-merge` working tree; the user requires confirming
+the commit destination before any commit or push.
+
+### Reveal, Rock and States recipe checks
+
+The user clarified that the cutaway now looks correct and asked to validate the
+remaining templates. Prepared Reveal (9.5 s) and Rock (6 s) from the saved 8EA6
+scene, with Cyan Mint Cutaway colours. A real Reveal preparation exposed NumPy
+`float32` clipping planes escaping into the strict JSON request. Added native
+float conversion at the PyMOL framing boundary. A regression using real headless
+PyMOL failed for Reveal and Cutaway before the fix; all four tested recipe views
+(Reveal, Cutaway, States, Rock) now serialize correctly.
+
+Preparing a 360-state example also exposed repeated/skipped states at floating-
+point frame boundaries (`13/360*360` falls just below 13). Added a small rounding
+tolerance before taking the state index. The regression now requires exactly
+states 1 through 360, once each. Relevant recipe, real PyMOL and path-validation
+tests: **50 passed** using PyMOL's Python. Test-only dependencies were read from
+the existing development environment; neither renderer runtime pins nor the lab
+image changed for these client-side recipe fixes.
+
+For the requested adenylate-kinase example, downloaded 4AKE and 1AKE mmCIF files
+from RCSB, retained their hashes, selected chain A and alternate location A, and
+matched all 1,656 protein heavy atoms across 214 residues. Fitted 133 CORE C-alpha
+atoms (residues 1–29, 68–117, 161–214; RMSD 1.551 Å). Prepared 360 cosine-eased
+Cartesian interpolations for a 15-second open → closed → open visualization.
+State 1 equals the open coordinates; state 181 equals the fitted closed ones.
+This is an interpolated visualization, not a simulation. The inhibitor remains
+in the disabled experimental closed reference; the animated object is protein-
+only because the open structure lacks it. Experimental references, the PSE,
+endpoint CIFs and interpolation provenance are in ignored local outputs.
+
+The States request passes cluster schema/size validation (13.15 MB) and maps one
+conformation to each frame. A real local Blender check rendered open, halfway,
+closed and return states in 15.53 s on Metal; inspected distinct conformations,
+stable domain colours and framing. Full lab outputs are pending; these sampled
+checks do not establish complete rendered temporal quality. All recipe fixes
+and their tests remain uncommitted, as requested.
+
+## PyMOL merge review fixes (2026-11-12)
+
+Fixed local cancellation through the shared renderer's fresh-process preview,
+remote cancellation confirmation, SSE write-failure recovery, animation backend
+selection, custom renderer configuration roots, confidence classification,
+residue identifiers and half-turn camera interpolation. Consolidated the receipt
+writer and session validation, removed the unused operation key, updated the
+merged-package installation guide and refreshed `uv.lock`. The existing staged
+and unstaged merge work was preserved; no commit or push was made.
+
+Validation performed against this working tree:
+
+- PyMOL's Python 3.10: `python -m pytest tests/co_pymol -q` — **212 passed**
+  in **54.28 s**, with one existing Pydantic settings warning. The real headless
+  export/PSE preservation check now uses the current exporter signature and runs
+  whenever `pymol2` is installed. Regressions cover cancellation of one batch
+  child without cancelling its sibling, disconnected and ambiguous cluster
+  cancellation, proxy reconnection with outstanding calls, explicit backend
+  selection, custom configuration handoff, experimental B-factors, numbered and
+  insertion-coded residues across chains, and exact/near-180-degree rotations.
+- Renderer Python 3.11: `python -m pytest tests --ignore=tests/co_pymol -q`,
+  with the native Blender executable/runtime configured for the two geometry
+  checks — **552 passed, 50 skipped** in **42.39 s**. Skips were optional browser,
+  generated-wheel and additional Structure Studio PyMOL checks. The generated
+  wheel check was subsequently enabled and passed separately. Four existing
+  dependency/fixture warnings remained.
+- Real local cancellation: exported a synthetic six-alanine peptide with
+  headless PyMOL, submitted it through `BlenderBridge`, waited for the actual
+  Blender child of the isolated runner, then cancelled. Both runner and Blender
+  stopped before the worker reported `cancelled`; no success PNG was published.
+  The complete probe took **0.92 s**. A real-process regression also checks that
+  cancellation removes the private source snapshot.
+- A subsequent **192 × 144, four-sample** render of that peptide completed in
+  **10.99 s**. The manifest confirmed **Metal / Apple M3 GPU**; result hash
+  verification passed. Visually inspected the PNG: the peptide was present,
+  framed and unobstructed. This was a runtime smoke check, not figure-quality
+  validation. No desktop editor window or live PyMOL session was changed.
+- Built the wheel from an isolated source copy including the custom build hook,
+  installed it into a separate target outside the checkout, and verified module
+  locations, packaged notification resources and the shared receipt helper.
+  All **212 PyMOL tests passed again** against the installed package in
+  **54.53 s**. The wheel's renderer inventory and bytes matched the source.
+- With the newly locked **MCP 1.27.2** in an isolated dependency directory, the
+  hosted adapter, local MCP render and editor MCP checks reported **11 passed**
+  in **1.01 s**. `uv lock --check` and `git diff --check` passed.
+
+Cluster cancellation behavior was exercised with controlled transport failures;
+no live lab job was submitted. Test renders, installed-package targets and
+temporary source snapshots were removed after validation. Renderer runtime pins
+and the lab image were not changed.
+
+## Shared render defaults and notification removal (2026-11-13)
+
+Removed desktop render alerts, their native helper, setup commands, bundled
+skill, configuration/status fields and package resources. Client setup now
+configures the PyMOL hook and selected MCP client. Local and cluster completion
+regressions confirm that previously enabled desktop preferences are ignored.
+
+Added `render_defaults.yaml` as the authoring source for image preview settings,
+CPU and rough quality, animation FPS and timings, and animation bounds. The
+generator writes stdlib-readable data for the renderer and Structure Studio and
+synchronizes animation schema limits. PyMOL reads the sibling package's data
+without importing the renderer. Wheel builds reject stale generated data and
+clear obsolete package files from previous builds. Preset-specific output and
+explicit overrides retain their existing precedence. Shared recipe algorithms
+and a common client job API remain follow-up work; this change centralizes data.
+
+Validation of the final implementation:
+
+- PyMOL Python 3.10: `python -m pytest tests/co_pymol -q` — **177 passed**
+  in **56.26 s**, with the existing Pydantic settings warning.
+- Renderer Python 3.11, with native Blender configured for geometry regressions:
+  `python -m pytest tests --ignore=tests/co_pymol -q` — **558 passed,
+  50 skipped** in **46.03 s**, with four existing dependency/fixture warnings.
+  The skips cover optional browser, wheel and additional host checks; the wheel
+  check was enabled and passed separately.
+- An isolated-copy regression edits the YAML and verifies that PyMOL CLI
+  defaults, both recipe compilers, renderer normalization, exporter state
+  limits, cluster defaults, schema bounds and Studio CPU caps use the new
+  values. Explicit request options still win. Invalid authoring fields and
+  stale generated data fail before packaging.
+- Built a wheel outside the checkout with a removed notification module seeded
+  into a previous build directory. The stale module was removed, no notification
+  resources were packaged, and the wheel's engine inventory matched the source.
+  Installed the wheel outside the checkout and reran the PyMOL suite:
+  **177 passed** in **58.30 s**.
+- Built a source distribution, checked that it included the YAML, generator and
+  generated data, then built a wheel from that source distribution. Comparing
+  engine inventories exposed an omitted hosted preview HTML resource in the
+  existing source-distribution manifest; added it to the manifest. Rebuilding
+  then produced identical package files and engine inventories through both
+  build routes.
+- Real headless PyMOL prepared a rock animation through the standalone Studio
+  scripts and imported the exporter/animation helpers directly from the built
+  wheel: **144 frames, 24 fps, 6 seconds, 640 × 427**. The payload and overrides
+  serialized as strict JSON, and no renderer engine module was imported. This
+  verifies preparation and packaging, not rendered movie appearance.
+- `python scripts/sync_render_defaults.py --check`, `uv lock --check` and
+  `git diff --check` passed. PyYAML is a build/development dependency; runtime
+  pins and the lab image are unchanged. No live lab job was submitted.
+  Temporary build, installation and synthetic preparation targets were removed.
+
+### Integration with the current lab-connect base
+
+Merged the two existing lab connection commits into `pymol-merge`, preserving
+both branches' appended validation records. The only textual conflict was in
+this document; Studio's render path merged without conflicts.
+
+- Reran the renderer/Studio suite with native Blender geometry checks:
+  **584 passed, 50 skipped** in **74.38 s**, with the same four existing warnings.
+- Built the merged source into a fresh wheel outside the checkout. The wheel
+  inventory check passed, shared defaults matched, and removed notification
+  resources remained absent. The temporary build directory was removed.
+- Generated-default checks, `uv lock --check` and Git whitespace checks passed.
+  These integration checks did not submit a live lab job or add visual evidence.
+
+## Shared recipe functions and PyMOL capture (2026-11-13)
+
+Structure Studio now imports the canonical recipe compiler from
+`co_pymol/core/animation.py` in its bundled wheel. Removed its copied compiler
+and camera-measurement functions. Both clients use the same camera keys,
+timeline sampling, cutaway opacity, state indices and anchor capture. All named
+recipes produce camera paths; the renderer's separate legacy orbit controls are
+unchanged. PyMOL previews explicitly map lid opacity to ghost-shell transparency.
+
+Capture restores camera, secondary structure and object-state settings, including
+the distinction between an inherited state and an explicitly pinned state. Saved
+scene tours recall cameras without changing colors, representations or enabled
+objects. Existing local rendering, cluster operations, receipts and client job
+workflows remain in place; this adds no service or general job API.
+
+- PyMOL Python 3.10: **192 passed** in **54.21 s**, with the existing Pydantic
+  settings warning. Twelve real-session comparisons run all six recipes through
+  the PyMOL CLI and Studio preparation with default and shortened timings. Their
+  captured payloads match after excluding only export timestamps/run IDs, and
+  their normalized animation inputs match. Explicit focus, dimensions, GIF and
+  rock-angle options are included. Additional cases cover failure restoration
+  for inherited/pinned states and PyMOL's ghost-shell preview mapping.
+- Renderer Python 3.11 with native Blender geometry checks and real Studio PyMOL
+  checks enabled: **586 passed, 48 skipped** in **63.35 s**. Optional browser and
+  wheel checks account for the skips; the wheel inventory test passed separately.
+  The four existing dependency/fixture warnings remain.
+- Built the wheel and both Studio archives outside the checkout. Verified every
+  packaged co-pymol Python file against source and the renderer's engine inventory.
+  The staged Studio recipe catalog loads all six recipes from the wheel. The pure
+  compiler imports with no renderer, PyMOL, NumPy, MCP or YAML modules loaded.
+- Real headless PyMOL imported the shared helpers and standalone exporter directly
+  from the wheel and prepared all six recipes, preserving enabled objects,
+  selections, colors, transforms and pinned-state export. No renderer engine module
+  was imported. Installed the wheel into a separate target outside the checkout;
+  **56 recipe/capture/client integration tests passed** in **32.23 s**.
+- The real co-pymol CLI and detached local worker rendered public 1STP at
+  **192 × 144, four samples** on the **Apple M3 Metal GPU**: a four-frame turntable
+  at 4 FPS / 1 second (**15.70 s** invocation) and a twelve-frame cutaway at
+  6 FPS / 2 seconds (**22.03 s**). Both produced PNG, MP4, GIF, frame archive,
+  saved PSE, resolved style and manifest outputs.
+- FFprobe verified dimensions, frame counts, rates and durations. GIF frame
+  counts matched, every lossless frame had a distinct hash, and each still was
+  byte-identical to its anchor frame. Inspected all four turntable views and
+  cutaway frames 0, 6, 7 and 11: rotation, partial fading and the opened pocket
+  were visible. These are low-sample smoke checks, not figure-quality renders
+  or native-player playback acceptance.
+- Generated defaults, `uv lock --check` and Git whitespace checks passed. No lab
+  job was submitted and no desktop PyMOL or Blender session was changed. Temporary
+  build, installation, session, render and source-snapshot artifacts were removed.
+
+## Scene and rendering package boundaries (2026-11-13)
+
+Grouped PyMOL session access, camera measurement, recipe compilation, capture
+and native previews in `co_pymol/scene/`. Moved the client, detached worker,
+gallery and request-record writer into `co_pymol/render/`. Native scene helpers
+return bytes/data, with MCP wrapping at the tool boundary and lazy CLI imports
+at plugin startup. Structure Studio uses the same scene modules from its wheel.
+
+The renderer's exporter, saved-scene metadata and preset extraction now live in
+`blender_render/scene/`. Updated standalone script paths, resource lookup,
+conversion preloads and private-source roots. Existing local/cluster entry points
+and renderer identity scope remain unchanged.
+
+- An isolated source snapshot passed **194 PyMOL tests** in **54.88 s**, including
+  two fresh-process checks that shared scene imports load no renderer, PyMOL or
+  MCP services. The existing Pydantic settings warning remains.
+- Renderer/Studio tests with native Blender geometry and real headless PyMOL
+  enabled: **586 passed, 48 skipped** in **62.52 s**, with four existing warnings.
+  The optional wheel inventory check passed separately; browser checks remain
+  skipped. The existing client parity and capture-preservation cases passed.
+- Built the wheel and both Studio archives outside the checkout. Every packaged
+  co-pymol Python file and the renderer engine inventory matched source; obsolete
+  module paths were absent. Installed the wheel in a separate target and ran
+  **58 recipe/capture/client/import tests**, all passing in **33.37 s**.
+- Real headless PyMOL imported all six recipes and the standalone scene exporter
+  directly from the wheel, prepared strict JSON payloads with pinned states,
+  and produced native PNG bytes without importing Blender or MCP services.
+  The local PyMOL interpreter reported its existing missing-license message;
+  native preview appearance was not treated as quality acceptance.
+- Ran `scripts/validate_scene_edit.py` against the installed wheel with public
+  1STP and the configured local runtime. Both base and dried-paint cases passed
+  original-scene inspection, metadata capture, edited-preset extraction and
+  replay. Maximum per-channel pixel RMS against direct Blender renders was
+  **0.140** at **192 × 144, eight samples**. The real PyMOL bridge also extracted
+  and rendered a preset. Embedded scripts stayed disabled, unsupported geometry
+  edits were rejected, and the private warm worker was stopped.
+- The installed co-pymol CLI and relocated detached worker completed a public
+  1STP turntable on the **Apple M3 Metal GPU** in **15.78 s**: **192 × 144,
+  four samples, four frames, 4 FPS, one second**. PNG, MP4, GIF, frame archive,
+  saved PSE, resolved style and manifest outputs completed. FFprobe and Pillow
+  confirmed dimensions/timing/counts; frame hashes were distinct and the still
+  matched the anchor. Inspected two turntable views and both preset replays.
+  These are low-resolution pipeline checks, not figure-quality acceptance.
+- Generated defaults, `uv lock --check` and Git whitespace checks passed. No
+  desktop session was changed or lab job submitted. Temporary validation outputs,
+  installations and source snapshots were removed.
+
+## One capture core and one job API (2026-11-15)
+
+Executed on Apple Silicon macOS (M3) from the `collapse-render-paths` worktree,
+branched from `pymol-merge` at 603e5b7. Renderer Python 3.11.15 with the
+checkout's `.runtime`; Studio's PyMOL 3.2 environment for real headless PyMOL.
+
+- Renderer/Studio suite: **603 passed, 52 skipped** (four existing warnings).
+  co-pymol suite under PyMOL's Python 3.11 (PyMOL + gemmi + `mcp<2`):
+  **201 passed**. Studio viewer Node tests: **11 passed**. Generated defaults
+  check and `git diff --check` passed.
+- Live-session preservation: on a built 16-residue helix annotated as loop,
+  `build_render_payload` (the `bridge_render` path) now leaves the live `ss` as
+  `L` and the camera unchanged while the payload still carries DSS helix hints.
+  Without the restore the live object was changed to `H`/`L`.
+- Studio still: `pymol_session.py --style site --bundle` on public 1STP wrote the
+  `.pse` and its scene bundle in one PyMOL run; `blender-render job submit
+  --backend local` rendered it at **480 × 360, 8 samples on the M3 Metal GPU in
+  12 s**. The image (streptavidin with biotin) was inspected.
+- co-pymol: `co-pymol render` on that `.pse` went through `BlenderBridge`, the
+  detached worker and `jobs.submit` to Blender, **completed on Metal in 10 s**
+  with the PNG digest, saved PSE and manifest GPU device recorded.
+- Client parity: Studio's bundle (re-exported from the saved `.pse`) and
+  co-pymol's bundle of the same session were identical apart from timestamps,
+  run IDs and Studio's file provenance. A first Studio bundle exported from the
+  in-memory session differed only in the PDB fallback's `CRYST1` Z field.
+- Wheel: built outside the checkout; it contains `jobs.py`, `job_cli.py`,
+  `co_pymol/scene/ligands.py` and `molecular-data.json`. A staged plugin with only
+  the wheel (no copied defaults or molecular data) ran `studio.py viewer
+  --standalone` and `presets` on the system **Python 3.9.6**; the page embedded
+  the shared classification data. This check found and fixed a Python 3.9
+  zipimport failure in `ligands.py`.
+- Lab, in-process: `blender-render job` submit/status/fetch, lost-reply adoption
+  and the PyMOL bridge's `job submit` ran over real HTTP against the test gateway
+  (token and open modes).
+- Lab, EBI cluster through the saved `lab` SSH profile (controller installed from
+  a83fedf, older than this client). The first attempt exposed a regression from
+  d4635e7: the connect helper runs in the installed controller and imported the
+  new `cluster.jsonio`; it now falls back to `cluster.common`. Then:
+  - `job submit --backend lab` of the Studio 1STP bundle (320 × 240, 8 samples,
+    rough) connected once, submitted Slurm job 29483707 and closed the tunnel and
+    gateway it had opened. Profiles came from `BLENDER_RENDER_CLUSTER_HOME` while
+    presets resolved from the local `.runtime`.
+  - A copy of its receipt with the job ID removed (a lost reply) was adopted by
+    `job status` after a fresh connect: same job ID, already running, saved back
+    to the receipt; no second job.
+  - `job fetch --wait` reconnected, polled by receipt, downloaded and verified the
+    artifacts and closed again. Manifest: **NVIDIA A100 80GB PCIe, CUDA**; the
+    image matched the local Metal render.
+  - `co-pymol render --wait` with a `cluster` backend and `require_gpu` ran the
+    detached worker through `jobs.submit`/`jobs.wait`/`jobs.fetch`: completed on
+    the **A100** in **261 s** including queue time; the worker left the tunnel open
+    as designed. Afterwards `cluster disconnect` reported no active jobs, and the
+    tunnel was closed as it had been before the checks.
+
+## Job recovery review fixes and base update (2026-11-16)
+
+Validated the pending review fixes, then rebased the six `collapse-render-paths`
+commits onto `pymol-merge` at 4be1a30, including its shared animation frame cap.
+The rebase was conflict-free; the range comparison preserved each change and the
+base's compatibility filtering for limits advertised by older gateways.
+
+- Renderer/Studio suite with real headless PyMOL enabled: **620 passed, 50 skipped**
+  in **63.79 s**, with four existing dependency/fixture warnings. Optional browser,
+  native Blender geometry and wheel checks account for the skips.
+- Full co-pymol suite in Studio's PyMOL Python 3.11: **202 passed** in **56.38 s**,
+  with the existing Pydantic settings warning. Test dependencies were installed
+  into a temporary target outside the managed environments. An initial desktop
+  PyMOL Python 3.10 run could not exercise these combined fixtures: they launch
+  renderer workers with the same interpreter, but the renderer requires Python
+  3.11 (`enum.StrEnum`). The successful run used the supported renderer version.
+- After rebasing, animation, shared-default, job, cluster client/server and Studio
+  cluster regression tests: **217 passed** in **8.67 s**. PyMOL animation and real
+  client-parity tests: **55 passed** in **31.31 s**.
+- Built a fresh wheel from the rebased source in a temporary directory outside
+  the checkout and installed it into a separate target. Both installed engine
+  inventory tests passed; every packaged co-pymol Python/data file matched source,
+  and shared ligand resources loaded without importing renderer, PyMOL or MCP
+  modules. Wheel/source parity and real Studio PyMOL checks: **3 passed**.
+- Studio viewer Node tests: **11 passed**. Generated-default and Git whitespace
+  checks passed. No new GPU render, live lab submission or visual acceptance check
+  was performed; the earlier local/lab render evidence is recorded above.

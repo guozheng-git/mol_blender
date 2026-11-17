@@ -221,7 +221,7 @@ def resource_bytes(path):
 
 # Reviewed local module closures. Dependencies may be imported transitively here.
 ACTION_MODULES = {
-    'conversion': ('export',),
+    'conversion': ('scene.export',),
     'render': ('core', 'chain_palette', 'ligand_selection', 'cutout_planes',
                'geometry', 'paint', 'reference_effects', 'sequence_palette', 'emission_halo',
                'rounded_cutaway', 'polar_contacts', 'operation_progress', 'telemetry', 'worker_ccd', 'animation', 'animation_blender'),

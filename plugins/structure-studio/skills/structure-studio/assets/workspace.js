@@ -389,7 +389,7 @@ function renderCard(r) {
   const cap = document.createElement('figcaption');
   const name = document.createElement('span'); name.className = 'name'; name.textContent = r.label || r.preset; cap.append(name);
   if (r.note || r.description) { const d = document.createElement('span'); d.className = 'desc'; d.textContent = r.note || r.description; cap.append(d); }
-  const spec = [r.preset && r.label !== r.preset ? r.preset : '', r.image && r.image.width ? `${r.image.width}×${r.image.height}` : r.spec || '', r.seconds ? `${Math.round(r.seconds)} s` : '', r.created_at ? ago(r.created_at) : ''].filter(Boolean).join(' · ');
+  const spec = [r.preset && r.label !== r.preset ? r.preset : '', r.image && r.image.width ? `${r.image.width}×${r.image.height}` : r.spec || '', r.seconds ? `${Math.round(r.seconds)} s` : '', r.device && r.device.summary ? r.device.summary.replace(/^Rendered on /, '') : '', r.created_at ? ago(r.created_at) : ''].filter(Boolean).join(' · ');
   if (spec) { const s = document.createElement('span'); s.className = 'spec'; s.textContent = spec; cap.append(s); }
   if (done) {
     const actions = document.createElement('div'); actions.className = 'card-actions';

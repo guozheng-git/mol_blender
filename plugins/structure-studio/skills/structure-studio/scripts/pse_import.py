@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(next((HERE.parent / "assets" / "wheels").glob("*.whl"))))
 sys.path.insert(0, str(HERE))
 
-from blender_render.export import from_file  # noqa: E402
+from blender_render.scene.export import from_file  # noqa: E402
 from camera import pymol_to_molstar  # noqa: E402
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 import bpy
-from . import scene_capture as capture
+from .scene import capture
 from .editor_protocol import MAX_CHANGES, checked_value
 
 

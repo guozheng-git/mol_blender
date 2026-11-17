@@ -8,7 +8,8 @@ from pathlib import Path
 import subprocess
 
 from .auth import authenticate, users
-from .common import PROTOCOL, decode_json, digest_file
+from .jsonio import decode_json, digest_file
+from .protocol import PROTOCOL
 from .slurm import Slurm
 from .store import Conflict, NotFound, Quota, Store
 
@@ -107,7 +108,7 @@ def create_app(config, *, scheduler=None):
 
     async def recover(request, owner):
         import hashlib
-        from .common import job_id
+        from .protocol import job_id
         identifier = hashlib.sha256((owner + '\0' + job_id(request.path_params['request_id'])).encode()).hexdigest()[:32]
         return JSONResponse(await run_in_threadpool(store.status, owner, identifier))
 

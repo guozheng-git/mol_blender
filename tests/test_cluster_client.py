@@ -12,7 +12,8 @@ import pytest
 import uvicorn
 
 from blender_render.cluster.client import Client, NoRedirect, RemoteError, configure, profile_path
-from blender_render.cluster.common import atomic_json, digest_file, read_json, validate_url
+from blender_render.cluster.jsonio import atomic_json, digest_file, read_json
+from blender_render.cluster.protocol import validate_url
 from blender_render.cluster.server import create_app
 from test_cluster_jobs import Scheduler, config, payload
 
@@ -80,6 +81,34 @@ def test_real_http_submit_receipt_recovery_fetch_and_no_overwrite(live_service, 
     assert len(store.scheduler.submissions) == 1
 
 
+def test_job_command_submits_adopts_a_lost_reply_and_fetches_by_receipt(live_service, tmp_path):
+    """`blender-render job` over real HTTP: every step after submission starts from the receipt."""
+    from blender_render import job_cli
+    client, store = live_service
+    bundle = tmp_path / 'scene.bundle.json'
+    bundle.write_text(json.dumps(payload()))
+    output = tmp_path / 'job.png'
+
+    def job(*argv):
+        return job_cli.execute(job_cli.parser().parse_args([str(a) for a in argv]))
+
+    submitted = job('submit', bundle, '-o', output, '--backend', 'lab', '--profile', 'lab',
+                    '--width', 32, '--height', 24, '--samples', 1)
+    assert submitted['status'] == 'queued' and submitted['backend'] == 'lab'
+    assert submitted['connection'].startswith('not managed')  # A URL profile has no SSH tunnel.
+    receipt = Path(submitted['receipt'])
+    record = read_json(receipt)
+    del record['job_id']  # A lost reply after the gateway accepted the upload.
+    atomic_json(receipt, record)
+    observed = job('status', receipt)
+    assert observed['job_id'] == submitted['job_id'] and read_json(receipt)['job_id'] == submitted['job_id']
+    assert job('fetch', receipt)['status'] == 'queued'  # Not finished: observed, nothing downloaded.
+    original = completed(store, submitted['job_id'])
+    fetched = job('fetch', receipt, '--wait', 30, '--interval', 0.01)
+    assert output.read_bytes() == original.read_bytes() and fetched['outputs']['render.png'] == str(output)
+    assert len(store.scheduler.submissions) == 1
+
+
 def test_corrupt_download_never_publishes_partial_output(live_service, tmp_path):
     client, store = live_service
     output = tmp_path / 'corrupt.png'
@@ -95,11 +124,60 @@ def test_corrupt_download_never_publishes_partial_output(live_service, tmp_path)
 
 
 def test_wait_timeout_does_not_cancel_or_duplicate(live_service, tmp_path):
+    from blender_render import jobs
     client, store = live_service
-    result = client.submit(payload(), {}, tmp_path / 'pending.png', wait=True, timeout=.01)
-    assert result['status'] == 'queued'
+    submitted = jobs.submit(payload(), {}, tmp_path / 'pending.png', backend_name='lab', profile='lab')
+    result = jobs.wait(submitted['receipt'], timeout=.01)
+    assert result['status'] == 'queued' and result['waiting_stopped']
     assert store.scheduler.cancelled == []
     assert len(store.scheduler.submissions) == 1
+
+
+def test_an_upload_that_never_arrived_is_sent_again_under_the_same_request_id(live_service, tmp_path, monkeypatch):
+    from blender_render import jobs
+    client, store = live_service
+    api = Client.api
+    def unreachable(self, method, path, data=None):
+        if method == 'POST':
+            raise RemoteError('Cluster connection failed')
+        return api(self, method, path, data)
+    monkeypatch.setattr(Client, 'api', unreachable)
+    output = tmp_path / 'never.png'
+    with pytest.raises(RemoteError, match='Recover with'):
+        jobs.submit(payload(), {}, output, backend_name='lab', profile='lab')
+    receipt = output.with_suffix('.cluster.json')
+    request_id = read_json(receipt)['request_id']
+    assert jobs.observe(receipt)['status'] == 'prepared' and not store.scheduler.submissions
+    monkeypatch.setattr(Client, 'api', api)
+    result = jobs.submit(payload(), {}, output, backend_name='lab', profile='lab')
+    assert result['resubmitted'] and result['status'] == 'queued'
+    assert read_json(receipt)['request_id'] == request_id and read_json(receipt)['job_id'] == result['job_id']
+    assert len(store.scheduler.submissions) == 1
+
+
+def test_sending_an_upload_that_did_arrive_again_returns_the_same_job(live_service, tmp_path, monkeypatch):
+    # Even if the gateway were wrongly reported as never having seen the request,
+    # resending under its request ID cannot create a second job.
+    from blender_render import jobs
+    client, store = live_service
+    api = Client.api
+    def lost_reply(self, method, path, data=None):
+        result = api(self, method, path, data)
+        if method == 'POST':
+            raise RemoteError('lost connection')
+        return result
+    monkeypatch.setattr(Client, 'api', lost_reply)
+    output = tmp_path / 'arrived.png'
+    with pytest.raises(RemoteError):
+        jobs.submit(payload(), {}, output, backend_name='lab', profile='lab')
+    monkeypatch.setattr(Client, 'api', api)
+    receipt = output.with_suffix('.cluster.json')
+    first = Client('lab').submit(payload(), {}, output, request_id=read_json(receipt)['request_id'])
+    again = jobs.submit(payload(), {}, output, backend_name='lab', profile='lab')
+    assert again['job_id'] == first['job_id'] and not again['resubmitted']
+    assert len(store.scheduler.submissions) == 1
+    with pytest.raises(ValueError, match='unconfirmed upload'):
+        Client('lab').submit(payload(), {}, output, request_id=read_json(receipt)['request_id'])
 
 
 def test_network_failure_keeps_a_recoverable_receipt(live_service, tmp_path, monkeypatch):

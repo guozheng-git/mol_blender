@@ -2,7 +2,7 @@
 """Bounded timeline and viewport controls for the selected local desktop only."""
 import bpy
 
-from . import scene_capture as capture
+from .scene import capture
 from .editor_protocol import checked_value, number
 
 VIEW_MODES = ('solid_color', 'material', 'rendered', 'wireframe')

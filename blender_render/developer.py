@@ -129,8 +129,13 @@ def capture_preset(identifier: str, catalog_dir: Path, destination: Path) -> dic
 def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
             output: Path, blender: Path, runtime_paths: list[Path], ccd: Path,
             timeout: float = 600, keep_source: bool = False, runtime_wheels: Path | None = None,
-            warm_worker: dict | None = None) -> dict:
+            warm_worker: dict | None = None, cancelled=None) -> dict:
     """Snapshot and resolve in fresh Python; optionally use an identical warm Blender."""
+    from blender_render.errors import RenderCancelled
+    if warm_worker and cancelled is not None:
+        raise ValueError('Cancellation callbacks require a fresh local render')
+    if cancelled is not None and cancelled():
+        raise RenderCancelled('Local render cancelled')
     if timeout < 30:
         raise ValueError("Preview timeout must be at least 30 seconds")
     for path in (bundle, blender, ccd):
@@ -173,9 +178,25 @@ def preview(*, checkout: Path, bundle: Path, options: dict, catalog_dir: Path,
                                         "_run", str(config_path)], cwd=run, env=isolated_environment(run),
                                        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                code = process.wait(timeout=timeout + 30)
+                deadline = time.monotonic() + timeout + 30
+                while True:
+                    if cancelled is not None and cancelled():
+                        raise RenderCancelled('Local render cancelled')
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(process.args, timeout + 30)
+                    try:
+                        code = process.wait(timeout=min(.2, remaining) if cancelled is not None else remaining)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
             except BaseException:
-                os.killpg(process.pid, signal.SIGKILL)
+                # The runner owns Blender and movie encoding in this group.
+                # Reap it before reporting cancellation or removing its snapshot.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 process.wait()
                 raise
         if code:
@@ -328,7 +349,7 @@ def parser() -> argparse.ArgumentParser:
 def execute(args):
     from blender_render import authoring, core
     if args.action == 'from-blend':
-        from blender_render.scene_edit import save_from_blend
+        from blender_render.scene.edit import save_from_blend
         return save_from_blend(args.scene, args.preset, description=args.description, catalog_dir=args.catalog_dir,
                                blender=args.blender, camera_policy=args.camera_policy, replace=args.replace,
                                allow_partial=args.allow_partial, report=args.report, timeout=args.timeout)
