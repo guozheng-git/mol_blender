@@ -18,7 +18,7 @@ import pytest
 
 from blender_render.cluster import connect, connect_remote
 from blender_render.cluster.client import Client, profile_path
-from blender_render.cluster.common import atomic_json
+from blender_render.cluster.jsonio import atomic_json
 from test_cluster_jobs import config  # noqa: F401  (fixture)
 
 FAKE_SSH = Path(__file__).with_name('fake_ssh.py')
@@ -349,3 +349,18 @@ def test_failed_gateway_record_write_cleans_child_and_temporary_file(site, tmp_p
         if process.poll() is None:
             process.kill()
         process.wait(timeout=5)
+
+
+@pytest.mark.parametrize('module', ['jsonio', 'common'])
+def test_remote_helper_runs_on_controllers_from_before_and_after_the_jsonio_split(tmp_path, module):
+    """The helper runs in the gateway host's installed controller, which may be older than this client."""
+    cluster = tmp_path / 'blender_render/cluster'
+    cluster.mkdir(parents=True)
+    (tmp_path / 'blender_render/__init__.py').write_text('')
+    (cluster / '__init__.py').write_text('')
+    (cluster / (module + '.py')).write_text('def atomic_json(path, value):\n    pass\n')
+    script = Path(connect_remote.__file__).read_text()
+    result = subprocess.run([sys.executable, '-I', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); '
+                             'exec(compile(sys.stdin.read(), "connect_remote", "exec"), {"__name__": "helper"})',
+                             str(tmp_path)], input=script, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr

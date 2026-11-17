@@ -4,7 +4,30 @@ from pathlib import Path
 import re
 from typing import ClassVar
 
-from .common import Limits, read_json
+from .jsonio import read_json
+
+
+@dataclass(frozen=True)
+class Limits:
+    max_request_bytes: int = 20 * 1024**2
+    max_pixels: int = 4096 * 4096
+    max_samples: int = 512
+    max_artifact_bytes: int = 1024**3
+    max_active_per_user: int = 4
+    max_active_total: int = 32
+    max_retained_per_user: int = 32
+    max_spool_bytes: int = 50 * 1024**3
+    retention_seconds: int = 86400
+    render_timeout: int = 3600
+
+    def __post_init__(self):
+        if any(type(v) is not int or v < 1 for v in vars(self).values()):
+            raise ValueError('All cluster limits must be positive integers')
+        # Clients build Limits from what the server advertises, so a site may lower the
+        # transfer caps but never raise them past the defaults every client accepts.
+        for name in ('max_request_bytes', 'max_artifact_bytes'):
+            if getattr(self, name) > self.__dataclass_fields__[name].default:
+                raise ValueError(name + ' cannot exceed the protocol default')
 
 
 @dataclass(frozen=True)

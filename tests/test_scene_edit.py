@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render import authoring, cli, core, developer, local, local_bridge, scene_edit
+from blender_render import authoring, cli, core, developer, local, local_bridge
+from blender_render.scene import edit as scene_edit
 from blender_render.presets import preset_path
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from .common import read_json
+from .jsonio import read_json
 
 
 def parser():
@@ -68,18 +68,8 @@ def parser():
     submit.add_argument('-o', '--output', default='render.png')
     submit.add_argument('--selection', default='(all)')
     submit.add_argument('--pymol-python', default='')
-    submit.add_argument('--options-json', help='Full render options (used by the PyMOL bridge)')
-    submit.add_argument('--preset')
-    submit.add_argument('--style-json')
-    submit.add_argument('--overrides-json')
-    for key in ('width', 'height', 'samples'):
-        submit.add_argument('--' + key, type=int)
-    for key in ('rough', 'save-blend', 'transparent', 'preserve-view', 'color-follow', 'gif'):
-        submit.add_argument('--' + key, action=argparse.BooleanOptionalAction, default=None)
-    submit.add_argument('--animation', choices=('none', 'rock', '360'))
-    submit.add_argument('--duration', type=float)
-    submit.add_argument('--fps', type=int)
-    submit.add_argument('--rock-angle', type=float)
+    from ..job_cli import add_render_options
+    add_render_options(submit)
     submit.add_argument('--wait', action='store_true')
     submit.add_argument('--timeout', type=float, default=600, help='Client wait deadline; does not cancel cluster work')
     return root
@@ -131,24 +121,17 @@ def execute(args):
                     ssl_certfile=args.tls_cert, ssl_keyfile=args.tls_key)
         return None
     if args.command == 'submit':
-        from ..runtime import export_file
-        source = Path(args.input).expanduser()
-        payload = read_json(source) if source.suffix.lower() == '.json' else export_file(
-            source, python=args.pymol_python, selection=args.selection)
-        options = read_json(args.options_json) if args.options_json else {}
-        if args.preset:
-            options['preset'] = args.preset
-        if args.style_json:
-            options['style_doc'] = read_json(args.style_json)
-        if args.overrides_json:
-            options['overrides'] = read_json(args.overrides_json)
-        for key in ('width', 'height', 'samples', 'rough', 'save_blend', 'preserve_view', 'color_follow',
-                    'animation', 'duration', 'fps', 'rock_angle', 'gif'):
-            if getattr(args, key) is not None:
-                options[key] = getattr(args, key)
-        if args.transparent is not None:
-            options['transparent_background'] = args.transparent
-        return Client(args.profile).submit(payload, options, args.output, wait=args.wait, timeout=args.timeout)
+        from .. import jobs
+        from ..job_cli import LAB_PAYLOAD_LIMIT, render_options
+        from ..local import load_payload
+        payload = load_payload(args.input, pymol_python=args.pymol_python, selection=args.selection,
+                               limit=LAB_PAYLOAD_LIMIT)
+        result = jobs.submit(payload, render_options(args), args.output, backend_name=jobs.LAB, profile=args.profile)
+        if args.wait:
+            result = jobs.wait(result['receipt'], timeout=args.timeout)
+            if result['status'] == 'completed':
+                result = jobs.fetch(result['receipt'])
+        return result
     receipt = None
     if hasattr(args, 'job') and not re.fullmatch('[0-9a-f]{32}', args.job):
         receipt = read_json(args.job, 64 * 1024)
@@ -165,7 +148,10 @@ def execute(args):
         return client.api('POST' if args.command == 'cancel' else 'DELETE',
                           '/v1/jobs/' + identifier + ('/cancel' if args.command == 'cancel' else ''))
     if args.command == 'wait':
-        return client.wait(identifier, args.timeout)
+        from .. import jobs
+        if receipt:
+            return jobs.wait(args.job, timeout=args.timeout)
+        return jobs.poll(lambda: client.status(identifier), timeout=args.timeout)
     if args.command == 'fetch':
         output = args.output or (receipt['output'] if receipt else None)
         if not output:

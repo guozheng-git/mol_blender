@@ -5,10 +5,12 @@ import tempfile
 from pathlib import Path
 import math
 import bpy
+import bmesh
 from mathutils import Matrix, Vector
 from blender_render.animation import angles, package_frames
 
 LID_PROPERTY = "bridge_lid_transparency"
+LID_TRANSPARENT_BOUNCES = 64
 
 
 def _add_lid_transparency(material: bpy.types.Material) -> None:
@@ -47,22 +49,61 @@ def make_cutaway_lid(target_obj, cutter_obj, *, transparency: float):
         collection.objects.link(lid)
     modifier = lid.modifiers.new(name="BridgeCutawayLid", type="BOOLEAN")
     modifier.operation = "INTERSECT"
-    modifier.object = cutter_obj
+    # Tag the cutter's faces on a private copy. The intersection also creates
+    # caps on the cut planes; those coincide with the permanent cutaway caps
+    # and must not be part of the fading outer shell.
+    cap_marker = bpy.data.materials.new("BridgeLidCapMarker")
+    lid_cutter = cutter_obj.copy()
+    lid_cutter.data = cutter_obj.data.copy()
+    cutter_mesh = lid_cutter.data
+    cutter_mesh.materials.clear()
+    cutter_mesh.materials.append(cap_marker)
+    for polygon in cutter_mesh.polygons:
+        polygon.material_index = 0
+    for collection in target_obj.users_collection:
+        collection.objects.link(lid_cutter)
+    modifier.object = lid_cutter
+    modifier.material_mode = "TRANSFER"
     if hasattr(modifier, "solver"):
         modifier.solver = "EXACT"
     if hasattr(modifier, "use_hole_tolerant"):
         modifier.use_hole_tolerant = True
     # Bake the lid to a plain mesh once. Left procedural, every per-frame fade
     # update would recompute its molecular surface and exact Boolean.
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    baked = bpy.data.meshes.new_from_object(
-        lid.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
-    )
-    lid.modifiers.clear()
-    lid.data = baked
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        baked = bpy.data.meshes.new_from_object(
+            lid.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph
+        )
+        lid.modifiers.clear()
+        lid.data = baked
+        cap_slots = {i for i, material in enumerate(baked.materials) if material == cap_marker}
+        mesh = bmesh.new()
+        try:
+            mesh.from_mesh(baked)
+            caps = [face for face in mesh.faces if face.material_index in cap_slots]
+            bmesh.ops.delete(mesh, geom=caps, context='FACES_ONLY')
+            mesh.to_mesh(baked)
+        finally:
+            mesh.free()
+        for index in sorted(cap_slots, reverse=True):
+            baked.materials.pop(index=index)
+        baked.update()
+    finally:
+        bpy.data.objects.remove(lid_cutter, do_unlink=True)
+        bpy.data.meshes.remove(cutter_mesh)
+        bpy.data.materials.remove(cap_marker)
     lid["bridge_cutaway_lid"] = True
     lid[LID_PROPERTY] = float(transparency)
-    for material in bpy.data.materials:
+    # A ray may cross the folded molecular shell many times. Cycles' default
+    # transparency depth (8) can leave dark patches behind even a clear lid.
+    cycles = getattr(bpy.context.scene, "cycles", None)
+    if cycles is not None:
+        cycles.transparent_max_bounces = max(cycles.transparent_max_bounces, LID_TRANSPARENT_BOUNCES)
+    # Keep the clear shell present through zero opacity. Removing it changes
+    # ray sampling/denoising abruptly at the last fade frame.
+    lid.hide_render = False
+    for material in baked.materials:
         _add_lid_transparency(material)
     return lid
 
@@ -162,7 +203,7 @@ def _set_positions(targets, positions):
 def _set_lid(lids, opacity):
     for lid in lids:
         lid[LID_PROPERTY] = 1.0 - opacity
-        lid.hide_render = opacity <= 0.0
+        lid.hide_render = False
         # The lid is a static mesh: re-sync the object, never its geometry.
         lid.update_tag(refresh={'OBJECT'})
 

@@ -76,7 +76,7 @@ def test_pending_operation_is_polled_without_replay(monkeypatch):
 
 
 def test_preset_captures_unsaved_scene_and_cleans_temp(monkeypatch):
-    from blender_render import scene_edit
+    from blender_render.scene import edit as scene_edit
     calls = []
     def save(session_id, revision, path, **kwargs):
         assert kwargs['copy'] is True
@@ -296,7 +296,7 @@ def test_failed_attach_script_cleans_source(tmp_path, monkeypatch):
 @pytest.mark.parametrize('manual_between', [False, True])
 def test_repeated_chat_undo_cannot_cross_a_manual_edit(monkeypatch, manual_between):
     import importlib.util, sys
-    import blender_render
+    import blender_render.scene
     scene = object()
     state = {'revision': 'second-chat-edit'}
     restored = []
@@ -309,7 +309,7 @@ def test_repeated_chat_undo_cannot_cross_a_manual_edit(monkeypatch, manual_betwe
         window_manager=SimpleNamespace(windows=[])), app=SimpleNamespace(is_job_running=lambda _: False))
     monkeypatch.setitem(sys.modules, 'bpy', bpy)
     monkeypatch.setattr(blender_render, 'editor_controls', controls, raising=False)
-    monkeypatch.setattr(blender_render, 'scene_capture', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(blender_render.scene, 'capture', SimpleNamespace(), raising=False)
     spec = importlib.util.spec_from_file_location('blender_render._undo_test', Path(editor.__file__).with_name('editor_blender.py'))
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     bridge = module.Bridge.__new__(module.Bridge)

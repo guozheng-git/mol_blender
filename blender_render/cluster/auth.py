@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import secrets
 
-from .common import atomic_json, read_json
+from .jsonio import atomic_json, read_json
 
 
 def private_file(path):
@@ -42,7 +42,7 @@ def authenticate(path, authorization):
 
 
 def add_user(path, owner, url, credential_output):
-    from .common import validate_url
+    from .protocol import validate_url
     validate_url(url)
     if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', owner):
         raise ValueError('Use a short user name containing letters, digits, dot, dash or underscore')
@@ -56,7 +56,7 @@ def add_user(path, owner, url, credential_output):
     # Exclusive creation prevents overwriting a credential or following a symlink.
     fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        from .common import json_bytes
+        from .jsonio import json_bytes
         with os.fdopen(fd, 'wb') as handle:
             handle.write(json_bytes({'url': url.rstrip('/'), 'token': token}))
         current[owner] = hashlib.sha256(token.encode()).hexdigest()

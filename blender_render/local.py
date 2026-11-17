@@ -26,15 +26,17 @@ def runtime_settings(*, blender='', runtime_paths=None, ccd='', runtime_wheels='
 
 def render_payload(payload, *, output, options=None, blender='', runtime_paths=None,
                    ccd='', runtime_wheels='', timeout=600, keep_temp=False, catalog_dir=None, warm=False,
-                   open_blender=False, gui_blender='', edit_bridge=False):
+                   open_blender=False, gui_blender='', edit_bridge=False, cancelled=None):
     from .core import validate_payload_document
     from .authoring import resolve_authored
     from .developer import preview
+    if warm and cancelled is not None:
+        raise ValueError('Cancellation callbacks require a fresh local render')
     payload = validate_payload_document(payload)
     options = dict(options or {})
     open_blender = open_blender or edit_bridge
     if open_blender:
-        from .scene_edit import blender_executable
+        from .scene.edit import blender_executable
         editor = blender_executable(gui_blender or load_config().get('gui_blender') or blender, gui=True)
         options['save_blend'] = True
     catalog_dir = Path(catalog_dir).expanduser() if catalog_dir else config_root() / 'presets'
@@ -48,15 +50,15 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         if animation['states'][animation.get('anchor', 0)] != coordinates['base']:
             raise ValueError('The anchor animation state must be the exported state')
     from .animation import encoder, required_names
+    from .outputs import beside_png, destination, folder
     if resolved['style_doc']['output'].get('animation'):
         encoder()  # Fail before allocating a Blender process.
     names = required_names(resolved['style_doc'])
     settings = runtime_settings(blender=blender, runtime_paths=runtime_paths, ccd=ccd, runtime_wheels=runtime_wheels)
     output = Path(output).expanduser().resolve().with_suffix('.png')
-    artifacts = output.with_suffix('.render')
-    destinations = {'render.png': output, 'render.mp4': output.with_suffix('.mp4'),
-                    'render.gif': output.with_suffix('.gif'), 'frames.zip': output.with_suffix('.frames.zip')}
-    if artifacts.exists() or any(destinations[name].exists() for name in names if name in destinations):
+    artifacts = folder(output)
+    published = {name: destination(output, name) for name in names if beside_png(name)}
+    if artifacts.exists() or any(path.exists() for path in published.values()):
         raise ValueError(f'Output already exists; choose a new filename: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     runner_options = {}
@@ -70,25 +72,26 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
         bundle.write_text(json.dumps(payload, allow_nan=False))
         result = preview(checkout=Path(__file__).resolve().parent.parent,
                          bundle=bundle, options=options, catalog_dir=catalog_dir,
-                         output=artifacts, timeout=timeout, keep_source=keep_temp, **settings, **runner_options)
+                         output=artifacts, timeout=timeout, keep_source=keep_temp,
+                         cancelled=cancelled, **settings, **runner_options)
     for name in names:
         if not (artifacts / name).is_file():
             raise RuntimeError('Render artifact missing: ' + name)
     for name in names:
-        if name in destinations:
-            shutil.copyfile(artifacts / name, destinations[name])
+        if name in published:
+            shutil.copyfile(artifacts / name, published[name])
     outputs = {'render.png': str(output), 'manifest.json': str(artifacts / 'manifest.json'),
                'style.json': str(artifacts / 'resolved-style.json')}
     for name in names:
-        if name in destinations:
-            outputs[name] = str(destinations[name])
+        if name in published:
+            outputs[name] = str(published[name])
     if (artifacts / 'render.blend').is_file():
         outputs['render.blend'] = str(artifacts / 'render.blend')
     result = {'status': 'completed', 'outputs': outputs, 'artifacts': str(artifacts),
             'source_sha256': result['sha256'], 'png_sha256': result['png_sha256'],
             **({'worker': result['worker']} if 'worker' in result else {})}
     if open_blender:
-        from .scene_edit import open_scene
+        from .scene.edit import open_scene
         try:
             result['editor'] = open_scene(outputs['render.blend'], blender=editor, **({'edit_bridge': True} if edit_bridge else {}))
         except (OSError, ValueError, RuntimeError) as exc:
@@ -96,11 +99,18 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     return result
 
 
-def render_file(path, *, pymol_python='', selection='(all)', **kwargs):
+def load_payload(path, *, pymol_python='', selection='(all)', limit=None):
+    """A scene bundle (JSON) as is; any other trusted file is exported with PyMOL first.
+
+    limit caps a bundle's size for lab uploads; a local render reads any size.
+    """
+    from .cluster.jsonio import decode_json, read_json
+    source = Path(path).expanduser().resolve()
+    if source.suffix.lower() == '.json':
+        return read_json(source, limit) if limit else decode_json(source.read_bytes())
     from .runtime import export_file
-    path = Path(path).expanduser().resolve()
-    if path.suffix.lower() == '.json':
-        payload = json.loads(path.read_text())
-    else:
-        payload = export_file(path, python=pymol_python, selection=selection)
-    return render_payload(payload, **kwargs)
+    return export_file(source, python=pymol_python, selection=selection)
+
+
+def render_file(path, *, pymol_python='', selection='(all)', **kwargs):
+    return render_payload(load_payload(path, pymol_python=pymol_python, selection=selection), **kwargs)

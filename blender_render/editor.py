@@ -98,7 +98,7 @@ def prepare(*, idle_timeout=3600, session_id=None, publish=True):
 
 
 def open_editor(path, *, blender='', idle_timeout=3600):
-    from .scene_edit import blender_executable
+    from .scene.edit import blender_executable
     path = Path(path).expanduser().resolve()
     if path.suffix.lower() != '.blend' or not path.is_file():
         raise ValueError('Expected an existing trusted local .blend')
@@ -245,7 +245,7 @@ def save_scene(session_id, revision, path, *, overwrite=False, copy=False):
 
 def save_preset(session_id, revision, preset, *, description='', camera_policy='preserve_input',
                 replace=False, allow_partial=False, catalog_dir=None, report=None):
-    from .scene_edit import save_from_blend
+    from .scene.edit import save_from_blend
     with tempfile.TemporaryDirectory(prefix='br-editor-preset-') as temporary:
         captured = save_scene(session_id, revision, Path(temporary) / 'scene.blend', copy=True)
         result = save_from_blend(captured['scene'], preset, description=description,
@@ -280,7 +280,7 @@ def render_scene(session_id, revision, output, *, preview=True, width=None, heig
     job_id = uuid.uuid4().hex
     root = job_root(job_id)
     root.mkdir(mode=0o700)
-    from .scene_edit import blender_executable
+    from .scene.edit import blender_executable
     executable = blender_executable()
     try:
         identity = snapshot_source(Path(__file__).resolve().parent.parent, root / 'source')

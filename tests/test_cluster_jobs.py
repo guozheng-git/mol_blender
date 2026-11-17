@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render.cluster.common import Limits, atomic_json, validate_request
+from blender_render.cluster.config import Limits
+from blender_render.cluster.jsonio import atomic_json
+from blender_render.cluster.protocol import validate_request
 from blender_render.cluster.config import ServerConfig
 from blender_render.cluster.slurm import Slurm, SubmissionUnknown
 from blender_render.cluster.store import Conflict, NotFound, Quota, Store

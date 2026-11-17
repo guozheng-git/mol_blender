@@ -110,7 +110,7 @@ async def validate(args):
             with Image.open(root / 'final.png') as a, Image.open(root / 'replayed.png') as b:
                 rms = ImageStat.Stat(ImageChops.difference(a.convert('RGBA'), b.convert('RGBA'))).rms
             assert max(rms) < 2, rms
-            from blender_render.scene_edit import inspect_scene
+            from blender_render.scene.edit import inspect_scene
             reopened = inspect_scene(root / 'edited.blend')
             assert not reopened['preserve_input']['unsupported']
             evidence.update(native_stdio_png=True, revision_conflict_rejected=True,

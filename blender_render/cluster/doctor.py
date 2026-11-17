@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import tempfile
 
-from .common import digest_file, one_line
+from .jsonio import digest_file, one_line
 
 # Provisional floor. The job flags (--containall, --no-mount hostfs,bind-paths,cwd,
 # --cleanenv) passed real acceptance on a newer Apptainer; the exact oldest

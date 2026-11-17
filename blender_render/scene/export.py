@@ -443,7 +443,19 @@ def _build_single_payload(
     return payload
 
 
-MAX_STATES = 360  # matches the most animation frames
+def _max_states():
+    # This module also runs as a standalone captured script in PyMOL. Read only
+    # the shared data; never import the renderer to obtain export bounds.
+    if __package__:
+        from importlib.resources import files
+        raw = files('blender_render').joinpath('render_defaults.json').read_text()
+    else:
+        path = Path(__file__).parents[1] / 'render_defaults.json'
+        raw = path.read_bytes() if path.is_file() else __loader__.get_data(str(path))
+    return json.loads(raw)['limits']['animation']['max_frames']
+
+
+MAX_STATES = _max_states()
 
 
 def collect_state_coordinates(cmd_obj, selection: str, base_state: int) -> dict[str, Any]:
@@ -472,6 +484,30 @@ def collect_state_coordinates(cmd_obj, selection: str, base_state: int) -> dict[
 
 
 def build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_hints=False, enabled_only=True, all_states=False):
+    """Export a render payload without changing the caller's PyMOL session.
+
+    The export runs DSS so the payload carries computed secondary structure.
+    That assignment belongs to the frozen export, not to a live session whose
+    user may have annotated ss by hand, so every caller (the PyMOL bridge,
+    co-pymol and headless file export) gets its ss and camera restored.
+    """
+    saved_ss = {}
+    can_restore = callable(getattr(cmd_obj, "iterate", None)) and callable(getattr(cmd_obj, "alter", None))
+    if can_restore:
+        cmd_obj.iterate("all", "saved_ss[(model, index)] = ss", space={"saved_ss": saved_ss})
+    restores_view = all(callable(getattr(cmd_obj, name, None)) for name in ("get_view", "set_view"))
+    view = cmd_obj.get_view() if restores_view else None
+    try:
+        return _build_render_payload(cmd_obj, selection, state, include_color_hints=include_color_hints,
+                                     enabled_only=enabled_only, all_states=all_states)
+    finally:
+        if saved_ss:
+            cmd_obj.alter("all", "ss = saved_ss.get((model, index), ss)", space={"saved_ss": saved_ss})
+        if view is not None:
+            cmd_obj.set_view(view)
+
+
+def _build_render_payload(cmd_obj, selection="(all)", state=-1, *, include_color_hints=False, enabled_only=True, all_states=False):
     """Flatten enabled objects to one CIF while preserving transforms and identity.
 
     PyMOL's multi-object CIF contains separate data blocks; molecular loaders

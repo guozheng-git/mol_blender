@@ -21,7 +21,13 @@ import sys
 import tempfile
 import time
 
-from blender_render.cluster.common import atomic_json
+# This file runs inside the *installed* controller on the gateway host, which may
+# predate this client. Controllers installed before the protocol/jsonio split keep
+# the same helper in cluster/common.py.
+try:
+    from blender_render.cluster.jsonio import atomic_json
+except ImportError:
+    from blender_render.cluster.common import atomic_json
 
 SERVE_WAIT = 30
 LOCK_WAIT = 10
