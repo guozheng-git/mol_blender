@@ -9,7 +9,20 @@ VERSION = "0.4.0rc4"
 
 
 def config_root() -> Path:
+    """The renderer's configuration: runtimes, presets and render defaults."""
     return Path(os.environ.get("BLENDER_RENDER_HOME", str(Path.home() / ".config" / "blender-render"))).expanduser()
+
+
+def cluster_root() -> Path:
+    """Lab profiles (clusters/) and SSH connection state (cluster-connections/).
+
+    Kept apart from config_root so a client can share one set of lab profiles while
+    using its own renderer configuration, and a lab render then resolves presets
+    exactly as a local render does. Without BLENDER_RENDER_CLUSTER_HOME this is
+    config_root, as before.
+    """
+    explicit = os.environ.get("BLENDER_RENDER_CLUSTER_HOME")
+    return Path(explicit).expanduser() if explicit else config_root()
 
 
 def load_config() -> dict:

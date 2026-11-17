@@ -12,7 +12,8 @@ const assets = path.join(root, 'plugins/structure-studio/skills/structure-studio
 const createScene = require(path.join(assets, 'scene.js'));
 const { decodeAsset, sha256, zipStore } = require(path.join(assets, 'artifact_files.js'));
 const { gunzip, parseBundles, decodeBundle, readResponse } = require(path.join(assets, 'artifact_files.js'));
-const data = JSON.parse(fs.readFileSync(path.join(assets, 'molecular-data.json')));
+// Shared with co-pymol; viewer.py embeds it into each page as DATA.molecular_data.
+const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../co_pymol/scene/molecular-data.json')));
 const blankPdb = new TextEncoder().encode(
   'ATOM      1  CA  GLY     1       0.000   0.000   0.000  1.00 90.00           C\n');
 

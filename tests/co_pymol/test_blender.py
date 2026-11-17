@@ -62,20 +62,44 @@ def render_payload(payload, *, output, options=None, timeout=600, cancelled=None
 
 FAKE_CLUSTER_CLIENT = '''
 import json, time
+from pathlib import Path
 from blender_render._fake import deliver, record, root
 class RemoteError(RuntimeError):
     pass
 class Client:
+    """Follows the real receipt contract: written before upload, recovered by request ID."""
     def __init__(self, profile="default"):
         self.profile = profile
-    def submit(self, payload, options, output):
+    def submit(self, payload, options, output, request_id=None):
+        receipt = Path(output).with_suffix(".cluster.json")
+        if request_id:  # Resent under the receipt's own request ID.
+            saved = json.loads(receipt.read_text())
+            assert saved["request_id"] == request_id and not saved.get("job_id")
+            record("resend")
+            (root / "payload.json").write_text(json.dumps(payload))
+            receipt.write_text(json.dumps({**saved, "job_id": "job-1", "status": "queued"}))
+            return {"job_id": "job-1", "status": "queued", "receipt": str(receipt)}
         record("submitting:" + self.profile)
         while (root / "hold_submit").exists(): time.sleep(0.02)
+        receipt = Path(output).with_suffix(".cluster.json")
+        receipt.write_text(json.dumps({"profile": self.profile, "request_id": "r" * 32,
+                                       "output": str(Path(output)), "status": "prepared"}))
         record("submit")
         (root / "payload.json").write_text(json.dumps(payload))
         if (root / "ambiguous").exists():
             raise RemoteError("Cluster connection failed; recover the existing request")
-        return {"job_id": "job-1", "status": "queued", "receipt": "receipt.json"}
+        receipt.write_text(json.dumps({**json.loads(receipt.read_text()), "job_id": "job-1", "status": "queued"}))
+        return {"job_id": "job-1", "status": "queued", "receipt": str(receipt)}
+    def recover(self, receipt):
+        saved = json.loads(Path(receipt).read_text())
+        if saved.get("job_id"):
+            return self.status(saved["job_id"])
+        record("recover")
+        if (root / "offline").exists():
+            raise RemoteError("Cluster connection failed")
+        if not (root / "received").exists():
+            raise RemoteError("Cluster HTTP 404: Job not found")
+        return {**self.status("job-1"), "job_id": "job-1"}
     def api(self, method, path, data=None):
         record(method + " " + path)
         if (root / "offline").exists():
@@ -86,10 +110,12 @@ class Client:
         record("status")
         if (root / "offline").exists():
             raise RemoteError("Cluster connection failed")
-        if (root / "cancelled").exists(): return {"status": "cancelled"}
+        if (root / "cancelled").exists(): return {"status": "cancelled", "job_id": job_id}
+        if (root / "unknown").exists():
+            return {"status": "submission_unknown", "job_id": job_id}
         if (root / "running").exists():
-            return {"status": "running", "stage": "rendering"}
-        return {"status": "completed", "stage": "completed"}
+            return {"status": "running", "stage": "rendering", "job_id": job_id}
+        return {"status": "completed", "stage": "completed", "job_id": job_id}
     def fetch(self, job_id, output):
         record("fetch")
         if (root / "fetch_disconnect").exists():
@@ -128,13 +154,15 @@ def fake_repo(tmp_path, monkeypatch):
         "presets.py": "def catalog(): return " + repr(CATALOG) + "\n",
         "cluster/__init__.py": "",
         "cluster/client.py": FAKE_CLUSTER_CLIENT,
-        "cluster/protocol.py": (
-            "def stop_waiting(status):\n"
-            "    return status in {'completed', 'failed', 'cancelled', 'expired', 'submission_unknown'}\n"
-        ),
+        # No saved SSH connection: the job API leaves the (fake) tunnel alone.
+        "cluster/connect.py": "def load_state(profile): return {}\n",
     }
     for name, content in files.items():
         (package / name).write_text(content)
+    # The real job API and wire protocol run against the fakes above.
+    real = Path(__file__).resolve().parents[2] / "blender_render"
+    for name in ("jobs.py", "cluster/protocol.py", "cluster/jsonio.py"):
+        (package / name).write_text((real / name).read_text())
     monkeypatch.setattr("co_pymol.render.client.REPO_ROOT", repo)
     return repo
 
@@ -719,7 +747,7 @@ def test_ambiguous_submission_never_retries(bridge):
     assert calls(bridge).count("submit") == 1
 
 
-def test_recovering_a_submission_without_job_id_refuses_to_resubmit(bridge):
+def test_a_submission_the_gateway_never_received_is_resent_under_its_request_id(bridge):
     (Path(bridge.config.render_home) / "ambiguous").touch()
     request_id = submit(bridge)
     directory = Path(wait_for(bridge, request_id, "needs_attention")["directory"])
@@ -730,8 +758,63 @@ def test_recovering_a_submission_without_job_id_refuses_to_resubmit(bridge):
     for process in bridge._processes:
         process.wait(timeout=5)
     state = bridge.status(request_id)
-    assert state["status"] == "needs_attention"
-    assert "will not resubmit" in state["error"]
+    assert state["status"] == "completed" and state["job_id"] == "job-1"
+    assert calls(bridge).count("recover") == 1  # Looked up by its receipt's request ID first.
+    assert calls(bridge).count("resend") == 1  # Then sent again with that ID, never a new one.
+    assert calls(bridge).count("submit") == 1
+
+
+def test_a_helper_that_cannot_connect_over_ssh_still_recovers_by_its_receipt(bridge, fake_repo):
+    home = Path(bridge.config.render_home)
+    (home / "ambiguous").touch()
+    request_id = submit(bridge)
+    wait_for(bridge, request_id, "needs_attention")
+    for process in bridge._processes:
+        process.wait(timeout=5)
+    # Now the saved SSH connection cannot be opened (MFA, VPN down, login node away).
+    (fake_repo / "blender_render/cluster/connect.py").write_text(
+        "import os\nfrom pathlib import Path\n"
+        "def load_state(profile): return {'ssh_host': 'lab'}\n"
+        "def state_path(profile, create=False):\n"
+        "    return Path(os.environ['BLENDER_RENDER_HOME']) / 'connections' / (profile + '.json')\n"
+        "def connect(profile): raise RuntimeError('ssh: MFA required')\n")
+    (home / "ambiguous").unlink()
+    (home / "received").touch()
+    bridge.result(request_id)  # Recovery carries on with the saved profile.
+    assert wait_for(bridge, request_id, "completed")["job_id"] == "job-1"
+    assert calls(bridge).count("submit") == 1
+
+
+def test_ambiguous_submission_the_gateway_received_is_adopted_from_its_receipt(bridge):
+    home = Path(bridge.config.render_home)
+    (home / "ambiguous").touch()
+    request_id = submit(bridge)
+    wait_for(bridge, request_id, "needs_attention")
+    for process in bridge._processes:
+        process.wait(timeout=5)
+    assert bridge.presentation(bridge.status(request_id))["next_action"] == "blender_result"
+    (home / "ambiguous").unlink()
+    (home / "received").touch()  # The upload reached the gateway after all.
+    bridge.result(request_id)
+    state = wait_for(bridge, request_id, "completed")
+    assert state["job_id"] == "job-1"
+    receipt = json.loads((Path(state["directory"]) / "render.cluster.json").read_text())
+    assert receipt["job_id"] == "job-1"  # Later checks use the job directly.
+    assert calls(bridge).count("submit") == 1
+
+
+def test_unconfirmed_slurm_submission_stays_recoverable(bridge):
+    home = Path(bridge.config.render_home)
+    (home / "unknown").touch()
+    request_id = submit(bridge)
+    state = wait_for(bridge, request_id, "needs_attention")
+    assert state["job_id"] == "job-1" and "reconciliation" in state["error"]
+    assert bridge.presentation(state)["next_action"] == "blender_result"
+    for process in bridge._processes:
+        process.wait(timeout=5)
+    (home / "unknown").unlink()  # The gateway reconciled it into a real job.
+    bridge.result(request_id)
+    wait_for(bridge, request_id, "completed")
     assert calls(bridge).count("submit") == 1
 
 
@@ -970,6 +1053,9 @@ def test_unconfirmed_cluster_cancellation_stays_recoverable(bridge, monkeypatch,
     saved.update(status="recovering" if job_id else "submitting")
     if job_id:
         saved["job_id"] = job_id
+        # A confirmed job always has the receipt the client wrote before uploading.
+        write_json(directory / "render.cluster.json", {"profile": "test", "request_id": "r" * 32,
+                                                       "output": str(directory / "render.png"), "job_id": job_id})
     write_json(directory / "state.json", saved)
     (directory / "cancel.request").touch()
     offline = Path(bridge.config.render_home) / "offline"
@@ -992,17 +1078,29 @@ worker.run(Path(sys.argv[2]), recover=True)
                     str(Path(adapter.__file__).with_name('worker.py')), str(directory)],
                    cwd=directory, env=bridge._environment(bridge.config), check=True, timeout=10)
     state = bridge.status(request_id)
-    assert state["status"] == "needs_attention"
     assert "submit" not in calls(bridge)
-    if job_id:
-        assert state["job_id"] == job_id
-        assert "may still be running" in state["error"]
-        offline.unlink()
-        bridge.result(request_id)
-        wait_for(bridge, request_id, "cancelled")
-        assert f"POST /v1/jobs/{job_id}/cancel" in calls(bridge)
-    else:
-        assert "will not resubmit" in state["error"]
+    if not job_id:
+        # No receipt means the client never reached its upload: nothing exists to cancel.
+        assert state["status"] == "cancelled"
+        return
+    assert state["status"] == "needs_attention"
+    assert state["job_id"] == job_id
+    assert "may still be running" in state["error"]
+    offline.unlink()
+    bridge.result(request_id)
+    wait_for(bridge, request_id, "cancelled")
+    assert f"POST /v1/jobs/{job_id}/cancel" in calls(bridge)
+
+
+@pytest.mark.parametrize("cluster_home", [None, "/lab/profiles"])
+def test_lab_runs_keep_the_renderer_home_and_find_profiles_apart(tmp_path, cluster_home):
+    """Presets resolve from render_home for both backends; profiles from cluster_home."""
+    cfg = BlenderConfig.from_dict({"render_python": sys.executable, "render_home": str(tmp_path / "runtime"),
+                                   "cluster_home": cluster_home, "backend": "cluster"})
+    env = BlenderBridge._environment(cfg)
+    assert env["BLENDER_RENDER_HOME"] == str(tmp_path / "runtime")
+    assert env["BLENDER_RENDER_CLUSTER_HOME"] == (cluster_home or str(Path.home() / ".config/blender-render"))
+    assert BlenderBridge._environment(cfg.using("local"))["BLENDER_RENDER_HOME"] == env["BLENDER_RENDER_HOME"]
 
 
 def test_custom_renderer_home_survives_worker_handoff(fake_repo, tmp_path, monkeypatch):

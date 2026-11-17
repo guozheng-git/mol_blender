@@ -99,11 +99,18 @@ def render_payload(payload, *, output, options=None, blender='', runtime_paths=N
     return result
 
 
-def render_file(path, *, pymol_python='', selection='(all)', **kwargs):
+def load_payload(path, *, pymol_python='', selection='(all)', limit=None):
+    """A scene bundle (JSON) as is; any other trusted file is exported with PyMOL first.
+
+    limit caps a bundle's size for lab uploads; a local render reads any size.
+    """
+    from .cluster.jsonio import decode_json, read_json
+    source = Path(path).expanduser().resolve()
+    if source.suffix.lower() == '.json':
+        return read_json(source, limit) if limit else decode_json(source.read_bytes())
     from .runtime import export_file
-    path = Path(path).expanduser().resolve()
-    if path.suffix.lower() == '.json':
-        payload = json.loads(path.read_text())
-    else:
-        payload = export_file(path, python=pymol_python, selection=selection)
-    return render_payload(payload, **kwargs)
+    return export_file(source, python=pymol_python, selection=selection)
+
+
+def render_file(path, *, pymol_python='', selection='(all)', **kwargs):
+    return render_payload(load_payload(path, pymol_python=pymol_python, selection=selection), **kwargs)

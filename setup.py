@@ -11,7 +11,7 @@ class BuildEngine(build_py):
     def run(self):
         project = Path(__file__).parent
         defaults = runpy.run_path(str(project / 'scripts/sync_render_defaults.py'))
-        defaults['synchronize'](project, check=True, studio=False)
+        defaults['synchronize'](project, check=True)
         source = Path(__file__).parent / 'blender_render'
         inventory_api = runpy.run_path(str(source / 'engine.py'))
         generate = inventory_api['generate_manifest']

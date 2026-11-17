@@ -117,7 +117,6 @@ def main(argv=None):
     shutil.copy2(wheel, output / wheel.name)
     rows = preset_catalog()
     write_catalog(rows, skill)
-    shutil.copy2(ROOT / 'blender_render/render_defaults.json', skill / 'assets/render_defaults.json')
     source = {'revision': os.environ.get('BUILD_SOURCE_REVISION'), 'version': json.loads(
         (plugin / '.claude-plugin/plugin.json').read_text()).get('version')}
     (skill / 'source-revision.json').write_text(json.dumps(source, indent=2) + '\n')

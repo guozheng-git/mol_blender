@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from molecular_data import STANDARD, MODIFIED
+from co_pymol.scene.ligands import chain_selection  # noqa: F401 (scenes.chain_selection for callers)
 
 SCHEMA = 1
 REPRESENTATIONS = ("cartoon", "surface", "spacefill", "putty", "backbone", "hidden")
@@ -182,13 +183,6 @@ def show_chain(hidden: list[dict], chain: str) -> list[dict]:
         if remaining:
             result.append({"chain": remaining})
     return result
-
-
-def chain_selection(chains) -> str:
-    """Select author chain IDs, including the empty ID used by unlabelled PDBs."""
-    if isinstance(chains, str):
-        chains = [chains]
-    return "chain " + "+".join(c if re.fullmatch(r"[A-Za-z0-9_]+", c) else json.dumps(c) for c in chains)
 
 
 # ---------------------------------------------------------------- PyMOL translation

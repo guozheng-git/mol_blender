@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+# The lab receipt blender_render.jobs writes for a request's render.png
+# (jobs.receipt_for); PyMOL's Python cannot import the renderer to ask it.
+RECEIPT = "render.cluster.json"
+
 
 def write_json(path: Path, value: dict) -> None:
     """Replace a receipt atomically, keeping intermediate bytes private."""

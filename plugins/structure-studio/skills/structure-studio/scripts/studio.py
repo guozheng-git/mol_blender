@@ -249,6 +249,9 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
             extra += ["--view", json.dumps(camera.get("structure_studio_view", camera))]
         if args.fit:
             extra.append("--fit")
+        if not recipe:
+            # Export in the same PyMOL run that saves the session; the renderer never reloads it.
+            extra += ["--bundle", str(staging / "bundle.json")]
         session = run_pymol_session([str(source), "-o", str(unique(directory / f"{source.stem}-{tag}.pse")), *extra])
         source = Path(session["session"])
     label = Path(args.style_json).stem if args.style_json else args.preset
@@ -256,16 +259,20 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
     output = unique(Path(args.output).expanduser() if args.output else directory / f"{source.stem}-{label}{suffix}.png")
     animation = None
     lab = getattr(args, "lab", None)
+    render_input = Path(session["bundle"]) if session and session.get("bundle") else source
     if recipe:
-        source, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
+        render_input, overrides, animation, adjusted = prepare_animation(args, source, recipe, staging)
     else:
         # The CPU caps protect this computer; a lab GPU gets the requested quality.
         adjusted = {} if lab else cpu_defaults(args)
+    # One launcher for both backends: `blender-render job submit`.
+    command = ["submit", str(render_input), "-o", str(output), "--backend", "lab" if lab else "local"]
     if lab:
-        command = ["submit", str(source), "-o", str(output), "--profile", lab,
-                   "--pymol-python", str(studio_env.pymol_python())]
+        command += ["--profile", lab] + (["--keep-connected"] if args.keep_connected else [])
+        if render_input.suffix.lower() != ".json":
+            command += ["--pymol-python", str(studio_env.pymol_python())]
     else:
-        command = [str(executable), "render", str(source), "-o", str(output), "--timeout", str(args.timeout)]
+        command += ["--timeout", str(args.timeout)]
     command += ["--style-json", args.style_json] if args.style_json else ["--preset", args.preset]
     if recipe:
         command += ["--overrides-json", str(overrides)]
@@ -292,37 +299,38 @@ def _render_prepared(args, source: Path, directory: Path, executable: Path, env:
         print(f"[structure-studio] Submitting {source.name} with {label} to lab profile {lab}…", file=sys.stderr, flush=True)
         return submit_lab(command, (executable, env), args, context)
     print(f"[structure-studio] Rendering {source.name} with {label}…", file=sys.stderr, flush=True)
-    result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=args.timeout + 120)
-    if result.returncode:
-        raise RuntimeError("Render failed:\n" + (result.stderr or result.stdout)[-4000:])
-    return finish_render(json.loads(result.stdout), context)
+    rendered = run_job(*command, runtime=(executable, env), timeout=args.timeout + 120, lab=False)
+    return finish_render(rendered, context)
 
 
 def submit_lab(command: list[str], runtime: tuple[Path, dict], args, context: dict) -> dict:
-    """Save Studio's recovery context before the client can upload a request."""
-    opened = open_lab(args.lab)
+    """Save Studio's workspace context, then submit; the job command connects once.
+
+    The .lab.json file only remembers what to do with the result (workspace, labels).
+    The run itself is identified by the renderer's receipt, like every other client's.
+    """
     output = Path(context["output"]).resolve()
     pending_path = output.with_suffix(".lab.json")
     context.update(output=str(output), profile=args.lab, receipt=str(output.with_suffix(".cluster.json")))
+    pending = artifact_files.write_json(context, pending_path, exclusive=True)
     try:
-        pending = artifact_files.write_json(context, pending_path, exclusive=True)
-        try:
-            submitted = run_cluster(*command, runtime=runtime, timeout=args.timeout + 120)
-            context.update(receipt=submitted["receipt"], job_id=submitted.get("job_id"))
-            artifact_files.write_json(context, pending_path)
-        except (RuntimeError, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
-            if not Path(context["receipt"]).is_file():
-                pending_path.unlink(missing_ok=True)  # The client never reached its upload step.
-                raise
-            submitted = {"status": "submission_unknown",
-                         "message": str(exc) + "\nDo not submit again; use lab-fetch to recover this request."}
-    finally:
-        closed = close_lab(args.lab) if opened and not args.keep_connected else None
+        submitted = run_job(*command, runtime=runtime, timeout=args.timeout + 300)
+        context.update(receipt=submitted["receipt"], job_id=submitted.get("job_id"))
+        artifact_files.write_json(context, pending_path)
+    except (RuntimeError, ValueError, KeyError, OSError, subprocess.SubprocessError) as exc:
+        if not Path(context["receipt"]).is_file():
+            pending_path.unlink(missing_ok=True)  # The client never reached its upload step.
+            raise
+        submitted = {"status": "submission_unknown", "connection": "unknown",
+                     "message": str(exc) + "\nDo not submit again; use lab-fetch to recover this request."}
     return {**submitted, "status": submitted.get("status", "queued"),
             "job_id": submitted.get("job_id"), "slurm_id": submitted.get("slurm_id"),
             "receipt": context["receipt"], "pending_file": pending, "preset": context["preset"],
-            "connection": connection_summary(opened, closed),
-            "next": [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", pending])]}
+            "connection": submitted.get("connection"), "next": [lab_fetch_command(pending)]}
+
+
+def lab_fetch_command(pending: str) -> str:
+    return shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", pending])
 
 
 def finish_render(payload: dict, context: dict) -> dict:
@@ -361,6 +369,9 @@ def render_device(payload: dict) -> dict | None:
 
 def lab_error(text: str) -> str:
     text = (text or "").strip()[-2000:]
+    if "First connection needs" in text:
+        return ("This computer has no saved lab connection yet. Ask the user for their SSH alias, login node, "
+                "controller path and site config, then run `studio.py lab connect`.\n" + text)
     if "No cluster profile" in text:
         return ("No lab connection on this computer. Connect first: python3 studio.py lab connect "
                 "(the same profile as `blender-render cluster connect` in a terminal).\n" + text)
@@ -372,42 +383,26 @@ def lab_error(text: str) -> str:
     return "Lab submission failed:\n" + text
 
 
+def run_job(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None, lab: bool = True) -> dict:
+    """`blender-render job …`: the renderer's one launcher for local renders and every lab step.
+
+    Lab steps connect once with the saved profile and close only a tunnel they opened.
+    """
+    executable, env = runtime if runtime is not None else studio_env.cluster_env()
+    result = subprocess.run([str(executable), "job", *command], capture_output=True, text=True, env=env, timeout=timeout)
+    if result.returncode:
+        text = result.stderr or result.stdout
+        raise RuntimeError(lab_error(text) if lab else "Render failed:\n" + text[-4000:])
+    return json.loads(result.stdout)
+
+
 def run_cluster(*command, timeout: float = 900, runtime: tuple[Path, dict] | None = None) -> dict | list:
-    """One subprocess boundary for submission, recovery, and cluster passthrough."""
+    """`blender-render cluster …` passthrough for connection management (studio.py lab …)."""
     executable, env = runtime if runtime is not None else studio_env.cluster_env()
     result = subprocess.run([str(executable), "cluster", *command], capture_output=True, text=True, env=env, timeout=timeout)
     if result.returncode:
         raise RuntimeError(lab_error(result.stderr or result.stdout))
     return json.loads(result.stdout) if result.stdout.strip() else {}
-
-
-def open_lab(profile: str) -> bool:
-    """Connect with the saved settings; True when this call opened the connection.
-
-    A connection that was already open (a terminal, another chat) is reused and left open.
-    """
-    try:
-        connected = run_cluster("connect", "--profile", profile, timeout=180)
-    except RuntimeError as exc:
-        if "First connection needs" in str(exc):
-            raise RuntimeError("This computer has no saved lab connection yet. Ask the user for their SSH alias, "
-                               "login node, controller path and site config, then run `studio.py lab connect`.") from exc
-        raise
-    return not connected.get("tunnel_reused")
-
-
-def close_lab(profile: str) -> dict:
-    """Close what open_lab started. Queued Slurm jobs keep running; their receipts still fetch."""
-    try:
-        return run_cluster("disconnect", "--profile", profile, timeout=180)
-    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
-        return {"status": "disconnect_failed", "message": str(exc)}
-
-
-def connection_summary(opened: bool, closed: dict | None) -> str:
-    if closed:
-        return "closed" if closed.get("status") == "disconnected" else closed.get("message", "disconnect failed")
-    return "kept open" if opened else "left open (it was already open)"
 
 
 def cmd_lab_pending(args):
@@ -418,36 +413,28 @@ def cmd_lab_pending(args):
             "next": [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", p]) for p in pending]}
 
 
+# Polling again will not change these. "prepared": the upload never reached the gateway,
+# so no job exists and rendering again is safe (the message says so).
+FINISHED = {"failed", "cancelled", "expired", "prepared"}
+
+
 def cmd_lab_fetch(args):
-    """Check a queued lab render; when it has finished, download and verify it like a local render."""
+    """Check a queued lab render; when it has finished, download and verify it like a local render.
+
+    The job command waits, observes by receipt (never resubmitting) and fetches.
+    """
     context = json.loads(Path(args.pending).expanduser().read_text())
-    profile = context.get("profile", "lab")
-    opened = open_lab(profile)
-    try:
-        result = _fetch_when_ready(args, context)
-    finally:
-        closed = close_lab(profile) if opened and not args.keep_connected else None
-    result["connection"] = connection_summary(opened, closed)
-    return result
-
-
-def _fetch_when_ready(args, context: dict) -> dict:
-    deadline = time.monotonic() + max(0.0, args.wait)
-    while True:
-        status = run_cluster("status", context["receipt"])
-        state = status.get("status")
-        if state == "completed":
-            break
-        terminal = state in {"failed", "cancelled", "expired", "submission_unknown"}
-        if terminal or time.monotonic() >= deadline:
-            return {"status": state, "job_id": status.get("job_id"), "slurm_id": status.get("slurm_id"),
-                    "error": (status.get("error") or status.get("message")) if terminal else None,
-                    "next": [] if terminal else [shlex.join(["python3", str(Path(__file__).resolve()), "lab-fetch", args.pending])]}
-        time.sleep(min(15.0, max(0.0, deadline - time.monotonic())))
-    fetched = run_cluster("fetch", context["receipt"])
-    if "outputs" not in fetched:
-        return {"status": fetched.get("status", "unknown"), "message": "Fetch returned no files yet; try again later."}
-    return finish_render(fetched, context)
+    command = ["fetch", context["receipt"], "--wait", str(max(0.0, args.wait)), "--interval", "15"]
+    fetched = run_job(*command, *(["--keep-connected"] if args.keep_connected else []),
+                      timeout=max(0.0, args.wait) + 900)
+    if "outputs" in fetched:
+        return {**finish_render(fetched, context), "connection": fetched.get("connection")}
+    state = fetched.get("status")
+    # A Slurm submission the gateway could not confirm may still be reconciled: check again later.
+    return {"status": state, "job_id": fetched.get("job_id"), "slurm_id": fetched.get("slurm_id"),
+            "error": (fetched.get("error") or fetched.get("message")) if state in FINISHED else None,
+            "message": fetched.get("message"), "connection": fetched.get("connection"),
+            "next": [] if state in FINISHED else [lab_fetch_command(args.pending)]}
 
 
 def cmd_lab(args):

@@ -1,8 +1,8 @@
-"""Read the shared defaults bundled by scripts/build_plugin.py."""
-import json
-from pathlib import Path
+"""The renderer's shared defaults, read from this plugin's bundled wheel (or source checkout).
 
-DEFAULTS = json.loads((Path(__file__).resolve().parent.parent / 'assets/render_defaults.json').read_text())
-IMAGE = DEFAULTS['image']
-ANIMATION = DEFAULTS['animation']
-ANIMATION_LIMITS = DEFAULTS['limits']['animation']
+co-pymol reads the same file, so Studio, co-pymol and the renderer cannot drift.
+"""
+import studio_env
+
+studio_env.use_bundled_helpers()
+from co_pymol.defaults import ANIMATION, ANIMATION_LIMITS, DEFAULTS, IMAGE  # noqa: E402,F401

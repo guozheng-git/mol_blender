@@ -10,11 +10,10 @@ from pathlib import Path
 import sys
 import pymol2
 from render_defaults import ANIMATION
-from pymol_session import ligand_records, residue_selection
 
 
 def prepare(cmd, config, *, width=None, height=None):
-    from co_pymol.scene.animation import frames_for, template
+    from co_pymol.scene.animation import fit_viewport, frames_for, template
     from co_pymol.scene.camera import keys_for
     from co_pymol.scene.capture import capture_animation
 
@@ -25,10 +24,10 @@ def prepare(cmd, config, *, width=None, height=None):
     focus = config.get("focus")
     if recipe in {"reveal", "cutaway"}:
         if not focus:
-            ligands = [l for l in ligand_records(cmd, "enabled") if not l["additive"]]
-            if not ligands:
+            from co_pymol.scene.ligands import default_focus
+            focus = default_focus(cmd, "enabled")  # The same choice as `co-pymol animate`.
+            if not focus:
                 raise ValueError("This recipe needs --focus or an enabled non-additive ligand")
-            focus = residue_selection("enabled", ligands[0])
         focus = f"enabled and ({focus})"
         if not cmd.count_atoms(focus):
             raise ValueError("The animation focus matches no enabled atoms")
@@ -37,11 +36,9 @@ def prepare(cmd, config, *, width=None, height=None):
                         rock_angle=config.get("rock_angle"))
     payload, animation = capture_animation(cmd, recipe, frames, config["fps"], gif=config["gif"])
     anchor = animation.get("anchor", 0)
-    viewport = cmd.get_viewport()
     if width is None and height is None:
         width, height = ANIMATION["preview"]["width"], ANIMATION["preview"]["height"]
-    width = width or round(height * viewport[0] / viewport[1])
-    height = height or max(1, round(width * viewport[1] / viewport[0]))
+    width, height = fit_viewport(cmd.get_viewport(), width, height)
     output = {"width": width, "height": height, "animation": animation}
     from blender_render.animation import normalize
     animation = output["animation"] = normalize(animation, output)

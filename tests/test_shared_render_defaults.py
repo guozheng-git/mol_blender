@@ -10,7 +10,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from sync_render_defaults import STUDIO, compile_defaults, synchronize
+from sync_render_defaults import compile_defaults, synchronize
+
+STUDIO = Path('plugins/structure-studio/skills/structure-studio')
 
 
 def test_generated_defaults_and_schema_are_current():
@@ -37,10 +39,11 @@ def test_changed_yaml_reaches_renderer_pymol_and_studio_without_losing_overrides
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     shutil.copytree(ROOT / STUDIO / 'scripts', tmp_path / STUDIO / 'scripts',
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    for relative in ('assets/molecular-data.json', 'references/presets.json'):
-        target = tmp_path / STUDIO / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / STUDIO / relative, target)
+    # Studio has no defaults or molecular-data copies: it reads co_pymol from the checkout
+    # (or, when staged, from its bundled wheel).
+    target = tmp_path / STUDIO / 'references/presets.json'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / STUDIO / 'references/presets.json', target)
     data = compile_defaults()
     data['image']['preset'] = 'northern_nights'
     data['image']['preview'].update(width=920, samples=27)
