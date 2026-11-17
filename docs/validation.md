@@ -2286,3 +2286,24 @@ defaults checks from November 6.
 
 These are merge regression checks; they do not repeat the earlier live SSH,
 Slurm or installed desktop-app acceptance workflows.
+
+## Shared GPU preference for every built-in preset (2026-11-17)
+
+Removed the explicit CPU settings from `cyan_candy_mesh`, `northern_nights`
+and `northern_nights_cutaway` on top of `main_merged` at `96793e1`. They now
+inherit the shared GPU/AUTO defaults introduced by PR #9. Updated the preset
+documentation to describe that preference; explicit request overrides and the
+existing CPU fallback remain available.
+
+- Renderer-default, style-schema and reference-preset tests: **83 passed** in
+  **0.35 s**. Directly checked that all **17** built-in presets resolve to GPU,
+  and that an explicit CPU request still overrides each changed preset.
+- Rendered all three presets with the existing local runtime at **192 x 144,
+  four samples**, without a device override or GPU-requirement environment
+  setting. Cyan candy mesh used public 1BNA; both Northern Nights variants used
+  public 1SPS. All three manifests recorded **GPU / METAL / Apple M3**.
+  End-to-end times were **15.50 s**, **17.55 s** and **19.26 s**, respectively.
+- Decoded and visually inspected all three PNGs. These are small device-selection
+  smoke checks, not comparisons against the authored reference compositions.
+  No desktop session was changed and no lab job was submitted.
+- `git diff --check` passed. No package/build configuration changed.
