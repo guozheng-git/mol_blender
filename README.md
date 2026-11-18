@@ -129,10 +129,7 @@ Choose one of the featured presets below with `--preset ID` in the CLI or
 for its complete editable JSON or a preview for the full image.
 
 A preset controls style; your structure and saved PyMOL pose determine its
-composition. Most gallery previews use public structures. The two Northern Nights
-previews use a prepared scene whose molecular source is not distributed; they
-illustrate the look rather than provide a reproducible public structure example.
-Some presets use specific chain or ligand selections, which may need adapting
+composition. Every gallery preview uses a public PDB structure. Some presets use specific chain or ligand selections, which may need adapting
 for another structure. See [preset details](docs/reference-presets.md) and the
 [gallery provenance](examples/presets/gallery.json) for sources and settings.
 
@@ -148,7 +145,7 @@ for another structure. See [preset details](docs/reference-presets.md) and the
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
 | [cyan_candy_mesh](blender_render/style_preset_cyan_candy_mesh.json) | Glossy cyan blobs, recessed blue mesh, and neon pink/yellow helical tubes. A/B surfaces, C/D tubes. | [<img src="examples/presets/cyan_candy_mesh.png" alt="cyan_candy_mesh preview" width="220">](examples/presets/cyan_candy_mesh.png) |
 | [northern_nights](blender_render/style_preset_northern_nights.json) | Teal-blue-violet ribbons, a mint peptide and glowing element-colored PTR. [Selection details](docs/reference-presets.md#northern-nights-bright-ribbons-and-dark-cutaway). | [<img src="examples/presets/northern_nights.png" alt="Northern Nights preview" width="220">](examples/presets/northern_nights.png) |
-| [northern_nights_cutaway](blender_render/style_preset_northern_nights_cutaway.json) | Rounded pocket cutaway, violet-blue binder and glowing PTR on black. [Rocking preview](examples/presets/northern_nights_cutaway_rock.gif). | [<img src="examples/presets/northern_nights_cutaway.png" alt="Northern Nights cutaway preview" width="220">](examples/presets/northern_nights_cutaway.png) |
+| [northern_nights_cutaway](blender_render/style_preset_northern_nights_cutaway.json) | Rounded pocket cutaway, violet-blue binder and glowing PTR on black. [Turntable preview](examples/presets/northern_nights_cutaway_turntable.gif). | [<img src="examples/presets/northern_nights_cutaway.png" alt="Northern Nights cutaway preview" width="220">](examples/presets/northern_nights_cutaway.png) |
 | [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 
 ```sh
@@ -161,10 +158,10 @@ the cyan surface, C the pink tube, and D the yellow tube. Adapt the JSON
 selections for other structures. The [example preparation](docs/reference-presets.md#cyan-candy-mesh)
 explains the public 1QJB preview; loading unmodified 1QJB does not create its C/D selections.
 
-All presets also support `--animation rock` and `--animation 360`. Use
+All presets also support `--animation 360` (turntable) and `--animation rock`. Use
 `blender-render presets` to include your own saved presets in the catalog.
 
-## Rocking and 360° GIFs
+## Turntable and rocking GIFs
 
 Install FFmpeg with the `libx264` and GIF encoders on your PATH. On macOS:
 
@@ -175,10 +172,10 @@ brew install ffmpeg
 Then render with any built-in or saved preset:
 
 ```sh
-blender-render render examples/1sps_pose.pse --animation rock --rock-angle 12 \
-  --duration 3 --fps 24 --gif --width 640 --height 480 -o renders/rock.png
 blender-render render examples/1sps_pose.pse --animation 360 \
   --duration 6 --fps 24 --gif --width 640 --height 480 -o renders/spin.png
+blender-render render examples/1sps_pose.pse --animation rock --rock-angle 12 \
+  --duration 3 --fps 24 --gif --width 640 --height 480 -o renders/rock.png
 ```
 
 Each animation writes PNG, MP4 and lossless `.frames.zip` files beside the requested
@@ -213,7 +210,7 @@ The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
 PyMOL. Rendering is synchronous. `width`, `height`, `samples`, `rough`, `save_blend`,
 `color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
-For animations, add `animation=rock` or `animation=360`, `gif=1`, `duration`, `fps`
+For animations, add `animation=360` (turntable) or `animation=rock`, `gif=1`, `duration`, `fps`
 and (for rocking) `rock_angle`. Optional movie preview needs Pillow installed in
 PyMOL's Python; for the repo-local Pixi environment:
 
@@ -222,8 +219,8 @@ pixi add --manifest-path .runtime/pymol/pixi.toml pillow
 ```
 
 ```pymol
-blender_render animation=rock, gif=1, width=640, height=480, output_name=rock.png
-blender_movie_export filename=rock-again.gif
+blender_render animation=360, gif=1, width=640, height=480, output_name=spin.png
+blender_movie_export filename=spin-again.gif
 ```
 
 Movie preview replaces PyMOL's current movie timeline when supported; `auto_preview=0`

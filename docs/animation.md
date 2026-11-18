@@ -30,7 +30,7 @@ quantized to 10 ms; use MP4 when precise frame timing matters.
 Any valid preset can include the same controls under `output.animation`:
 
 ```json
-{"mode": "rock", "duration": 3, "fps": 24, "rock_angle": 12, "gif": true}
+{"mode": "360", "duration": 6, "fps": 24, "gif": true}
 ```
 
 This is the value of `output.animation`, not a complete style. The rest of the
@@ -78,7 +78,7 @@ verified animation. FFmpeg must be on the invoking process's PATH. The CLI works
 without a PyMOL GUI.
 
 Claude/Codex can use the same CLI or call stdio MCP `render_structure` with
-`animation="rock"`, `gif=true`, and optional duration, FPS, dimensions and samples.
+`animation="360"`, `gif=true`, and optional duration, FPS, dimensions and samples.
 The response includes movie file paths. `read_render` is still the PNG inspection
 tool; movie playback depends on the client's support for local media files.
 

@@ -126,7 +126,7 @@ original job running and never submits another one.
 Animation controls work as they do locally:
 
 ```pymol
-blender_render cluster=lab, animation=rock, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=rock.png
+blender_render cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
 ```
 
 Omit `cluster=lab` to render locally. Custom styles and saved local presets are

@@ -332,13 +332,13 @@
     "chain_selections": [
       "B"
     ],
-    "example_structure": "Prepared scene (source not distributed)",
+    "example_structure": "1SPS",
     "default": false
   },
   {
     "id": "northern_nights_cutaway",
     "aliases": [],
-    "description": "Rounded STAT-style pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.",
+    "description": "Rounded pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.",
     "material": "clay",
     "representations": [
       "cartoon",
@@ -352,7 +352,7 @@
     "chain_selections": [
       "B"
     ],
-    "example_structure": "Prepared scene (source not distributed)",
+    "example_structure": "1SPS",
     "default": false
   }
 ]

@@ -93,10 +93,8 @@ All controls use the existing schema and scene builder. Unsupported keys, zero g
 ## Evidence
 
 [Gallery metadata](../examples/presets/gallery.json) retains provenance,
-preset hashes, views, sizes and image hashes. Public examples include coordinate
-URLs/hashes. The Northern Nights previews are prepared-scene illustrations whose
-molecular source files are not distributed; they are labeled separately from
-public structure examples.
+preset hashes, views, sizes and image hashes. Every example uses a public PDB
+entry and records its coordinate URL and hash.
 
 Use the configured Molecular Nodes environment and pinned CCD. A successful
 local render does not by itself verify image display in Claude or Codex.
@@ -135,26 +133,35 @@ Two presets provide related bright and dark looks:
 - `northern_nights_cutaway`: a rounded pocket opening and black background,
   using a violet–blue–purple binder palette and teal-to-mint peptide gradient.
 
-Try the ribbon palette on the bundled public 1SPS structure:
+Both previews use public **1SPS** (Src SH2 domain bound to the pY peptide
+pQpYEEIP), from the bundled `examples/1sps.cif`. The file holds three copies of
+the complex; the previews keep biological assembly 1, which is SH2 chain A with
+peptide chain D (author chain IDs). Chain D was relabeled B to match the presets'
+peptide selection, and coordinates were not moved. The camera is PyMOL's
+load-time view of the deposited coordinates: no `orient`, only `zoom` with a
+2 angstrom buffer. Build the same pose in PyMOL:
 
-```sh
-blender-render render examples/1sps.cif --preset northern_nights --rough -o renders/northern-public.png
+```python
+cmd.load("examples/1sps.cif", "structure")
+cmd.remove("not (chain A+D)")
+cmd.alter("chain D", 'chain="B"')
+cmd.hide("everything"); cmd.show("cartoon", "polymer"); cmd.show("sticks", "organic")
+cmd.zoom("all", buffer=2)
+cmd.save("1sps_assembly1.pse")
 ```
 
-The gallery's phosphoresidue close-up and pocket opening require an appropriate
-prepared complex. The two preview images illustrate that composition, but their
-source scene is not distributed. For your own complex, prepare the selections
-and camera before rendering:
-
 ```sh
-# Keep your prepared input camera:
-blender-render render prepared-pose.pse --preset northern_nights -o bright.png
-blender-render render prepared-pose.pse --preset northern_nights_cutaway -o cutaway.png
+blender-render render 1sps_assembly1.pse --preset northern_nights -o bright.png
+blender-render render 1sps_assembly1.pse --preset northern_nights_cutaway -o cutaway.png
 # Select the authored PTR close-up framing (27 angstrom orthographic extent):
-blender-render render prepared-pose.pse --preset northern_nights --no-preserve-view -o detail.png
-# Optional camera rocking, not a molecular trajectory:
-blender-render render prepared-pose.pse --preset northern_nights_cutaway --animation rock --gif -o rocking.png
+blender-render render 1sps_assembly1.pse --preset northern_nights --no-preserve-view -o detail.png
+# Optional camera turntable, not a molecular trajectory:
+blender-render render 1sps_assembly1.pse --preset northern_nights_cutaway --animation 360 --gif -o turntable.png
 ```
+
+Rendering `examples/1sps.cif` directly is different: the CLI orients the whole
+file, so all three copies appear and protein chain B takes the peptide colors.
+For your own complex, prepare the selections and camera the same way.
 
 In PyMOL, select `preset=northern_nights` or `preset=northern_nights_cutaway`.
 These presets select chain B as the peptide. Adapt the chain palette and all
