@@ -17,7 +17,8 @@ Start with one of the 17 [built-in presets](#preset-gallery), from soft pastel
 ribbons to frosted surfaces and vivid binding-site views. If you have a PNG with a
 style you love, the [recreate-render-preset skill](#claude-code-and-codex) can use it
 as a visual reference, refine the look through local previews and save a reusable
-preset for your structures.
+preset for your structures. Made a preset you love? Share it with the community 
+by opening a pull request!
 
 Work from PyMOL or the command line, or ask Claude Code or Codex to run the same
 local tools for you. Export a transparent PNG for a slide or paper, save an editable
