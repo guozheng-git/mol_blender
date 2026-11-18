@@ -1,4 +1,4 @@
-"""Optional Blender Render tools; existing PyMOL rendering stays unchanged."""
+"""Optional mol-blender tools; existing PyMOL rendering stays unchanged."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def register_blender_tools(mcp: FastMCP) -> None:
         """Capture this PyMOL view and submit a background Blender render.
 
         backend: "local" renders on this computer; "lab" (or "cluster") renders on
-        the lab GPU through the saved `blender-render cluster connect` profile.
+        the lab GPU through the saved `mol-blender cluster connect` profile.
         Omit it to use the configured default.
 
         Only call when the user asks for a Blender picture. Enabled molecular

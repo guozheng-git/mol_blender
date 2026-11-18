@@ -8,17 +8,17 @@ import time
 
 import pytest
 
-from blender_render import authoring, core, developer
-from blender_render.presets import preset_path, required_capabilities
-from blender_render.spec import resolve_options, style_digest
+from mol_blender import authoring, core, developer
+from mol_blender.presets import preset_path, required_capabilities
+from mol_blender.spec import resolve_options, style_digest
 
 
 def test_cancellation_reaps_preview_process_group_and_cleans_snapshot(tmp_path):
-    from blender_render.errors import RenderCancelled
+    from mol_blender.errors import RenderCancelled
 
     # Use the real snapshot/launcher with a harmless runner and child process.
     # This detects killing only the caller instead of the isolated render group.
-    package = tmp_path / 'checkout/blender_render'
+    package = tmp_path / 'checkout/mol_blender'
     package.mkdir(parents=True)
     (package / 'blender_custom_render.py').touch()
     (package / 'developer.py').write_text('''
@@ -108,7 +108,7 @@ def test_invalid_output_shape_with_depth_of_field(style):
 
 
 def test_snapshot_tracks_python_and_assets(tmp_path):
-    package = tmp_path / "checkout/blender_render"
+    package = tmp_path / "checkout/mol_blender"
     package.mkdir(parents=True)
     (package / "blender_custom_render.py").write_text("value = 1\n")
     (package / "style.json").write_text('{}')
@@ -116,14 +116,14 @@ def test_snapshot_tracks_python_and_assets(tmp_path):
     (package / "blender_custom_render.py").write_text("value = 2\n")
     second = developer.snapshot_source(package.parent, tmp_path / "second")
     assert first["sha256"] != second["sha256"]
-    assert (tmp_path / "first/blender_render/blender_custom_render.py").read_text() == "value = 1\n"
+    assert (tmp_path / "first/mol_blender/blender_custom_render.py").read_text() == "value = 1\n"
     (package / "style.json").write_text('{"changed":true}')
     third = developer.snapshot_source(package.parent, tmp_path / "third")
     assert second["sha256"] != third["sha256"]
 
 
 def test_installed_source_snapshot_does_not_require_git(tmp_path, monkeypatch):
-    package = tmp_path / 'installed/blender_render'
+    package = tmp_path / 'installed/mol_blender'
     package.mkdir(parents=True)
     (package / 'blender_custom_render.py').write_text('value = 1\n')
     monkeypatch.setenv('PATH', str(tmp_path / 'no-executables'))
@@ -141,7 +141,7 @@ def test_preview_default_source_is_working_checkout_not_installed_package(tmp_pa
 
 
 def test_snapshot_rejects_concurrent_edit_and_symlink(tmp_path, monkeypatch):
-    package = tmp_path / "checkout/blender_render"
+    package = tmp_path / "checkout/mol_blender"
     package.mkdir(parents=True)
     script = package / "blender_custom_render.py"
     script.write_text("value = 1\n")
@@ -161,10 +161,10 @@ def test_snapshot_rejects_concurrent_edit_and_symlink(tmp_path, monkeypatch):
 def test_isolated_state_does_not_inherit_service_or_credentials(tmp_path, monkeypatch):
     monkeypatch.setenv("MODAL_TOKEN_SECRET", "must-not-be-copied")
     monkeypatch.setenv("PYTHONPATH", "/old/checkout")
-    monkeypatch.setenv("BLENDER_RENDER_HOME", "/production")
+    monkeypatch.setenv("MOL_BLENDER_HOME", "/production")
     env = developer.isolated_environment(tmp_path)
     assert "MODAL_TOKEN_SECRET" not in env and "PYTHONPATH" not in env
-    assert env["BLENDER_RENDER_HOME"] == str(tmp_path / "config")
+    assert env["MOL_BLENDER_HOME"] == str(tmp_path / "config")
     assert env["HOME"] == str(tmp_path / "home")
     assert env["BLENDER_USER_RESOURCES"] == str(tmp_path / "blender-resources")
 
@@ -186,7 +186,7 @@ def test_isolated_state_preserves_compute_allocation_without_library_injection(t
 
 def test_save_restart_reuse_and_revision(style, tmp_path):
     saved = authoring.save_preset("user/macro", style, tmp_path, camera_policy="authored", description="Local macro focus")
-    command = [sys.executable, "-B", "-m", "blender_render.cli", "dev", "--catalog-dir", str(tmp_path),
+    command = [sys.executable, "-B", "-m", "mol_blender.cli", "dev", "--catalog-dir", str(tmp_path),
                "inspect", "user/macro"]
     # A second interpreter reads persisted bytes; no in-process registry state.
     restarted = json.loads(subprocess.check_output(command, text=True))
@@ -200,7 +200,7 @@ def test_save_restart_reuse_and_revision(style, tmp_path):
     style["camera"]["depth_of_field"]["f_stop"] = 4
     new = authoring.save_preset("user/macro", style, tmp_path, camera_policy="authored", description="Revision", replace=True)
     assert new["revision"] == 2 and new["sha256"] != saved["sha256"]
-    from blender_render.presets import catalog
+    from mol_blender.presets import catalog
     assert len(authoring.list_presets(tmp_path)) == len(catalog()) + 1
 
 

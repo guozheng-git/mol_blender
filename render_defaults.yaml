@@ -1,4 +1,4 @@
-# Shared authoring source for the renderer, PyMOL and Structure Studio.
+# Shared authoring source for the renderer, PyMOL and molblender-studio.
 # Run: python scripts/sync_render_defaults.py
 # Preset-specific output settings and explicit request options take precedence.
 version: 1

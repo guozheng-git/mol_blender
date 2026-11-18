@@ -34,7 +34,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_1_opaque_pastel.json",
+    "preset_json": "mol_blender/style_preset_1_opaque_pastel.json",
     "preset_file_sha256": "ed0205d2d9219001cfc83ea5c3cf88bf275706ab7a67e1c811e6d7f3ce02deca",
     "resolved_style_sha256": "a26dcbbc4c1b5f5519265f4c098081bff42bc33b4e205d2031db91f0f0103bf8",
     "dimensions": [
@@ -89,7 +89,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_2_frosted_blue.json",
+    "preset_json": "mol_blender/style_preset_2_frosted_blue.json",
     "preset_file_sha256": "185e96315f86f2fdffe85bf21f0ac31a55ee4b394db63957385a5b18b9503cf5",
     "resolved_style_sha256": "aded98f1fa80506c2fe37f1be392a0c857d0a9583499dcbe50ddc9af3aea9b74",
     "dimensions": [
@@ -144,7 +144,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_3_black_tubes.json",
+    "preset_json": "mol_blender/style_preset_3_black_tubes.json",
     "preset_file_sha256": "2117f59ec10a431bb7e93be30b877ec5b55088011cae9ea56fed7258a4a9e083",
     "resolved_style_sha256": "94d1dafb86bcb0dce443cdf4219e6fdbf2ce334940585a35554c0e8260560d89",
     "dimensions": [
@@ -199,7 +199,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_4_milky_green.json",
+    "preset_json": "mol_blender/style_preset_4_milky_green.json",
     "preset_file_sha256": "d8816797d3cf5d8694c3fc1f961861db189a189851f3e535432e6e08e65fc01d",
     "resolved_style_sha256": "73758072bd3a9cdc5130fba8ab9045bdfc954a0f5b831c0a762c711d888a9620",
     "dimensions": [
@@ -254,7 +254,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_5_black_interface.json",
+    "preset_json": "mol_blender/style_preset_5_black_interface.json",
     "preset_file_sha256": "b001d0687c1f6ea2a4aa71ee2efc6c826f2bec32a55075411ee992dec3cf92d9",
     "resolved_style_sha256": "a7bfdf47c2a2608f8cea561885a7e7f13b90223fb8462409ac2959fcc5be4f1f",
     "dimensions": [
@@ -309,7 +309,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_dried_paint_green.json",
+    "preset_json": "mol_blender/style_preset_dried_paint_green.json",
     "preset_file_sha256": "2234f766bf27d00cd983f4b17c0ec9cd5f535722bc38b2a8f50a33d43ed3dd8c",
     "resolved_style_sha256": "87f9f5dfb1d308444fe079b288fc973f63f2297688828f5e7aa82a3cdb0124cf",
     "dimensions": [
@@ -364,7 +364,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_powder_blue_rounded.json",
+    "preset_json": "mol_blender/style_preset_powder_blue_rounded.json",
     "preset_file_sha256": "cab2987aaa11584994f0c2c6cc048f88c60c693797088fdfcc527f179bb08c6c",
     "resolved_style_sha256": "a0a6c9401656eb1368c76fbb9bc7e1ed8e4bf69ff0e7c3f7f289c2acc0dbf52d",
     "dimensions": [
@@ -420,7 +420,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_cyan_mint_cutaway.json",
+    "preset_json": "mol_blender/style_preset_cyan_mint_cutaway.json",
     "preset_file_sha256": "98e8d06f73bdbf5122548ec15425c7a92f05457c42e514f265b19377d05025d1",
     "resolved_style_sha256": "4e33e94b47594836f898857a1e5d0f8723765c5129da3e26e1f207fc17641dce",
     "dimensions": [
@@ -475,7 +475,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_pastel_duplex_rounded.json",
+    "preset_json": "mol_blender/style_preset_pastel_duplex_rounded.json",
     "preset_file_sha256": "de6d02bc491dae4985e6729108f37541115488e7ed81378c70287360490956a3",
     "resolved_style_sha256": "37aa5658198d66d49ed6fc6ca276adf57362d5e87d0d782b78224a683558c140",
     "dimensions": [
@@ -530,7 +530,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_pastel_duplex_cartoon.json",
+    "preset_json": "mol_blender/style_preset_pastel_duplex_cartoon.json",
     "preset_file_sha256": "134a17f1478907e887b3d0c9dfa96eaae14be39792dfbed77de008f4f2809a42",
     "resolved_style_sha256": "c131926eeb5ae8e0c541cf1ebb90b5348cf7de30b4ab3e681815ffc442e04d1d",
     "dimensions": [
@@ -585,7 +585,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_vivid_binding_site.json",
+    "preset_json": "mol_blender/style_preset_vivid_binding_site.json",
     "preset_file_sha256": "8da7eced5a65e18eaad9c0521de18020750b1a6dd5a6379db9216cbb8c369de7",
     "resolved_style_sha256": "f4f80bc54af7a3cdc369b0c54a04ecbcbdc03de6dd0e4415e13f750d447da90e",
     "dimensions": [
@@ -641,7 +641,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_ivory_lime_frosted.json",
+    "preset_json": "mol_blender/style_preset_ivory_lime_frosted.json",
     "preset_file_sha256": "93836f354a18e030156b6330779d20d6d760ac485b1f2877a84fa5d510dd27ee",
     "resolved_style_sha256": "8e4e7806d003e455cec4e011be37a98f299d8a8b6608c8ca387db665257e0835",
     "dimensions": [
@@ -699,7 +699,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_mint_sky_assembly.json",
+    "preset_json": "mol_blender/style_preset_mint_sky_assembly.json",
     "preset_file_sha256": "cb7b7e5d1c19341b17aa9f0729d98d5bdf01b1af6d747c16187d95bd7f430756",
     "resolved_style_sha256": "6c8fd0be3cf7198b3c800ade2366a6063e3e8cb78f0de0a3dc70c7c53045a9ca",
     "dimensions": [
@@ -754,7 +754,7 @@
         1700
       ]
     },
-    "preset_json": "blender_render/style_preset_neon_duplex_hero.json",
+    "preset_json": "mol_blender/style_preset_neon_duplex_hero.json",
     "preset_file_sha256": "f41e4788878acfa0056fff21f5017a6e9694746be5100d333059d56aba280f11",
     "resolved_style_sha256": "bab093ef70809cd355298cbe80dc9bcb944066782f558d86218c01e9891260d2",
     "dimensions": [
@@ -809,7 +809,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_cyan_candy_mesh.json",
+    "preset_json": "mol_blender/style_preset_cyan_candy_mesh.json",
     "preset_file_sha256": "c457db7ac8b2e9dd47c376e610e7747da88695433292ad040637d9041c281b98",
     "resolved_style_sha256": "a8db20c41c8e5bdc366a74d552c6b68dc7459d648dd0772de73ccd88110fcef9",
     "dimensions": [
@@ -861,7 +861,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_northern_nights.json",
+    "preset_json": "mol_blender/style_preset_northern_nights.json",
     "preset_file_sha256": "7f72286bde5379d037a5cc980b95a2559d8973078ef6b5f8eaeda7e5c292249f",
     "resolved_style_sha256": "4a9e74d8605529db30ff5c307fd72b2ecf4a4f1ca6c27d384af77090d34eba26",
     "dimensions": [
@@ -916,7 +916,7 @@
         480
       ]
     },
-    "preset_json": "blender_render/style_preset_northern_nights_cutaway.json",
+    "preset_json": "mol_blender/style_preset_northern_nights_cutaway.json",
     "preset_file_sha256": "8b85978ca305a784cd0394ee55f263527886c9acc32cd49d3fe62de04d898357",
     "resolved_style_sha256": "86b6e2c94fc6466e436c79778ae425faf214d225a41e230d1e60ba8b4ae5f041",
     "dimensions": [

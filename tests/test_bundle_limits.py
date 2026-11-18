@@ -8,7 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] /
-                       'plugins/structure-studio/skills/structure-studio/scripts'))
+                       'plugins/molblender_studio/skills/molblender-studio/scripts'))
 import artifact_files as files
 
 

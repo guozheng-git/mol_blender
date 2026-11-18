@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from blender_render.cutout_planes import (
+from mol_blender.cutout_planes import (
     DEFAULT_PLANE_ENABLED,
     legacy_box_scales_to_plane_scales,
     resolve_frame_axes,

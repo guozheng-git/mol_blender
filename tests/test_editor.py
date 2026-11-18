@@ -5,7 +5,7 @@ import threading
 from types import SimpleNamespace
 import pytest
 
-from blender_render import editor, editor_protocol as protocol
+from mol_blender import editor, editor_protocol as protocol
 
 
 @pytest.mark.parametrize('value,spec', [
@@ -76,7 +76,7 @@ def test_pending_operation_is_polled_without_replay(monkeypatch):
 
 
 def test_preset_captures_unsaved_scene_and_cleans_temp(monkeypatch):
-    from blender_render.scene import edit as scene_edit
+    from mol_blender.scene import edit as scene_edit
     calls = []
     def save(session_id, revision, path, **kwargs):
         assert kwargs['copy'] is True
@@ -100,7 +100,7 @@ def test_invalid_render_does_not_capture_scene(tmp_path, monkeypatch):
 
 
 def test_source_change_requires_new_session(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     cfg = editor.prepare()
     try:
         assert editor.session(cfg['id'])['source_sha256'] == cfg['source_sha256']
@@ -114,7 +114,7 @@ def test_source_change_requires_new_session(tmp_path, monkeypatch):
 
 
 def test_attach_script_is_opt_in_and_does_not_overwrite(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     path = tmp_path / 'attach.py'
     result = editor.attach_script(path)
     cfg = editor.session(result['session_id'])
@@ -144,7 +144,7 @@ def test_reconnect_keeps_session_and_never_opens_desktop(monkeypatch):
 
 
 def test_prepare_reconnect_does_not_replace_live_registry(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     old = editor.prepare()
     captures = []
     prepare = editor.prepare
@@ -171,7 +171,7 @@ def test_mcp_open_requires_explicit_new_window(monkeypatch):
     pytest.importorskip('fastmcp')
     import asyncio
     from fastmcp import Client
-    from blender_render.mcp_server import create_stdio
+    from mol_blender.mcp_server import create_stdio
     calls = []
     monkeypatch.setattr(editor, 'open_editor', lambda *a, **kw: calls.append((a, kw)) or {'session_id': 'selected'})
     async def check():
@@ -185,7 +185,7 @@ def test_mcp_open_requires_explicit_new_window(monkeypatch):
 
 
 def test_cli_and_pymol_opt_in_routes(monkeypatch):
-    from blender_render import cli, local, local_bridge, pymol_bridge_plugin as plugin
+    from mol_blender import cli, local, local_bridge, pymol_bridge_plugin as plugin
     calls = []
     monkeypatch.setattr(local, 'render_file', lambda *a, **kw: calls.append(kw))
     cli.execute(cli.parser().parse_args(['render', 'test.cif', '--edit-bridge']))
@@ -199,7 +199,7 @@ def test_cli_and_pymol_opt_in_routes(monkeypatch):
 
 
 def test_editor_cli_routes(monkeypatch, tmp_path):
-    from blender_render import editor_cli
+    from mol_blender import editor_cli
     calls = []
     monkeypatch.setattr(editor, 'save_preset', lambda *a, **kw: calls.append((a, kw)))
     editor_cli.execute(editor_cli.parser().parse_args(['save-preset', 'session', 'user/look', '--revision', 'abc', '--camera-policy', 'authored']))
@@ -225,7 +225,7 @@ def test_invalid_interactions_never_reach_the_desktop(monkeypatch, method, args,
 
 
 def test_interaction_cli_keeps_the_selected_session(monkeypatch):
-    from blender_render import editor_cli
+    from mol_blender import editor_cli
     calls = []
     monkeypatch.setattr(editor, 'call', lambda *a, **kw: calls.append((a, kw)))
     editor_cli.execute(editor_cli.parser().parse_args(['animation-speed', 'chosen', '--revision', 'rev', '--multiplier', '2']))
@@ -240,7 +240,7 @@ def test_optional_mcp_editor_tools_and_original_png(tmp_path, monkeypatch):
     import asyncio, base64, hashlib
     from PIL import Image
     from fastmcp import Client
-    from blender_render.mcp_server import create_stdio
+    from mol_blender.mcp_server import create_stdio
     path = tmp_path / 'preview.png'; Image.new('RGB', (8,8), 'orange').save(path)
     calls = []
     monkeypatch.setattr(editor, 'edit', lambda *a: calls.append(a) or {'revision': 'next'})
@@ -258,7 +258,7 @@ def test_optional_mcp_editor_tools_and_original_png(tmp_path, monkeypatch):
 
 
 def test_forget_refuses_live_desktop(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     cfg = editor.prepare()
     cfg['pid'] = __import__('os').getpid()
     protocol.write_json(Path(cfg['registry_file']), cfg)
@@ -269,7 +269,7 @@ def test_forget_refuses_live_desktop(tmp_path, monkeypatch):
 
 
 def test_forget_refuses_starting_desktop(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     cfg = editor.prepare()
     launcher = Path(cfg['root']) / 'launcher.json'
     protocol.write_json(launcher, {'pid': __import__('os').getpid()})
@@ -279,7 +279,7 @@ def test_forget_refuses_starting_desktop(tmp_path, monkeypatch):
 
 
 def test_failed_attach_script_cleans_source(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     blocked = tmp_path / 'file'; blocked.write_text('keep')
     captures = []
     prepare = editor.prepare
@@ -296,7 +296,7 @@ def test_failed_attach_script_cleans_source(tmp_path, monkeypatch):
 @pytest.mark.parametrize('manual_between', [False, True])
 def test_repeated_chat_undo_cannot_cross_a_manual_edit(monkeypatch, manual_between):
     import importlib.util, sys
-    import blender_render.scene
+    import mol_blender.scene
     scene = object()
     state = {'revision': 'second-chat-edit'}
     restored = []
@@ -308,9 +308,9 @@ def test_repeated_chat_undo_cannot_cross_a_manual_edit(monkeypatch, manual_betwe
     bpy = SimpleNamespace(context=SimpleNamespace(scene=scene, mode='OBJECT',
         window_manager=SimpleNamespace(windows=[])), app=SimpleNamespace(is_job_running=lambda _: False))
     monkeypatch.setitem(sys.modules, 'bpy', bpy)
-    monkeypatch.setattr(blender_render, 'editor_controls', controls, raising=False)
-    monkeypatch.setattr(blender_render.scene, 'capture', SimpleNamespace(), raising=False)
-    spec = importlib.util.spec_from_file_location('blender_render._undo_test', Path(editor.__file__).with_name('editor_blender.py'))
+    monkeypatch.setattr(mol_blender, 'editor_controls', controls, raising=False)
+    monkeypatch.setattr(mol_blender.scene, 'capture', SimpleNamespace(), raising=False)
+    spec = importlib.util.spec_from_file_location('mol_blender._undo_test', Path(editor.__file__).with_name('editor_blender.py'))
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     bridge = module.Bridge.__new__(module.Bridge)
     bridge.scene = scene

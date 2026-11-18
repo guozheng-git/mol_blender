@@ -5,7 +5,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] /
-                       'plugins/structure-studio/skills/structure-studio/scripts'))
+                       'plugins/molblender_studio/skills/molblender-studio/scripts'))
 import studio_env
 
 
@@ -28,7 +28,7 @@ def test_import_probe_reports_libraries_without_installing(monkeypatch):
 
 
 def test_setup_refuses_aliased_or_global_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv('STRUCTURE_STUDIO_HOME', str(tmp_path / 'studio'))
+    monkeypatch.setenv('MOLBLENDER_STUDIO_HOME', str(tmp_path / 'studio'))
     (tmp_path / 'studio').mkdir()
     (tmp_path / 'studio/render').symlink_to(tmp_path)
     with pytest.raises(studio_env.SetupError, match='inside'):
@@ -39,7 +39,7 @@ def test_setup_refuses_aliased_or_global_environment(tmp_path, monkeypatch):
 
 
 def test_existing_environment_must_match_python_pin(tmp_path, monkeypatch):
-    monkeypatch.setenv('STRUCTURE_STUDIO_HOME', str(tmp_path))
+    monkeypatch.setenv('MOLBLENDER_STUDIO_HOME', str(tmp_path))
     env = tmp_path / 'pymol'
     (env / 'bin').mkdir(parents=True)
     (env / 'bin/python').touch()

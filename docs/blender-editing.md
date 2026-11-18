@@ -30,7 +30,7 @@ blender_preset_from_blend ~/Desktop/blender-edit/my-look.blend, user/my-look
 blender_render selection=(all), preset=user/my-look, output_dir=~/Desktop/blender-edit, output_name=with-my-look.png
 ```
 
-The new preset is available through `blender-render presets` and through the
+The new preset is available through `mol-blender presets` and through the
 existing local CLI, PyMOL and stdio MCP renderer. It is saved under the local
 configuration directory, not in the repository or Blender's installation.
 The importer reads the saved file, so remember to save again after further edits.
@@ -38,17 +38,17 @@ The importer reads the saved file, so remember to save again after further edits
 ## From a terminal
 
 ```sh
-blender-render render structure.cif --preset mint_sky_assembly --open-blender \
+mol-blender render structure.cif --preset mint_sky_assembly --open-blender \
   --width 640 --height 480 --samples 32 -o renders/start.png
 
 # After editing and saving as renders/my-look.blend in Blender:
-blender-render dev from-blend renders/my-look.blend --preset user/my-look \
+mol-blender dev from-blend renders/my-look.blend --preset user/my-look \
   --description 'My Blender material and lighting' --report renders/my-look-report.json
 
-blender-render render another-structure.cif --preset user/my-look -o renders/reused.png
+mol-blender render another-structure.cif --preset user/my-look -o renders/reused.png
 ```
 
-To open an existing scene again, use `blender-render open renders/my-look.blend`.
+To open an existing scene again, use `mol-blender open renders/my-look.blend`.
 `--open-blender` is optional; ordinary rendering continues to work without a
 desktop. It can be combined with `--warm` / `warm=1`: rendering uses the private
 worker, and editing opens a separate desktop process. Closing the editor does
@@ -107,7 +107,7 @@ made in Blender are listed as ignored. To make the Blender composition part of
 the preset, choose:
 
 ```sh
-blender-render dev from-blend renders/my-look.blend --preset user/my-camera-look \
+mol-blender dev from-blend renders/my-look.blend --preset user/my-camera-look \
   --camera-policy authored --report renders/my-camera-report.json
 ```
 
@@ -143,7 +143,7 @@ is the headless Linux Studio `bpy` launcher, configure an existing desktop Blend
 separately:
 
 ```sh
-blender-render setup --gui-blender /path/to/desktop/blender
+mol-blender setup --gui-blender /path/to/desktop/blender
 ```
 
 Use the pinned Blender 5.0.1 for editing as well as rendering. The native Blender

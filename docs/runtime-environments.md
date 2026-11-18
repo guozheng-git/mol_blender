@@ -1,7 +1,7 @@
 # Isolated local and Linux environments
 
 For a first installation, use the [co-PyMOL](install-co-pymol.md) or
-[Structure Studio](install-claude.md) guide. This page covers environment
+[molblender-studio](install-claude.md) guide. This page covers environment
 boundaries, dependency maintenance and Linux image builds.
 
 ## Controller environment
@@ -13,8 +13,8 @@ explicitly; the project does not bootstrap it or modify global Python packages.
 
 ## PyMOL and Blender runtimes
 
-Structure Studio setup creates two separate uv environments below
-`STRUCTURE_STUDIO_HOME`: PyMOL and Blender's `bpy` runtime. Their complete,
+molblender-studio setup creates two separate uv environments below
+`MOLBLENDER_STUDIO_HOME`: PyMOL and Blender's `bpy` runtime. Their complete,
 hash-locked dependency sets are shipped under the skill's `references/`.
 PyMOL 3.1.0.4 and the renderer both pin NumPy 1.26.4. These environments must
 remain separate. The renderer wheel is installed with `--no-deps` after syncing
@@ -24,14 +24,14 @@ viewing, doctor and rendering never install packages or missing system libraries
 For development, use a repo-local installation:
 
 ```sh
-export STRUCTURE_STUDIO_HOME="$PWD/.runtime/studio"
-python plugins/structure-studio/skills/structure-studio/scripts/studio.py setup --only pymol
+export MOLBLENDER_STUDIO_HOME="$PWD/.runtime/studio"
+python plugins/molblender_studio/skills/molblender-studio/scripts/studio.py setup --only pymol
 ```
 
 Full Studio setup requires a built plugin containing its renderer wheel; use the
 staged plugin produced by the release builder. Alternatively configure an existing
 Blender executable, dependency directory and PyMOL interpreter through
-`blender-render setup`. This preserves a compatible native Blender installation.
+`mol-blender setup`. This preserves a compatible native Blender installation.
 The native Blender installer uses the existing version/hash lock with uv `--target`
 for Blender's Python dependencies and never runs pip/ensurepip in the caller.
 
@@ -42,17 +42,17 @@ To refresh dependency locks deliberately, then rerun the affected runtime checks
 ```sh
 uv lock
 uv pip compile --python-version 3.11 --universal --generate-hashes runtime/native.in \
-  -o blender_render/runtime-requirements.txt
+  -o mol_blender/runtime-requirements.txt
 uv pip compile --python-version 3.11 --universal --generate-hashes runtime/pymol.in \
-  -o plugins/structure-studio/skills/structure-studio/references/pymol-requirements.txt
+  -o plugins/molblender_studio/skills/molblender-studio/references/pymol-requirements.txt
 uv pip compile --python-version 3.11 --universal --generate-hashes runtime/render.in \
-  -o plugins/structure-studio/skills/structure-studio/references/render-requirements.txt
+  -o plugins/molblender_studio/skills/molblender-studio/references/render-requirements.txt
 ```
 
 `runtime/native.in` retains the scientific ABI pins and supplies the native
 Blender dependency lock. The Studio render lock adds the matching `bpy` wheel;
 native Blender supplies its own `bpy`. After a native dependency version changes,
-refresh its source URL, checksum and license in `blender_render/runtime-sources.json`.
+refresh its source URL, checksum and license in `mol_blender/runtime-sources.json`.
 Run `uv run --locked --group security python scripts/audit_dependencies.py` to
 check all controller, build and runtime package versions, including platform
 variants. Pillow runs in Python 3.11; the PyMOL-only Python 3.10 install skips it
@@ -73,7 +73,7 @@ acceptance results; use a dated Debian snapshot if OS-level reproducibility is r
 python scripts/build_release.py --output dist/release
 apptainer build renderer.sif containers/Apptainer.def
 apptainer exec --cleanenv --nv --bind "$PWD:/work" renderer.sif \
-  blender-render render /work/examples/1sps.cif --width 320 --height 240 \
+  mol-blender render /work/examples/1sps.cif --width 320 --height 240 \
   --samples 8 -o /work/renders/linux-smoke.png
 ```
 

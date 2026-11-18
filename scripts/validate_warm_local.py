@@ -29,12 +29,12 @@ def main():
     home = root / 'config'
     home.mkdir(mode=0o700)
     (home / 'config.json').write_text(json.dumps(config))
-    os.environ['BLENDER_RENDER_HOME'] = str(home)
-    from blender_render import warm_worker, engine
-    from blender_render.animation import unpack
+    os.environ['MOL_BLENDER_HOME'] = str(home)
+    from mol_blender import warm_worker, engine
+    from mol_blender.animation import unpack
     from PIL import Image, ImageChops, ImageStat
     env = dict(os.environ)
-    cli = [sys.executable, '-m', 'blender_render.cli']
+    cli = [sys.executable, '-m', 'mol_blender.cli']
     evidence = {'passed': False, 'package': str(Path(warm_worker.__file__).resolve()),
                 'engine_build': engine.engine_identity()['engine_build'], 'renders': {}}
     (root / 'evidence.json').write_text(json.dumps(evidence, indent=2))
@@ -68,7 +68,7 @@ def main():
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import pymol2
-from blender_render.pymol_bridge_plugin import bridge_render
+from mol_blender.pymol_bridge_plugin import bridge_render
 with pymol2.PyMOL() as p:
  c = p.cmd
  c.load(sys.argv[2], 'molecule'); c.remove('solvent'); c.dss('all'); c.orient('all')

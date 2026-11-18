@@ -3,9 +3,9 @@ import math
 
 import pytest
 
-from blender_render import animation
-from blender_render.core import StyleValidationError
-from blender_render.spec import resolve_options
+from mol_blender import animation
+from mol_blender.core import StyleValidationError
+from mol_blender.spec import resolve_options
 
 VIEW = [1.0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, -20]
 
@@ -80,7 +80,7 @@ def test_states_ride_on_a_path_one_per_frame():
 
 
 def test_states_reject_geometry_that_cannot_follow_atoms():
-    from blender_render.presets import preset_path
+    from mol_blender.presets import preset_path
     import json
     for preset, edit in (('cyan_mint_cutaway', 'ligand_cutout_radius'), ('ivory_lime_frosted', 'wireframe_width_angstrom')):
         style = json.loads(preset_path(preset).read_text())
@@ -104,14 +104,14 @@ def payload(states):
     ({'coordinates': [[0, 0, 0], [1, 1, 1]]}, 'exactly'),
 ])
 def test_invalid_state_payloads_fail_before_render(states, match):
-    from blender_render.core import PayloadValidationError, validate_payload_document
+    from mol_blender.core import PayloadValidationError, validate_payload_document
     with pytest.raises(PayloadValidationError, match=match):
         validate_payload_document(payload(states))
 
 
 def test_state_payload_is_written_beside_the_structure(tmp_path, monkeypatch):
     import json
-    from blender_render import core
+    from mol_blender import core
     monkeypatch.setattr(core, '_ensure_tmp_run_dir', lambda run_id: tmp_path)
     states = {'base': 2, 'coordinates': [[0, 0, 0], [1.5, 2, 3]]}
     *_, view_path = core._materialize_payload_bundle(core.validate_payload_document(payload(states)), 'run')
@@ -134,7 +134,7 @@ class FakeCmd:
 
 
 def test_exporter_collects_every_state_in_atom_order():
-    from blender_render.scene.export import collect_state_coordinates
+    from mol_blender.scene.export import collect_state_coordinates
     result = collect_state_coordinates(FakeCmd([[[0, 0, 0], [1, 2, 3.00049]], [[1, 1, 1], [2, 2, 2]]]), 'all', 1)
     assert result == {'base': 1, 'coordinates': [[0, 0, 0, 1, 2, 3.0], [1, 1, 1, 2, 2, 2]]}
     with pytest.raises(ValueError, match='same 2 atoms'):
@@ -145,7 +145,7 @@ def test_exporter_collects_every_state_in_atom_order():
 
 def cut_style(preset='cyan_mint_cutaway', **animation):
     import json
-    from blender_render.presets import preset_path
+    from mol_blender.presets import preset_path
     style = json.loads(preset_path(preset).read_text())
     style['output'].update(width=320, height=180)
     style['output']['animation'] = {'mode': 'path', 'fps': 24, 'path': [turned(i) for i in range(8)], **animation}
@@ -181,7 +181,7 @@ def test_lid_needs_a_preset_with_a_cutout():
 
 def test_state_export_rejects_different_atoms_with_equal_counts():
     from types import SimpleNamespace
-    from blender_render.scene.export import collect_state_coordinates
+    from mol_blender.scene.export import collect_state_coordinates
     command = FakeCmd([[[0, 0, 0]], [[1, 1, 1]]])
     command.get_model = lambda selection, state: SimpleNamespace(atom=[SimpleNamespace(index=state)])
     with pytest.raises(ValueError, match='same 1 atoms'):

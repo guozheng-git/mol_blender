@@ -23,7 +23,7 @@ def main():
     parser.add_argument('--server-config', type=Path, required=True)
     parser.add_argument('--pymol', type=Path, required=True)
     parser.add_argument('--fixture', type=Path, required=True, help='Public CIF fixture')
-    parser.add_argument('--skill', type=Path, required=True, help='Staged Structure Studio skill')
+    parser.add_argument('--skill', type=Path, required=True, help='Staged molblender-studio skill')
     parser.add_argument('--output', type=Path, required=True, help='New directory on shared storage')
     parser.add_argument('--timeout', type=int, default=900, help='Queue plus render deadline per job')
     parser.add_argument('--cancel-running', action='store_true', help='Wait for the cancellation probe to start')
@@ -33,19 +33,19 @@ def main():
     root.mkdir(parents=True, exist_ok=False, mode=0o700)
     config_home = root / 'client'
     config_home.mkdir(mode=0o700)
-    os.environ['BLENDER_RENDER_HOME'] = str(config_home)
+    os.environ['MOL_BLENDER_HOME'] = str(config_home)
 
-    from blender_render import engine, pymol_bridge_plugin
-    from blender_render.animation import unpack
-    from blender_render.cluster.auth import add_user, revoke_user
-    from blender_render.cluster.client import Client, RemoteError, configure, profile_path
-    from blender_render.cluster.jsonio import atomic_json, digest_file
-    from blender_render.cluster.protocol import is_terminal, stop_waiting
-    from blender_render.cluster import doctor
-    from blender_render.cluster.config import ServerConfig
-    from blender_render.cluster.server import create_app
-    from blender_render.cluster.slurm import Slurm
-    from blender_render.spec import resolve_options
+    from mol_blender import engine, pymol_bridge_plugin
+    from mol_blender.animation import unpack
+    from mol_blender.cluster.auth import add_user, revoke_user
+    from mol_blender.cluster.client import Client, RemoteError, configure, profile_path
+    from mol_blender.cluster.jsonio import atomic_json, digest_file
+    from mol_blender.cluster.protocol import is_terminal, stop_waiting
+    from mol_blender.cluster import doctor
+    from mol_blender.cluster.config import ServerConfig
+    from mol_blender.cluster.server import create_app
+    from mol_blender.cluster.slurm import Slurm
+    from mol_blender.spec import resolve_options
     from PIL import Image
     import uvicorn
 
@@ -123,7 +123,7 @@ def main():
 from pathlib import Path
 sys.path.insert(0, str(Path(sys.argv[1]).parents[1]))
 import pymol2
-from blender_render.pymol_bridge_plugin import bridge_render, build_render_payload
+from mol_blender.pymol_bridge_plugin import bridge_render, build_render_payload
 with pymol2.PyMOL() as p:
     p.cmd.load(sys.argv[2], 'molecule')
     p.cmd.remove('solvent'); p.cmd.dss('all'); p.cmd.orient('all'); p.cmd.viewport(192,144)

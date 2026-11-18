@@ -366,7 +366,7 @@ def cmd_animate(args: argparse.Namespace) -> int | None:
 
     with open_saved_session(args.session) as cmd:
         facts = scene_facts(cmd)
-        # The same choice as Structure Studio: the largest real ligand, not an additive.
+        # The same choice as molblender-studio: the largest real ligand, not an additive.
         focus = args.focus or default_focus(cmd)
         if args.focus and not cmd.count_atoms(f"enabled and ({args.focus})"):
             raise ValueError(f"--focus {args.focus!r} matches no enabled atoms")

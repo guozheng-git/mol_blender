@@ -11,7 +11,7 @@ cd blender_render
 ```
 
 Use the revision you intend to install; it must contain both `co_pymol/` and
-`blender_render/`. Keep the checkout at that location after installation.
+`mol_blender/`. Keep the checkout at that location after installation.
 
 ## Connect PyMOL to one client
 
@@ -57,7 +57,7 @@ Python version in `.python-version`.
 
 ```sh
 uv sync --locked --inexact
-.venv/bin/blender-render doctor
+.venv/bin/mol-blender doctor
 ```
 
 `--inexact` preserves any development/MCP extras already installed in `.venv`.
@@ -65,8 +65,8 @@ Reuse a working renderer configuration. For a fresh native runtime on Apple
 Silicon macOS or Linux x86_64, install and configure it with:
 
 ```sh
-.venv/bin/blender-render setup --install-runtime --pymol-python "$PYMOL_PYTHON"
-.venv/bin/blender-render doctor
+.venv/bin/mol-blender setup --install-runtime --pymol-python "$PYMOL_PYTHON"
+.venv/bin/mol-blender doctor
 ```
 
 Setup records the renderer's Python for co-PyMOL's detached worker. If the runtime
@@ -74,7 +74,7 @@ already exists but this interpreter was not registered, use `setup` without
 `--install-runtime`. To configure existing Blender/dependency paths, follow
 [the renderer setup instructions](../README.md#install-and-configure).
 
-Preserve the chosen `BLENDER_RENDER_HOME`. co-PyMOL discovers this checkout's
+Preserve the chosen `MOL_BLENDER_HOME`. co-PyMOL discovers this checkout's
 `.runtime/config.json` first, then the configured/default user root. If the
 desktop app does not inherit a custom environment variable, merge absolute
 `render_home` and `render_python` paths into

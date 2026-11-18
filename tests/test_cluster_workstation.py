@@ -7,12 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render.cluster import doctor
-from blender_render.cluster.config import Limits
-from blender_render.cluster.jsonio import atomic_json
-from blender_render.cluster.slurm import scheduler_for
-from blender_render.cluster.store import Quota, Store
-from blender_render.cluster.workstation import Workstation
+from mol_blender.cluster import doctor
+from mol_blender.cluster.config import Limits
+from mol_blender.cluster.jsonio import atomic_json
+from mol_blender.cluster.slurm import scheduler_for
+from mol_blender.cluster.store import Quota, Store
+from mol_blender.cluster.workstation import Workstation
 from test_cluster_jobs import Scheduler, config, request
 
 
@@ -68,7 +68,7 @@ def test_worker_is_bounded_and_does_not_inherit_gateway_environment(workstation,
     assert '/usr/bin/env' in command and '-i' in command
     assert 'APPTAINERENV_CUDA_VISIBLE_DEVICES=2' in command
     assert '--cleanenv' in command and '--containall' in command and '--nv' in command
-    assert command[-1] == '/job' and 'blender_render.cluster.worker' in command
+    assert command[-1] == '/job' and 'mol_blender.cluster.worker' in command
     assert 'do-not-inherit' not in json.dumps(calls) and '/untrusted' not in json.dumps(calls)
     assert 'XDG_RUNTIME_DIR' in options['env']
     assert not any(tool in command for tool in (workstation.sbatch, workstation.srun))
@@ -175,7 +175,7 @@ def test_doctor_checks_workstation_without_slurm_or_starting_a_unit(workstation,
     workstation.spool.mkdir()
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: path in
                         [getattr(workstation, name) for name in workstation.executables])
-    monkeypatch.setattr('blender_render.cluster.workstation.platform.system', lambda: 'Linux')
+    monkeypatch.setattr('mol_blender.cluster.workstation.platform.system', lambda: 'Linux')
     scheduler = Workstation(workstation)
     calls = []
     def run(command):

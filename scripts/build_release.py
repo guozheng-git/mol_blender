@@ -41,8 +41,8 @@ def main():
         version = tomllib.loads((source / 'pyproject.toml').read_text())['project']['version']
     wheel = next(output.glob('*.whl'))
     with zipfile.ZipFile(wheel) as archive:
-        engine = json.loads(archive.read('blender_render/engine-manifest.json'))
-    files = [wheel, output / 'structure-studio-plugin.zip', output / 'structure-studio-skill.zip']
+        engine = json.loads(archive.read('mol_blender/engine-manifest.json'))
+    files = [wheel, output / 'molblender-studio-plugin.zip', output / 'molblender-studio-skill.zip']
     record = {'source_revision': revision, 'source_tree': tree, 'version': version,
               'source_date_epoch': int(epoch), 'engine_build': engine['engine_build'],
               'artifacts': {p.name: {'bytes': p.stat().st_size,

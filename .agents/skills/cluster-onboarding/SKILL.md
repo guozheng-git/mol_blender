@@ -1,6 +1,6 @@
 ---
 name: cluster-onboarding
-description: Bring the optional Blender Render cluster service up on a new Slurm + Apptainer cluster - discover the site's partition, account and GPU request syntax, write server.json, run cluster doctor, then the real Slurm acceptance script. Use when an administrator asks to set up, port or troubleshoot the shared cluster renderer on a specific cluster, not for ordinary local rendering.
+description: Bring the optional mol-blender cluster service up on a new Slurm + Apptainer cluster - discover the site's partition, account and GPU request syntax, write server.json, run cluster doctor, then the real Slurm acceptance script. Use when an administrator asks to set up, port or troubleshoot the shared cluster renderer on a specific cluster, not for ordinary local rendering.
 ---
 
 Configure the existing cluster service for one site. Never change renderer or
@@ -84,7 +84,7 @@ Unknown fields are rejected, which catches typos.
 ## 3. Run `cluster doctor`
 
 ```sh
-blender-render cluster doctor --config /path/to/server.json
+mol-blender cluster doctor --config /path/to/server.json
 ```
 
 It never installs, queues or renders. It checks, in order: configuration, SIF
@@ -100,7 +100,7 @@ On the gateway, with a NEW output directory on shared storage:
 ```sh
 python scripts/validate_cluster_slurm.py --server-config /path/to/server.json \
   --pymol /path/to/pymol/bin/python --fixture examples/1stp.cif \
-  --skill dist/cluster-release/plugin/structure-studio/skills/structure-studio \
+  --skill dist/cluster-release/plugin/molblender-studio/skills/molblender-studio \
   --output /shared/acceptance/cpu
 ```
 

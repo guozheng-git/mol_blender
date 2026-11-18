@@ -15,14 +15,14 @@ import sys
 async def validate(args):
     from fastmcp import Client
     from fastmcp.client.transports import StdioTransport
-    from blender_render import editor
+    from mol_blender import editor
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
     selected = next(s for s in editor.sessions() if s['id'] == args.session)
     original_ids = {s['id'] for s in editor.sessions()}
     evidence = {'passed': False, 'session_id': args.session, 'desktop_pid': selected['pid']}
     async with Client(StdioTransport(sys.executable,
-            ['-I', '-m', 'blender_render.cli', 'mcp', '--editor']), timeout=120) as client:
+            ['-I', '-m', 'mol_blender.cli', 'mcp', '--editor']), timeout=120) as client:
         async def tool(name, **fields):
             result = await client.call_tool(name, fields)
             return result.structured_content if result.structured_content is not None else json.loads(

@@ -9,7 +9,7 @@ GPL scripts: `blender_custom_render.py`, `blender_runtime.py`, `geometry.py`,
 `paint.py`, `reference_effects.py`, `animation_blender.py`, `developer_blender.py`,
 `runtime_initialize.py`, `runtime_probe.py`, `warm_blender.py`, `cycles_device.py`,
 `scene/capture.py`, `editor_controls.py`, `editor_blender.py`, and `editor_render.py`,
-all under `blender_render/`.
+all under `mol_blender/`.
 The full GPL text is in `LICENSES/GPL-3.0-or-later.txt`. This separation follows
 [Blender's published guidance for Python scripts](https://www.blender.org/support/faq/).
 It does not relicense upstream dependencies, bundled node assets, or their
@@ -34,7 +34,7 @@ combined runtime as MIT-only. Rendered images are not relicensed by this notice.
 A saved Blender scene can contain Molecular Nodes node groups, whose assets retain
 their upstream license. All render-side source remains available in this repository.
 
-`blender_render/runtime-sources.json` records runtime source versions, URLs and
+`mol_blender/runtime-sources.json` records runtime source versions, URLs and
 checksums. `scripts/collect_sources.py` downloads and checks those archives and
 collects their unmodified license files. `docs/dependency-source-manifest.json`
 retains the upstream release's historical notice inventory, including dependencies

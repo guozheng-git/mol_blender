@@ -19,7 +19,7 @@ assert 'numpy' not in sys.modules
 if sys.argv[2] == 'True':
     from co_pymol.scene import camera, preview, triage
 for name in sys.modules:
-    assert name.split('.')[0] not in {'blender_render', 'pymol', 'pymol2', 'mcp', 'uvicorn', 'yaml'}, name
+    assert name.split('.')[0] not in {'mol_blender', 'pymol', 'pymol2', 'mcp', 'uvicorn', 'yaml'}, name
     assert name not in {'co_pymol.cli', 'co_pymol.server', 'co_pymol.proxy'}, name
 '''
     package_root = Path(co_pymol.__file__).resolve().parent.parent

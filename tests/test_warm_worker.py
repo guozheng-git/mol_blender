@@ -14,21 +14,21 @@ import time
 
 import pytest
 
-from blender_render import cli, developer, local, local_bridge, pymol_bridge_plugin, warm_worker
-from blender_render.errors import WorkerError
-from blender_render.warm_protocol import MAX_MESSAGE, receive, seconds, send
+from mol_blender import cli, developer, local, local_bridge, pymol_bridge_plugin, warm_worker
+from mol_blender.errors import WorkerError
+from mol_blender.warm_protocol import MAX_MESSAGE, receive, seconds, send
 
 
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     blender = tmp_path / 'blender'
     blender.write_text('#!' + sys.executable + '\n' + '''import json, os, socket, sys, time
 from pathlib import Path
-cfg = json.loads(Path(os.environ['BLENDER_RENDER_DEV_CONFIG']).read_text())
+cfg = json.loads(Path(os.environ['MOL_BLENDER_DEV_CONFIG']).read_text())
 sys.path.insert(0, str(Path(cfg['root']) / 'source'))
-from blender_render.warm_protocol import send, receive
-stream = socket.socket(fileno=int(os.environ['BLENDER_RENDER_WARM_FD']))
+from mol_blender.warm_protocol import send, receive
+stream = socket.socket(fileno=int(os.environ['MOL_BLENDER_WARM_FD']))
 send(stream, {'ready': True, 'source_sha256': cfg['identity']['sha256']})
 count = 0
 while True:

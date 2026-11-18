@@ -19,15 +19,15 @@ from co_pymol.render.client import BlenderBridge, BlenderConfig, write_json
 
 
 # Fakes of this checkout's renderer modules, imported by the detached worker in
-# place of the real `blender_render` package (see the `bridge` fixture). Each
-# call is appended to BLENDER_RENDER_HOME/calls; marker files there steer them.
+# place of the real `mol_blender` package (see the `bridge` fixture). Each
+# call is appended to MOL_BLENDER_HOME/calls; marker files there steer them.
 _FAKE_COMMON = '''
 import os
 from pathlib import Path
 import base64
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=")
-root = Path(os.environ["BLENDER_RENDER_HOME"])
+root = Path(os.environ["MOL_BLENDER_HOME"])
 def record(action):
     root.mkdir(exist_ok=True)
     with (root / "calls").open("a") as f: f.write(action + "\\n")
@@ -47,8 +47,8 @@ def deliver(output):
 
 FAKE_LOCAL = '''
 import json, time
-from blender_render._fake import deliver, record, root
-from blender_render.errors import RenderCancelled
+from mol_blender._fake import deliver, record, root
+from mol_blender.errors import RenderCancelled
 def render_payload(payload, *, output, options=None, timeout=600, cancelled=None):
     record("local:render")
     (root / "payload.json").write_text(json.dumps(payload))
@@ -63,7 +63,7 @@ def render_payload(payload, *, output, options=None, timeout=600, cancelled=None
 FAKE_CLUSTER_CLIENT = '''
 import json, time
 from pathlib import Path
-from blender_render._fake import deliver, record, root
+from mol_blender._fake import deliver, record, root
 class RemoteError(RuntimeError):
     pass
 class Client:
@@ -132,13 +132,13 @@ CATALOG = [
 
 @pytest.fixture
 def fake_repo(tmp_path, monkeypatch):
-    """A checkout whose `blender_render` package is the fakes above.
+    """A checkout whose `mol_blender` package is the fakes above.
 
     The adapter puts REPO_ROOT on the worker's PYTHONPATH and reads preset
     examples from it, so pointing REPO_ROOT here swaps in the fake renderer.
     """
     repo = tmp_path / "repo"
-    package = repo / "blender_render"
+    package = repo / "mol_blender"
     (package / "cluster").mkdir(parents=True)
     files = {
         "__init__.py": "",
@@ -149,7 +149,7 @@ def fake_repo(tmp_path, monkeypatch):
         "config.py": (
             "import os\nfrom pathlib import Path\n"
             "def config_root(): return Path(os.environ.get("
-            "'BLENDER_RENDER_HOME', '~/.config/blender-render')).expanduser()\n"
+            "'MOL_BLENDER_HOME', '~/.config/mol-blender')).expanduser()\n"
         ),
         "presets.py": "def catalog(): return " + repr(CATALOG) + "\n",
         "cluster/__init__.py": "",
@@ -160,7 +160,7 @@ def fake_repo(tmp_path, monkeypatch):
     for name, content in files.items():
         (package / name).write_text(content)
     # The real job API and wire protocol run against the fakes above.
-    real = Path(__file__).resolve().parents[2] / "blender_render"
+    real = Path(__file__).resolve().parents[2] / "mol_blender"
     for name in ("jobs.py", "cluster/protocol.py", "cluster/jsonio.py"):
         (package / name).write_text((real / name).read_text())
     monkeypatch.setattr("co_pymol.render.client.REPO_ROOT", repo)
@@ -784,11 +784,11 @@ def test_a_helper_that_cannot_connect_over_ssh_still_recovers_by_its_receipt(bri
     for process in bridge._processes:
         process.wait(timeout=5)
     # Now the saved SSH connection cannot be opened (MFA, VPN down, login node away).
-    (fake_repo / "blender_render/cluster/connect.py").write_text(
+    (fake_repo / "mol_blender/cluster/connect.py").write_text(
         "import os\nfrom pathlib import Path\n"
         "def load_state(profile): return {'ssh_host': 'lab'}\n"
         "def state_path(profile, create=False):\n"
-        "    return Path(os.environ['BLENDER_RENDER_HOME']) / 'connections' / (profile + '.json')\n"
+        "    return Path(os.environ['MOL_BLENDER_HOME']) / 'connections' / (profile + '.json')\n"
         "def connect(profile): raise RuntimeError('ssh: MFA required')\n")
     (home / "ambiguous").unlink()
     (home / "received").touch()
@@ -1110,22 +1110,22 @@ def test_lab_runs_keep_the_renderer_home_and_find_profiles_apart(tmp_path, clust
     cfg = BlenderConfig.from_dict({"render_python": sys.executable, "render_home": str(tmp_path / "runtime"),
                                    "cluster_home": cluster_home, "backend": "cluster"})
     env = BlenderBridge._environment(cfg)
-    assert env["BLENDER_RENDER_HOME"] == str(tmp_path / "runtime")
-    assert env["BLENDER_RENDER_CLUSTER_HOME"] == (cluster_home or str(Path.home() / ".config/blender-render"))
-    assert BlenderBridge._environment(cfg.using("local"))["BLENDER_RENDER_HOME"] == env["BLENDER_RENDER_HOME"]
+    assert env["MOL_BLENDER_HOME"] == str(tmp_path / "runtime")
+    assert env["MOL_BLENDER_CLUSTER_HOME"] == (cluster_home or str(Path.home() / ".config/mol-blender"))
+    assert BlenderBridge._environment(cfg.using("local"))["MOL_BLENDER_HOME"] == env["MOL_BLENDER_HOME"]
 
 
 def test_custom_renderer_home_survives_worker_handoff(fake_repo, tmp_path, monkeypatch):
     custom = tmp_path / "custom-runtime"
     custom.mkdir()
     write_json(custom / "config.json", {"local_python": sys.executable})
-    monkeypatch.setenv("BLENDER_RENDER_HOME", str(custom))
+    monkeypatch.setenv("MOL_BLENDER_HOME", str(custom))
     cfg = BlenderConfig.from_dict({})
     assert cfg.render_python == sys.executable
     assert cfg.render_home == str(custom)
     env = BlenderBridge._environment(cfg)
     result = subprocess.run([sys.executable, '-c',
-        'from blender_render.config import config_root; print(config_root())'],
+        'from mol_blender.config import config_root; print(config_root())'],
         env=env, capture_output=True, text=True, check=True)
     assert result.stdout.strip() == str(custom)
 

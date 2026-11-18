@@ -68,10 +68,10 @@ def compile_defaults(root=ROOT):
 def generated_files(root=ROOT):
     value = compile_defaults(root)
     data = (json.dumps(value, indent=2, allow_nan=False) + '\n').encode()
-    # The one runtime copy. co-pymol and Structure Studio (via its bundled wheel) read it too.
-    files = {Path('blender_render/render_defaults.json'): data}
+    # The one runtime copy. co-pymol and molblender-studio (via its bundled wheel) read it too.
+    files = {Path('mol_blender/render_defaults.json'): data}
     # The published JSON schema enforces the same bounds as the runtime.
-    schema_path = Path('blender_render/style.schema.json')
+    schema_path = Path('mol_blender/style.schema.json')
     schema = json.loads((root / schema_path).read_text())
     properties = schema['properties']['output']['properties']['animation']['properties']
     limits = value['limits']['animation']

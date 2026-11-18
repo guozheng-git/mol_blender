@@ -10,14 +10,14 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from blender_render import engine
+from mol_blender import engine
 
 
 @pytest.mark.parametrize('outcome', ['success', 'render_failure', 'manifest_failure', 'source_mutation', 'wrong_pin'])
 @pytest.mark.parametrize('environment', ['private', 'caller'])
 def test_developer_entry_owns_ccd_through_render_and_evidence(tmp_path, monkeypatch, outcome, environment):
     root = tmp_path/'preview'
-    package = root/'source'/'blender_render'
+    package = root/'source'/'mol_blender'
     engine.stage_package(Path(engine.__file__).parent, package)
     data = b'public CCD fixture'
     locked_hash = hashlib.sha256(data).hexdigest()
@@ -36,15 +36,15 @@ def test_developer_entry_owns_ccd_through_render_and_evidence(tmp_path, monkeypa
 
     # Fresh package namespace models the real snapshot process without invoking
     # a child interpreter. Real package modules load from the staged inventory.
-    owned = lambda name:name == 'blender_render' or name.startswith('blender_render.')
+    owned = lambda name:name == 'mol_blender' or name.startswith('mol_blender.')
     previous = {name:module for name,module in sys.modules.items() if owned(name)}
     for name in previous: sys.modules.pop(name)
     monkeypatch.setattr(sys, 'path', [str(package.parent), *sys.path])
-    monkeypatch.setenv('BLENDER_RENDER_DEV_CONFIG', str(root/'preview.json'))
+    monkeypatch.setenv('MOL_BLENDER_DEV_CONFIG', str(root/'preview.json'))
     monkeypatch.setenv('PRESS_BIOTITE_CCD_PATH', str(private if environment == 'private' else original))
     try:
-        developer = importlib.import_module('blender_render.developer')
-        worker_ccd = importlib.import_module('blender_render.worker_ccd')
+        developer = importlib.import_module('mol_blender.developer')
+        worker_ccd = importlib.import_module('mol_blender.worker_ccd')
         expected = developer.source_files(package)
         cfg = {'identity':{'files':expected, 'sha256':developer.source_digest(expected)},
                'root':str(root), 'ccd':str(private), 'ccd_source':str(original),
@@ -74,7 +74,7 @@ def test_developer_entry_owns_ccd_through_render_and_evidence(tmp_path, monkeypa
         version = importlib.metadata.version
         monkeypatch.setattr(importlib.metadata, 'version', lambda name:lock['molecularnodes'] if name == 'molecularnodes' else version(name))
 
-        render = ModuleType('blender_render.blender_custom_render')
+        render = ModuleType('mol_blender.blender_custom_render')
         render.__file__ = str(package/'blender_custom_render.py')
         render._parse_argv = lambda argv:SimpleNamespace(run_manifest=str(manifest_path))
         def invoke(args):
@@ -87,7 +87,7 @@ def test_developer_entry_owns_ccd_through_render_and_evidence(tmp_path, monkeypa
             manifest_path.write_text(json.dumps({'render_marker':'preserved'}))
             if outcome == 'source_mutation': (package/'changed.py').write_text('# changed source')
         render._render = invoke
-        sys.modules['blender_render.blender_custom_render'] = render
+        sys.modules['mol_blender.blender_custom_render'] = render
         # The entrypoint may read only cfg's private CCD, never the caller file.
         read_bytes = Path.read_bytes
         def read(path):
@@ -110,7 +110,7 @@ def test_developer_entry_owns_ccd_through_render_and_evidence(tmp_path, monkeypa
             assert evidence['sha256'] == cfg['identity']['sha256'] and evidence['ccd_sha256'] == locked_hash
             assert evidence['runtime_versions'] == {key:lock[key] for key in ('blender','python','molecularnodes','numpy','biotite')}
             assert evidence['blender_binary_sha256'] == hashlib.sha256(binary.read_bytes()).hexdigest()
-            assert 'blender_render.worker_ccd' in evidence['loaded_modules']
+            assert 'mol_blender.worker_ccd' in evidence['loaded_modules']
             assert all(Path(item['path']).is_relative_to(package) for item in evidence['loaded_modules'].values())
             assert events == ['activate', 'render', 'evidence']
         else:

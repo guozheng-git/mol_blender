@@ -28,22 +28,22 @@ blender_render selection=(all), preset=mint_sky_assembly, edit_bridge=1, width=6
 Or from the terminal:
 
 ```sh
-blender-render render structure.cif --preset mint_sky_assembly --edit-bridge \
+mol-blender render structure.cif --preset mint_sky_assembly --edit-bridge \
   --width 640 --height 480 --samples 32 -o renders/start.png
 ```
 
 `edit_bridge=1` / `--edit-bridge` saves a Blender scene, opens its desktop window,
 and enables chat access for that session. The result includes a `session_id`.
-To open an already-saved Blender Render scene with this connection:
+To open an already-saved mol-blender scene with this connection:
 
 ```sh
-blender-render open renders/start.render/render.blend --edit-bridge
-blender-render editor sessions
+mol-blender open renders/start.render/render.blend --edit-bridge
+mol-blender editor sessions
 ```
 
 `--open-blender` alone continues to open an ordinary editor without chat access.
 If the configured render executable is the headless Linux runtime, first configure
-an existing desktop executable with `blender-render setup --gui-blender /path/to/blender`.
+an existing desktop executable with `mol-blender setup --gui-blender /path/to/blender`.
 
 ## Connect your local chat
 
@@ -51,19 +51,19 @@ Enable the optional editor tools by adding `--editor` to the local MCP server's
 arguments. For example, register a dedicated connection:
 
 ```sh
-codex mcp add blender-editor -- /absolute/path/to/environment/bin/blender-render mcp --editor
-claude mcp add --transport stdio blender-editor -- /absolute/path/to/environment/bin/blender-render mcp --editor
+codex mcp add blender-editor -- /absolute/path/to/environment/bin/mol-blender mcp --editor
+claude mcp add --transport stdio blender-editor -- /absolute/path/to/environment/bin/mol-blender mcp --editor
 ```
 
 Use the same user account, local configuration and package revision as the editor
 bridge. Reconnect the MCP server or start a new chat so its tools are refreshed.
 The ordinary four render tools remain available; the editor tools are added only
-with `mcp --editor`. A hosted Blender Render connection does not automatically gain
+with `mcp --editor`. A hosted mol-blender connection does not automatically gain
 access to a desktop. This feature requires the local MCP connection above.
 
 Example conversation:
 
-> Connect to my Blender Render editor session. Make the protein matte orange,
+> Connect to my mol-blender editor session. Make the protein matte orange,
 > keep the ligand color, and show me a preview.
 
 > Soften the key light a little and show another preview.
@@ -177,7 +177,7 @@ A window needs an explicit opt-in before chat can access it. To attach without
 reopening and losing unsaved work, prepare a trusted external startup script:
 
 ```sh
-blender-render editor attach-script --output /absolute/path/to/enable-blender-chat.py
+mol-blender editor attach-script --output /absolute/path/to/enable-blender-chat.py
 ```
 
 In that Blender window, switch one area to the **Python Console** and run this
@@ -190,16 +190,16 @@ exec(compile(open('/absolute/path/to/enable-blender-chat.py').read(), 'enable-bl
 This runs the trusted bridge you generated locally. It is not code from a structure
 or downloaded scene. No script needs to be embedded in the `.blend`, no add-on is
 installed, and automatic script execution should stay disabled. The current scene
-must have Blender Render editing metadata. The script captures the package revision;
+must have mol-blender editing metadata. The script captures the package revision;
 use the in-place reconnect procedure below after updating that package.
 
 For a dropped connection, call `editor_reconnect` with the selected `session_id`
-(CLI: `blender-render editor reconnect SESSION_ID`). This only reconnects to the
+(CLI: `mol-blender editor reconnect SESSION_ID`). This only reconnects to the
 existing window and reports any failure; it never starts Blender. After a bridge
 timeout or a package update, replace the bridge in place:
 
 ```sh
-blender-render editor attach-script --reconnect SESSION_ID --output /absolute/path/to/reconnect-blender-chat.py
+mol-blender editor attach-script --reconnect SESSION_ID --output /absolute/path/to/reconnect-blender-chat.py
 ```
 
 Run that generated trusted external script in the **same** window's Python
@@ -212,7 +212,7 @@ disconnect the active bridge. Do not open another window to recover a connection
 Ask chat to disconnect, or run:
 
 ```sh
-blender-render editor disconnect SESSION_ID
+mol-blender editor disconnect SESSION_ID
 ```
 
 This removes chat access and its temporary source capture, leaving the desktop and
@@ -239,17 +239,17 @@ revision and control IDs, then put a list of changes in `changes.json`:
 ```
 
 ```sh
-blender-render editor inspect SESSION_ID
-blender-render editor playback SESSION_ID pause
-blender-render editor animation-speed SESSION_ID --revision REVISION --multiplier 2
-blender-render editor viewport SESSION_ID --revision NEW_REVISION --mode solid_color --no-overlays
-blender-render editor playback SESSION_ID play
-blender-render editor edit SESSION_ID --revision REVISION --changes-json changes.json
+mol-blender editor inspect SESSION_ID
+mol-blender editor playback SESSION_ID pause
+mol-blender editor animation-speed SESSION_ID --revision REVISION --multiplier 2
+mol-blender editor viewport SESSION_ID --revision NEW_REVISION --mode solid_color --no-overlays
+mol-blender editor playback SESSION_ID play
+mol-blender editor edit SESSION_ID --revision REVISION --changes-json changes.json
 # Use the new returned revision after each change or Save As.
-blender-render editor save SESSION_ID renders/my-look.blend --revision REVISION
-blender-render editor save-preset SESSION_ID user/my-look --revision REVISION
-blender-render editor render SESSION_ID --revision REVISION -o renders/preview.png
-blender-render editor job JOB_ID
-blender-render editor render SESSION_ID --revision REVISION --final --device GPU \
+mol-blender editor save SESSION_ID renders/my-look.blend --revision REVISION
+mol-blender editor save-preset SESSION_ID user/my-look --revision REVISION
+mol-blender editor render SESSION_ID --revision REVISION -o renders/preview.png
+mol-blender editor job JOB_ID
+mol-blender editor render SESSION_ID --revision REVISION --final --device GPU \
   --width 1600 --height 1200 --samples 128 -o renders/final.png
 ```

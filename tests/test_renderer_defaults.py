@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from blender_render import authoring, core
-from blender_render.presets import PRESET_STYLE_FILENAMES, preset_path
-from blender_render.spec import resolve_options, style_digest
+from mol_blender import authoring, core
+from mol_blender.presets import PRESET_STYLE_FILENAMES, preset_path
+from mol_blender.spec import resolve_options, style_digest
 
 
 def authored_style():

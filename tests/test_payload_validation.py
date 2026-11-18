@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from blender_render.bridge_runner import PayloadValidationError, validate_payload_document
+from mol_blender.bridge_runner import PayloadValidationError, validate_payload_document
 
 
 def _valid_payload(cif_text: str) -> dict:

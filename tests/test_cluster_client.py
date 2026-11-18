@@ -11,16 +11,16 @@ from PIL import Image
 import pytest
 import uvicorn
 
-from blender_render.cluster.client import Client, NoRedirect, RemoteError, configure, profile_path
-from blender_render.cluster.jsonio import atomic_json, digest_file, read_json
-from blender_render.cluster.protocol import validate_url
-from blender_render.cluster.server import create_app
+from mol_blender.cluster.client import Client, NoRedirect, RemoteError, configure, profile_path
+from mol_blender.cluster.jsonio import atomic_json, digest_file, read_json
+from mol_blender.cluster.protocol import validate_url
+from mol_blender.cluster.server import create_app
 from test_cluster_jobs import Scheduler, config, payload
 
 
 @pytest.fixture(params=['token', 'none'])
 def live_service(config, tmp_path, monkeypatch, request):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'client-config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'client-config'))
     config = replace(config, authentication=request.param)
     token = 'test-credential-' + 'a' * 32
     if config.authentication == 'token':
@@ -82,8 +82,8 @@ def test_real_http_submit_receipt_recovery_fetch_and_no_overwrite(live_service, 
 
 
 def test_job_command_submits_adopts_a_lost_reply_and_fetches_by_receipt(live_service, tmp_path):
-    """`blender-render job` over real HTTP: every step after submission starts from the receipt."""
-    from blender_render import job_cli
+    """`mol-blender job` over real HTTP: every step after submission starts from the receipt."""
+    from mol_blender import job_cli
     client, store = live_service
     bundle = tmp_path / 'scene.bundle.json'
     bundle.write_text(json.dumps(payload()))
@@ -124,7 +124,7 @@ def test_corrupt_download_never_publishes_partial_output(live_service, tmp_path)
 
 
 def test_wait_timeout_does_not_cancel_or_duplicate(live_service, tmp_path):
-    from blender_render import jobs
+    from mol_blender import jobs
     client, store = live_service
     submitted = jobs.submit(payload(), {}, tmp_path / 'pending.png', backend_name='lab', profile='lab')
     result = jobs.wait(submitted['receipt'], timeout=.01)
@@ -134,7 +134,7 @@ def test_wait_timeout_does_not_cancel_or_duplicate(live_service, tmp_path):
 
 
 def test_an_upload_that_never_arrived_is_sent_again_under_the_same_request_id(live_service, tmp_path, monkeypatch):
-    from blender_render import jobs
+    from mol_blender import jobs
     client, store = live_service
     api = Client.api
     def unreachable(self, method, path, data=None):
@@ -158,7 +158,7 @@ def test_an_upload_that_never_arrived_is_sent_again_under_the_same_request_id(li
 def test_sending_an_upload_that_did_arrive_again_returns_the_same_job(live_service, tmp_path, monkeypatch):
     # Even if the gateway were wrongly reported as never having seen the request,
     # resending under its request ID cannot create a second job.
-    from blender_render import jobs
+    from mol_blender import jobs
     client, store = live_service
     api = Client.api
     def lost_reply(self, method, path, data=None):
@@ -198,8 +198,8 @@ def test_network_failure_keeps_a_recoverable_receipt(live_service, tmp_path, mon
 
 def test_pymol_bridge_submits_with_foreign_python_startup_settings(live_service, tmp_path, monkeypatch):
     import sys
-    from blender_render import cluster_bridge
-    from blender_render.config import save_config
+    from mol_blender import cluster_bridge
+    from mol_blender.config import save_config
     client, store = live_service
     save_config({'local_python': sys.executable})
     for name in ('PYTHONHOME', 'PYTHONEXECUTABLE', '__PYVENV_LAUNCHER__'):
@@ -225,7 +225,7 @@ def test_plaintext_remote_origins_and_redirects_are_rejected():
 
 
 def test_cluster_pymol_submission_does_not_launch_local_blender(monkeypatch, tmp_path):
-    from blender_render import pymol_bridge_plugin as plugin, local_bridge, cluster_bridge
+    from mol_blender import pymol_bridge_plugin as plugin, local_bridge, cluster_bridge
     monkeypatch.setattr(plugin, 'build_render_payload', lambda *a, **kw: payload())
     monkeypatch.setattr(local_bridge, 'render_payload', lambda *a, **kw: pytest.fail('local render launched'))
     calls = []
@@ -238,7 +238,7 @@ def test_cluster_pymol_submission_does_not_launch_local_blender(monkeypatch, tmp
 
 
 def test_pymol_fetch_loads_verified_png(monkeypatch, tmp_path):
-    from blender_render import pymol_bridge_plugin as plugin, cluster_bridge
+    from mol_blender import pymol_bridge_plugin as plugin, cluster_bridge
     png = tmp_path / 'download.png'
     png.write_bytes(b'validated by client')
     monkeypatch.setattr(cluster_bridge, 'command', lambda args: {'status': 'completed', 'outputs': {'render.png': str(png)}})
@@ -249,8 +249,8 @@ def test_pymol_fetch_loads_verified_png(monkeypatch, tmp_path):
 
 
 def test_admin_credentials_are_private_and_tokens_never_printed(tmp_path, monkeypatch):
-    from blender_render.cluster.auth import add_user, authenticate, revoke_user
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    from mol_blender.cluster.auth import add_user, authenticate, revoke_user
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     path, output = tmp_path / 'users.json', tmp_path / 'credential.json'
     result = add_user(path, 'alice', 'https://cluster.example', output)
     credential = read_json(output)
@@ -267,15 +267,15 @@ def test_admin_credentials_are_private_and_tokens_never_printed(tmp_path, monkey
 def test_local_imports_do_not_load_cluster_server_dependencies():
     import subprocess, sys
     result = subprocess.run([sys.executable, '-c',
-        "import blender_render.cli, blender_render.local; import sys; "
-        "assert not {'starlette', 'uvicorn', 'blender_render.cluster.server'} & sys.modules.keys()"],
+        "import mol_blender.cli, mol_blender.local; import sys; "
+        "assert not {'starlette', 'uvicorn', 'mol_blender.cluster.server'} & sys.modules.keys()"],
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
 def test_open_profiles_are_explicit_and_send_no_credentials(tmp_path, monkeypatch):
-    from blender_render.cluster.cli import execute, parser
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    from mol_blender.cluster.cli import execute, parser
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     args = parser().parse_args(['configure', '--profile', 'open', '--url', 'https://cluster.example'])
     execute(args)
     client = Client('open')

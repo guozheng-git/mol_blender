@@ -528,7 +528,7 @@
   },
   "bundle_sha256": "f8cbaead548c0ebf6be491d050fe67d39a5314dfcb4c9c7c5cfe2c2bdfedc35a",
   "python_mutation": {
-    "file": "blender_render/blender_custom_render.py",
+    "file": "mol_blender/blender_custom_render.py",
     "before": "camera.data.dof.aperture_fstop = float(cfg.get(\"f_stop\", 2.8))",
     "after": "camera.data.dof.aperture_fstop = float(cfg.get(\"f_stop\", 2.8)) * 16.0",
     "applied_only_to_temporary_source": true

@@ -1,8 +1,8 @@
-"""Detached helper run in Blender Render's Python, never in PyMOL's Python.
+"""Detached helper run in mol-blender's Python, never in PyMOL's Python.
 
 PyMOL saves each request to its own folder and returns at once. This helper
 renders it with this checkout's renderer through the shared job API
-(`blender_render.jobs`), locally or on the configured lab cluster, and mirrors
+(`mol_blender.jobs`), locally or on the configured lab cluster, and mirrors
 progress into state.json for chat. A lab run is identified by its receipt
 (render.cluster.json); an unconfirmed upload is looked up, and resent only under
 its original request ID, so it can never become a second job.
@@ -39,7 +39,7 @@ def _device(manifest_path: Path) -> dict:
 
 
 def _load_payload(directory: Path, request: dict) -> dict:
-    from blender_render.core import validate_payload_document
+    from mol_blender.core import validate_payload_document
 
     raw = Path(request.get("scene_path", directory / "scene.bundle.json")).read_bytes()
     if hashlib.sha256(raw).hexdigest() != request["scene_sha256"]:
@@ -48,7 +48,7 @@ def _load_payload(directory: Path, request: dict) -> dict:
 
 
 def _render_local(directory: Path, request: dict, update) -> dict:
-    from blender_render import jobs
+    from mol_blender import jobs
 
     payload = _load_payload(directory, request)
     update(status="rendering", worker_pid=os.getpid())
@@ -68,7 +68,7 @@ def _render_cluster(directory: Path, request: dict, state: dict, update):
     helper always finds the same request: an unconfirmed upload is looked up by its
     request ID, and sent again under that same ID only if the gateway never got it.
     """
-    from blender_render import jobs
+    from mol_blender import jobs
 
     cfg = request["config"]
     cancelled = directory / "cancel.request"
@@ -113,7 +113,7 @@ def _render_cluster(directory: Path, request: dict, state: dict, update):
 
 
 def run(directory: Path, *, recover: bool = False) -> None:
-    from blender_render.errors import RenderCancelled
+    from mol_blender.errors import RenderCancelled
 
     with (directory / "worker.lock").open("a") as lock:
         try:
@@ -204,8 +204,8 @@ def main() -> None:
         else:
             from .gallery import preset_gallery
 
-        from blender_render.config import config_root
-        from blender_render.presets import catalog
+        from mol_blender.config import config_root
+        from mol_blender.presets import catalog
 
         entries = catalog()
         result = (

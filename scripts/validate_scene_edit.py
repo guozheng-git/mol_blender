@@ -76,10 +76,10 @@ def main():
     home = root / 'config'
     home.mkdir(mode=0o700)
     (home / 'config.json').write_text(json.dumps(config))
-    os.environ['BLENDER_RENDER_HOME'] = str(home)
-    from blender_render import engine, warm_worker
-    from blender_render.local import render_file
-    from blender_render.scene.edit import inspect_scene, save_from_blend
+    os.environ['MOL_BLENDER_HOME'] = str(home)
+    from mol_blender import engine, warm_worker
+    from mol_blender.local import render_file
+    from mol_blender.scene.edit import inspect_scene, save_from_blend
     from PIL import Image, ImageChops, ImageStat
     evidence = {'passed': False, 'engine_build': engine.engine_identity()['engine_build'], 'cases': {}}
     evidence_path = root / 'evidence.json'
@@ -124,7 +124,7 @@ def main():
         bridge = root / 'embedded_bridge_check.py'
         bridge.write_text('''import os, sys, pymol2
 sys.path.insert(0, sys.argv[1])
-from blender_render.pymol_bridge_plugin import bridge_preset_from_blend, bridge_render
+from mol_blender.pymol_bridge_plugin import bridge_preset_from_blend, bridge_render
 os.environ['PYTHONEXECUTABLE'] = sys.executable
 bridge_preset_from_blend(sys.argv[3], 'user/from-pymol')
 with pymol2.PyMOL() as p:

@@ -12,8 +12,8 @@ from co_pymol.scene.capture import capture_animation
 from co_pymol.scene.session import open_session
 
 SCRIPTS = Path(os.environ.get(
-    "STRUCTURE_STUDIO_TEST_SCRIPTS",
-    Path(__file__).resolve().parents[2] / "plugins/structure-studio/skills/structure-studio/scripts",
+    "MOLBLENDER_STUDIO_TEST_SCRIPTS",
+    Path(__file__).resolve().parents[2] / "plugins/molblender_studio/skills/molblender-studio/scripts",
 ))
 
 
@@ -58,13 +58,13 @@ def session_state(cmd):
     }
 
 
-@pytest.mark.skipif(not SCRIPTS.is_dir(), reason="Structure Studio scripts are required for client parity")
+@pytest.mark.skipif(not SCRIPTS.is_dir(), reason="molblender-studio scripts are required for client parity")
 @pytest.mark.parametrize("recipe", RECIPES)
 @pytest.mark.parametrize("timing", [[], ["--fps", "7", "--duration", "2"]])
 def test_clients_prepare_the_same_scene_and_animation(session, recipe, timing, monkeypatch, capsys):
     monkeypatch.syspath_prepend(str(SCRIPTS))
     from animation_session import prepare
-    from blender_render.animation import normalize
+    from mol_blender.animation import normalize
 
     submitted = {}
 

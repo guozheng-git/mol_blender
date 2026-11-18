@@ -41,17 +41,17 @@ schedulers both start a fresh Blender process for each remote request.
 Use the configured uv controller environment:
 
 ```sh
-blender-render render structure.cif --warm --width 640 --height 480 --samples 32 -o renders/first.png
-blender-render render structure.cif --warm --preset dried_paint_green -o renders/paint.png
-blender-render worker status
-blender-render worker stop
+mol-blender render structure.cif --warm --width 640 --height 480 --samples 32 -o renders/first.png
+mol-blender render structure.cif --warm --preset dried_paint_green -o renders/paint.png
+mol-blender worker status
+mol-blender worker stop
 ```
 
 You can start Blender ahead of the first request, or change the idle limit when
 starting a new worker:
 
 ```sh
-blender-render worker start --idle-timeout 900
+mol-blender worker start --idle-timeout 900
 ```
 
 The default is **900 seconds (15 minutes)** after the last render. Status polling
@@ -61,13 +61,13 @@ running, compatible worker returns its existing status and idle limit. To change
 that limit, stop it first. `worker stop` refuses to interrupt active work;
 `worker stop --force` explicitly interrupts the active render and releases Blender.
 
-Start, status, stop and render must use the same `BLENDER_RENDER_HOME` when a custom
+Start, status, stop and render must use the same `MOL_BLENDER_HOME` when a custom
 configuration root is selected. The CLI start command also accepts `--blender`,
 `--runtime-path`, `--runtime-wheels` and `--ccd` for an explicitly configured
 runtime. Later renders must select the same runtime. The stdio MCP
 `render_structure` tool accepts `warm=true` as the same opt-in.
 
-On a shared filesystem, use a separate `BLENDER_RENDER_HOME` for each computer or
+On a shared filesystem, use a separate `MOL_BLENDER_HOME` for each computer or
 container session. The worker's socket and process state belong to that local
 session; the pinned Linux runtime itself can still be shared read-only.
 
@@ -98,7 +98,7 @@ process is retired. The request is not automatically replayed or sent to Slurm.
 The next explicitly requested warm render can start a new worker. Source
 snapshots are removed on normal or idle shutdown; per-request snapshots are
 removed after rendering unless `--keep-temp` was requested. Diagnostics from the
-most recent worker are in `BLENDER_RENDER_HOME/warm-worker/worker.log`.
+most recent worker are in `MOL_BLENDER_HOME/warm-worker/worker.log`.
 
 Communication uses a private Unix socket and bounded JSON, accessible only to
 the local user. It opens no network port and adds no shared-server authentication
@@ -114,12 +114,12 @@ revision, a small batch can use:
 ```sh
 apptainer exec --cleanenv --nv --bind "$PWD:/work" renderer.sif sh -eu <<'SH'
 mkdir -p /work/warm-config
-test -f /work/warm-config/config.json || cp /opt/studio-runtime/blender-render/config.json /work/warm-config/config.json
-export BLENDER_RENDER_HOME=/work/warm-config
-blender-render worker start --idle-timeout 900
-trap 'blender-render worker stop --force' EXIT
-blender-render render /work/structure.cif --warm -o /work/first.png
-blender-render render /work/structure.cif --warm --preset dried_paint_green -o /work/paint.png
+test -f /work/warm-config/config.json || cp /opt/studio-runtime/mol-blender/config.json /work/warm-config/config.json
+export MOL_BLENDER_HOME=/work/warm-config
+mol-blender worker start --idle-timeout 900
+trap 'mol-blender worker stop --force' EXIT
+mol-blender render /work/structure.cif --warm -o /work/first.png
+mol-blender render /work/structure.cif --warm --preset dried_paint_green -o /work/paint.png
 SH
 ```
 

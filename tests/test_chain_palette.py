@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from blender_render.chain_palette import (
+from mol_blender.chain_palette import (
     expand_polymer_styles_for_multichain_palette,
     ordered_chain_ids_for_palette,
 )

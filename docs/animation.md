@@ -6,7 +6,7 @@ frame archive; GIF output is optional.
 
 FPS, orbit defaults, recipe timings and enforced limits come from
 [`render_defaults.yaml`](../render_defaults.yaml), shared with PyMOL and
-Structure Studio. Run `python scripts/sync_render_defaults.py` after editing it;
+molblender-studio. Run `python scripts/sync_render_defaults.py` after editing it;
 the generated JSON and animation schema bounds are checked during wheel builds.
 
 ## Controls
@@ -56,7 +56,7 @@ archive when exact rendered pixels are needed; the MP4 is a lossy presentation.
 MP4 pads odd dimensions to even values without cropping. Both movie formats use
 white behind transparent pixels; lossless PNGs retain the rendered alpha.
 
-`blender-render movie-export INPUT.frames.zip -o OUTPUT.gif` (or `.mp4`) verifies
+`mol-blender movie-export INPUT.frames.zip -o OUTPUT.gif` (or `.mp4`) verifies
 archive paths, sizes, frame dimensions and hashes, then runs FFmpeg only. It does
 not require Blender or the original structure. Export filenames must be new.
 
@@ -82,13 +82,13 @@ Claude/Codex can use the same CLI or call stdio MCP `render_structure` with
 The response includes movie file paths. `read_render` is still the PNG inspection
 tool; movie playback depends on the client's support for local media files.
 
-## Shared PyMOL and Structure Studio recipes
+## Shared PyMOL and molblender-studio recipes
 
 Both clients use `co_pymol/scene/animation.py` for `turntable`, `rock`, `reveal`,
 `cutaway`, `states` and `scenes`. Its sibling `camera.py` measures camera keys and
 `capture.py` captures the anchor scene while preserving the caller's camera,
 colors, enabled objects, secondary structure and pinned molecular states. See Studio's
-[animation reference](../plugins/structure-studio/skills/structure-studio/references/animations.md)
+[animation reference](../plugins/molblender_studio/skills/molblender-studio/references/animations.md)
 for commands, prerequisites and quality controls. Existing `--animation rock|360`
 commands retain their defaults.
 
@@ -108,7 +108,7 @@ payload's validated `state_coordinates`. `lid` supplies one opacity per view and
 requires a preset with a ligand-cutout surface. The existing duration, frame,
 archive and memory limits apply. Unknown fields are rejected.
 
-Structure Studio compiles these paths and coordinates from a trusted local
+molblender-studio compiles these paths and coordinates from a trusted local
 session. It renders one local movie through the ordinary isolated preview runner,
 records the resolved style and manifest, and stores the movies, frames and recipe
 with the workspace's session bundle. A saved Blender file contains the anchor

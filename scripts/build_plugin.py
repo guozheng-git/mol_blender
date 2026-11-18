@@ -1,4 +1,4 @@
-"""Stage Structure Studio, its wheel and ZIPs without modifying source files.
+"""Stage molblender-studio, its wheel and ZIPs without modifying source files.
 
     python scripts/build_plugin.py --output .validation/candidate
 
@@ -18,8 +18,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLUGIN = ROOT / "plugins" / "structure-studio"
-SKILL = PLUGIN / "skills" / "structure-studio"
+PLUGIN = ROOT / "plugins" / "molblender_studio"
+SKILL = PLUGIN / "skills" / "molblender-studio"
 EXCLUDE = {"__pycache__", ".DS_Store", ".pytest_cache", ".ruff_cache", "studio-output", "studio-work"}
 
 
@@ -38,7 +38,7 @@ def build_wheel(target: Path) -> Path:
 
 def preset_catalog() -> list[dict]:
     sys.path.insert(0, str(ROOT))
-    from blender_render import presets  # noqa: E402
+    from mol_blender import presets  # noqa: E402
     gallery = {row["preset"]: row for row in json.loads((ROOT / "examples/presets/gallery.json").read_text())}
     rows = []
     for preset_id, filename, _, description, aliases, family in presets._PRESETS:
@@ -56,7 +56,7 @@ def preset_catalog() -> list[dict]:
 
 
 def write_catalog(rows: list[dict], skill: Path) -> None:
-    defaults = json.loads((ROOT / 'blender_render/render_defaults.json').read_text())
+    defaults = json.loads((ROOT / 'mol_blender/render_defaults.json').read_text())
     cpu = defaults['image']['cpu']
     references = skill / "references"
     (references / "presets.json").write_text(json.dumps(rows, indent=2) + "\n")
@@ -86,7 +86,7 @@ def files_under(directory: Path):
 
 
 def package(plugin: Path, skill: Path, output: Path) -> list[Path]:
-    plugin_zip, skill_zip = output / "structure-studio-plugin.zip", output / "structure-studio-skill.zip"
+    plugin_zip, skill_zip = output / "molblender-studio-plugin.zip", output / "molblender-studio-skill.zip"
     import time
     timestamp = time.gmtime(max(315532800, int(os.environ.get('SOURCE_DATE_EPOCH', '315532800'))))[:6]
     def add(archive, path, name):
@@ -96,10 +96,10 @@ def package(plugin: Path, skill: Path, output: Path) -> list[Path]:
         archive.writestr(info, path.read_bytes())
     with zipfile.ZipFile(plugin_zip, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in files_under(plugin):
-            add(archive, path, Path("structure-studio") / path.relative_to(plugin))
+            add(archive, path, Path("molblender-studio") / path.relative_to(plugin))
     with zipfile.ZipFile(skill_zip, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in files_under(skill):
-            add(archive, path, Path("structure-studio") / path.relative_to(skill))
+            add(archive, path, Path("molblender-studio") / path.relative_to(skill))
     return [plugin_zip, skill_zip]
 
 
@@ -110,9 +110,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
-    plugin = output / 'plugin' / 'structure-studio'
+    plugin = output / 'plugin' / 'molblender-studio'
     shutil.copytree(PLUGIN, plugin, ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.whl', '.DS_Store'))
-    skill = plugin / 'skills' / 'structure-studio'
+    skill = plugin / 'skills' / 'molblender-studio'
     wheel = build_wheel(skill / 'assets' / 'wheels')
     shutil.copy2(wheel, output / wheel.name)
     rows = preset_catalog()

@@ -24,7 +24,7 @@ def main():
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
     script = args.skill.resolve() / 'scripts/studio.py'
-    cli = Path(sys.executable).parent / 'blender-render'
+    cli = Path(sys.executable).parent / 'mol-blender'
     config = json.loads(args.config.read_text())
     config.update(local_python=sys.executable, pymol_python=str(args.pymol.resolve().parent / args.pymol.name))
     # Keep the venv interpreter symlink, not its resolved base Python.
@@ -33,9 +33,9 @@ def main():
     (root / 'config/config.json').write_text(json.dumps(config))
     (root / 'studio').mkdir()
     (root / 'studio/state.json').write_text(json.dumps({
-        'external_renderer': True, 'blender_render': str(cli),
-        'blender_render_home': str(root / 'config'), 'pymol_python': str(args.pymol.absolute())}))
-    env = dict(os.environ, BLENDER_RENDER_HOME=str(root / 'config'), STRUCTURE_STUDIO_HOME=str(root / 'studio'))
+        'external_renderer': True, 'mol_blender': str(cli),
+        'mol_blender_home': str(root / 'config'), 'pymol_python': str(args.pymol.absolute())}))
+    env = dict(os.environ, MOL_BLENDER_HOME=str(root / 'config'), MOLBLENDER_STUDIO_HOME=str(root / 'studio'))
     def run(name, command):
         result = subprocess.run(list(map(str, command)), env=env, capture_output=True, text=True, timeout=900)
         (root / (name + '.log')).write_text(result.stdout + '\n' + result.stderr)
@@ -59,8 +59,8 @@ with pymol2.PyMOL() as p:
     still = json.loads(run('still', [cli, 'render', session, '--width', '192', '--height', '144',
                                      '--samples', '4', '--save-blend', '-o', root / 'still.png']))
     evidence = {'python': sys.executable, 'still': still, 'recipes': {}}
-    from blender_render.animation import unpack
-    from blender_render import engine
+    from mol_blender.animation import unpack
+    from mol_blender import engine
     evidence['package'] = str(Path(engine.__file__).resolve())
     evidence['engine_build'] = engine.engine_identity()['engine_build']
     sys.path.insert(0, str(script.parent))

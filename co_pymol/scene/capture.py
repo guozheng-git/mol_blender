@@ -29,10 +29,10 @@ def _exporter():
 
     PathFinder supports both installed files and Studio's bundled wheel.
     """
-    path = Path(__file__).parents[2] / "blender_render/scene"
+    path = Path(__file__).parents[2] / "mol_blender/scene"
     spec = PathFinder.find_spec("export", [str(path)])
     if spec is None or spec.loader is None:
-        raise RuntimeError("Cannot load the Blender Render scene exporter")
+        raise RuntimeError("Cannot load the mol-blender scene exporter")
     exporter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(exporter)
     return exporter

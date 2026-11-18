@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from blender_render.ligand_selection import (
+from mol_blender.ligand_selection import (
     expand_mask_to_residues,
     ligand_reference_mask,
     proximity_mask_within_radius,
