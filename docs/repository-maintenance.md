@@ -14,16 +14,23 @@ with repository **Administration: write** must apply the reviewed policy:
 ```sh
 gh api --method PUT repos/magnusbauer/blender_render/branches/main/protection \
   --input .github/main-protection.json
-gh api --method PUT repos/magnusbauer/blender_render/private-vulnerability-reporting
 ```
 
 The policy requires the `CI` status, an up-to-date branch, one approving review,
 resolution of conversations, and reapproval after changes. It applies to admins
 and disallows force pushes and deletion. Publish the workflow and confirm its
 `CI` check runs before requiring that check for merges. Private repositories
-also need a GitHub plan that supports branch protection. Private vulnerability
-reporting may be unavailable while a repository is private; enable and verify
-it before making the repository public.
+also need a GitHub plan that supports branch protection.
+
+GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
+is a public-repository feature. During a separately authorized public release,
+an administrator should enable it and verify the report form:
+
+```sh
+gh api --method PUT repos/magnusbauer/blender_render/private-vulnerability-reporting
+```
+
+Until the form is available, use the private-channel fallback in `SECURITY.md`.
 
 Verify the applied state rather than treating a successful local edit as setup:
 
