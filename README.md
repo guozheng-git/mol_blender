@@ -1,5 +1,7 @@
 # mol-blender
 
+https://github.com/user-attachments/assets/b773cd68-04a2-4bb4-a1f9-dee987790cb3
+
 If you're tired of seeing AI slop proteins on social media, with branching chains
 and loopy salad wrapped around them, start with an actual structure and give it a
 look you like.
