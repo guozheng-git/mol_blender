@@ -52,9 +52,8 @@ and invalid authored values still fail validation before normalization.
 Exposure, gamma, view transform, and look stay explicit in built-in presets.
 Custom styles that omit those fields retain Blender's scene settings. GPU
 selection still falls back to CPU when unavailable, unless `require_gpu` or
-`PRESS_REQUIRE_GPU` requires a GPU. This refactor preserves the explicit CPU
-settings of the cyan candy mesh and Northern Nights presets on `main_merged`;
-changing their device preference is a separate change.
+`PRESS_REQUIRE_GPU` requires a GPU. All built-in presets, including cyan candy
+mesh and both Northern Nights variants, inherit the shared GPU preference.
 
 ## Cutaway geometry
 
