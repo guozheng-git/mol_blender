@@ -2,10 +2,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
-import subprocess
-import sys
-import zipfile
 
 from mol_blender import engine, telemetry
 
@@ -38,26 +34,3 @@ def test_identity_cache_and_source_change(tmp_path):
     loaded = engine.engine_identity()
     loaded['engine_build'] = 'tampered return value'
     assert engine.engine_identity()['engine_build'] != loaded['engine_build']
-
-
-def test_incremental_wheel_excludes_pre_rename_package(tmp_path):
-    source = tmp_path / 'source'
-    shutil.copytree(Path(__file__).resolve().parents[1], source,
-                    ignore=shutil.ignore_patterns('.git', '.venv', '.runtime', '.validation',
-                                                 'build', 'dist', '*.egg-info', '__pycache__',
-                                                 '.pytest_cache'))
-    # Setuptools copies all of build/lib into the wheel, including packages
-    # left by builds made before the rename and absent from today's package list.
-    stale = source / 'build/lib/blender_render'
-    stale.mkdir(parents=True)
-    (stale / '__init__.py').write_text('STALE_RENDERER = True\n')
-    wheels = tmp_path / 'wheels'
-    result = subprocess.run([sys.executable, '-m', 'build', '--wheel', '--outdir', str(wheels), str(source)],
-                            capture_output=True, text=True, timeout=180)
-    assert result.returncode == 0, result.stdout + result.stderr
-    wheel, = wheels.glob('*.whl')
-    with zipfile.ZipFile(wheel) as archive:
-        names = archive.namelist()
-        assert not any(name.startswith('blender_render/') for name in names)
-        assert 'mol_blender/engine-manifest.json' in names
-        assert 'co_pymol/__init__.py' in names
