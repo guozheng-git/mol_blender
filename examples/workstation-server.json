@@ -1,0 +1,21 @@
+{
+  "scheduler": "workstation",
+  "spool": "/srv/blender-render/workstation/jobs",
+  "image": "/srv/blender-render/workstation/renderer.sif",
+  "image_sha256": "REPLACE_WITH_SHA256_OF_BUILT_SIF",
+  "tokens_file": "/srv/blender-render/workstation/users.json",
+  "apptainer": "/usr/bin/apptainer",
+  "systemd_run": "/usr/bin/systemd-run",
+  "systemctl": "/usr/bin/systemctl",
+  "cpus": 4,
+  "memory_mb": 8192,
+  "gpus": 1,
+  "gpu_index": 0,
+  "walltime_seconds": 3900,
+  "limits": {
+    "render_timeout": 3600,
+    "max_active_per_user": 1,
+    "max_active_total": 1,
+    "retention_seconds": 86400
+  }
+}

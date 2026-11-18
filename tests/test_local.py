@@ -161,6 +161,90 @@ def test_pymol_run_shared_namespace(monkeypatch,tmp_path):
     assert namespace['_PACKAGE_ROOT']==str(source.parent.parent)
 
 
+@pytest.fixture
+def pymol_preview(monkeypatch, tmp_path):
+    import tempfile
+    cache = tmp_path / 'previews'
+    cache.mkdir()
+    monkeypatch.setattr(pymol_bridge_plugin, 'tempfile', SimpleNamespace(
+        mkdtemp=lambda **kw: tempfile.mkdtemp(dir=cache, **kw)))
+    monkeypatch.setattr(pymol_bridge_plugin, 'build_render_payload', lambda *a, **kw: bundle())
+    rendered = []
+    def render(payload, **kw):
+        output = kw['output']
+        rendered.append(output)
+        output.write_bytes(f'image {len(rendered)}'.encode())
+        output.with_suffix('.render').mkdir()
+        (output.with_suffix('.render') / 'preview.log').write_text('render log')
+        return {'outputs': {'render.png': str(output)}}
+    monkeypatch.setattr(local_bridge, 'render_payload', render)
+    return rendered
+
+
+def test_pymol_repeated_previews_replace_buffer_without_saving(pymol_preview, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'render.png').write_bytes(b'original saved image')
+    (tmp_path / 'render.render').mkdir()
+    (tmp_path / 'render.render' / 'preview.log').write_text('original log')
+    loaded = []
+    context = SimpleNamespace(load_png=lambda path, **kw: loaded.append(Path(path).read_bytes()))
+    for _ in range(3):
+        assert pymol_bridge_plugin.bridge_render(_self=context) is None
+    assert loaded == [b'image 1', b'image 2', b'image 3']
+    assert len(set(pymol_preview)) == 3
+    assert all(not output.parent.exists() for output in pymol_preview)
+    assert (tmp_path / 'render.png').read_bytes() == b'original saved image'
+    assert (tmp_path / 'render.render' / 'preview.log').read_text() == 'original log'
+
+
+@pytest.mark.parametrize('failure', ['exception', 'zero'])
+def test_pymol_unavailable_preview_keeps_image(pymol_preview, failure):
+    def load_png(*a, **kw):
+        if failure == 'exception':
+            raise RuntimeError('No display')
+        return 0
+    result = pymol_bridge_plugin.bridge_render(_self=SimpleNamespace(load_png=load_png))
+    assert Path(result) == pymol_preview[0]
+    assert Path(result).read_bytes() == b'image 1'
+    assert Path(result).with_suffix('.render').is_dir()
+
+
+def test_pymol_failed_preview_retains_diagnostics(pymol_preview, monkeypatch, capsys):
+    render = local_bridge.render_payload
+    def fail(payload, **kw):
+        render(payload, **kw)
+        raise RuntimeError('Blender failed')
+    monkeypatch.setattr(local_bridge, 'render_payload', fail)
+    with pytest.raises(RuntimeError, match='Blender failed'):
+        pymol_bridge_plugin.bridge_render(_self=SimpleNamespace())
+    output = pymol_preview[0]
+    assert (output.with_suffix('.render') / 'preview.log').read_text() == 'render log'
+    assert str(output.parent) in capsys.readouterr().out
+
+
+def test_pymol_named_output_is_retained(pymol_preview, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    context = SimpleNamespace(load_png=lambda *a, **kw: None)
+    result = pymol_bridge_plugin.bridge_render(_self=context, output_name='figure.png')
+    assert Path(result) == tmp_path / 'figure.png'
+    assert Path(result).read_bytes() == b'image 1'
+    assert Path(result).with_suffix('.render').is_dir()
+
+
+def test_pymol_style_saved_scene_survives_preview(pymol_preview, monkeypatch):
+    render = local_bridge.render_payload
+    def with_scene(payload, **kw):
+        result = render(payload, **kw)
+        scene = kw['output'].with_suffix('.render') / 'render.blend'
+        scene.write_bytes(b'saved scene')
+        result['outputs']['render.blend'] = str(scene)
+        return result
+    monkeypatch.setattr(local_bridge, 'render_payload', with_scene)
+    result = pymol_bridge_plugin.bridge_render(_self=SimpleNamespace(load_png=lambda *a, **kw: None))
+    assert Path(result).is_file()
+    assert (Path(result).with_suffix('.render') / 'render.blend').read_bytes() == b'saved scene'
+
+
 def test_reference_outputs_full_valid_style_and_refuses_overwrite(tmp_path):
     from PIL import Image
     from blender_render import core

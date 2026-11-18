@@ -37,7 +37,10 @@ class ServerConfig:
     image_sha256: str
     tokens_file: Path | None = None
     authentication: str = 'token'
+    scheduler: str = 'slurm'
     apptainer: str = '/usr/bin/apptainer'
+    systemd_run: str = '/usr/bin/systemd-run'
+    systemctl: str = '/usr/bin/systemctl'
     sbatch: str = '/usr/bin/sbatch'
     squeue: str = '/usr/bin/squeue'
     sacct: str = '/usr/bin/sacct'
@@ -49,6 +52,7 @@ class ServerConfig:
     cpus: int = 8
     memory_mb: int = 16384
     gpus: int = 0
+    gpu_index: int = 0
     # Site-specific Slurm GPU/node selection. The defaults keep --gres=gpu:1.
     gpu_request: str = 'gres'
     gpu_type: str = ''
@@ -58,7 +62,16 @@ class ServerConfig:
     limits: Limits = field(default_factory=Limits)
 
     EXECUTABLES: ClassVar[tuple] = ('apptainer', 'sbatch', 'squeue', 'sacct', 'scancel', 'srun')
+    WORKSTATION_EXECUTABLES: ClassVar[tuple] = ('apptainer', 'systemd_run', 'systemctl')
     DEFAULT_RUNTIME: ClassVar[str] = '/opt/studio-runtime'
+
+    @property
+    def executables(self):
+        return self.WORKSTATION_EXECUTABLES if self.scheduler == 'workstation' else self.EXECUTABLES
+
+    @property
+    def execution_id_key(self):
+        return 'worker_id' if self.scheduler == 'workstation' else 'slurm_id'
 
     @property
     def runtime_root(self):
@@ -68,7 +81,8 @@ class ServerConfig:
     def __post_init__(self):
         # Reject JSON numbers/lists before any regex or Path call, so the
         # administrator is told which value is wrong rather than 'unknown field'.
-        for name in ('authentication', 'image_sha256', *self.EXECUTABLES, 'partition', 'account',
+        for name in ('authentication', 'scheduler', 'image_sha256', *self.EXECUTABLES,
+                     'systemd_run', 'systemctl', 'partition', 'account',
                      'qos', 'gpu_request', 'gpu_type', 'constraint'):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(name + ' must be a string')
@@ -78,6 +92,8 @@ class ServerConfig:
                 raise ValueError(name + ' must be a path string')
         if self.authentication not in ('token', 'none'):
             raise ValueError('authentication must be token or none')
+        if self.scheduler not in ('slurm', 'workstation'):
+            raise ValueError('scheduler must be slurm or workstation')
         if self.authentication == 'token' and self.tokens_file is None:
             raise ValueError('Token authentication requires tokens_file')
         # Commas and colons would split Apptainer --bind specifications.
@@ -90,7 +106,7 @@ class ServerConfig:
             object.__setattr__(self, name, path.resolve())
         if not re.fullmatch('[0-9a-f]{64}', self.image_sha256):
             raise ValueError('Pin the SIF image_sha256 before serving')
-        for name in self.EXECUTABLES:
+        for name in (*self.EXECUTABLES, 'systemd_run', 'systemctl'):
             if not Path(getattr(self, name)).is_absolute():
                 raise ValueError(name + ' must be an absolute executable path')
         for name in ('partition', 'account', 'qos'):
@@ -102,6 +118,10 @@ class ServerConfig:
                 raise ValueError(name + ' must be positive')
         if type(self.gpus) is not int or self.gpus not in (0, 1):
             raise ValueError('Request zero or one GPU per render')
+        if type(self.gpu_index) is not int or self.gpu_index < 0:
+            raise ValueError('gpu_index must be a nonnegative integer')
+        if self.scheduler == 'slurm' and self.gpu_index:
+            raise ValueError('gpu_index is only supported by the workstation scheduler')
         if self.gpu_request not in ('gres', 'gpus'):
             raise ValueError('gpu_request must be gres or gpus')
         if self.gpu_type and not re.fullmatch('[A-Za-z0-9_.-]{1,64}', self.gpu_type):
@@ -114,7 +134,16 @@ class ServerConfig:
                 r'[A-Za-z0-9_.-]+(?:[&|][A-Za-z0-9_.-]+)*', self.constraint):
             raise ValueError('Invalid Slurm constraint; use feature names joined by & or |')
         if self.walltime_seconds < self.limits.render_timeout + 60:
-            raise ValueError('Slurm walltime must exceed render_timeout by at least 60 seconds')
+            raise ValueError('Execution walltime must exceed render_timeout by at least 60 seconds')
+        if self.scheduler == 'workstation':
+            if self.limits.max_active_total != 1:
+                raise ValueError('Workstation limits.max_active_total must be 1')
+            if any((self.partition, self.account, self.qos, self.constraint, self.gpu_type)) or self.gpu_request != 'gres':
+                raise ValueError('Slurm resource selectors cannot be used with the workstation scheduler')
+            # systemd expands percent specifiers even in otherwise literal paths.
+            for name in ('spool', 'image', 'runtime_home', *self.executables):
+                if '%' in str(getattr(self, name)):
+                    raise ValueError('Workstation ' + name + ' cannot contain percent specifiers')
 
     @classmethod
     def load(cls, path):

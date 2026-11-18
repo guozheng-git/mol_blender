@@ -113,6 +113,20 @@ def test_reconnect_reuses_and_recovers(site):
     assert Client('lab').api('GET', '/v1/jobs') == []
 
 
+def test_workstation_profile_uses_the_same_private_forwarding(site):
+    options, install, log = site
+    path = install / 'server-gpu.json'
+    config = json.loads(path.read_text())
+    config.update(scheduler='workstation', gpus=1, limits={'max_active_total': 1})
+    path.write_text(json.dumps(config))
+    result = connect.connect('lab', **options)
+    assert result['status'] == 'connected'
+    assert Client('lab').api('GET', '/v1/info')['scheduler'] == 'workstation'
+    connection = Path(connect.load_state('lab')['connection_dir'])
+    assert json.loads((connection / 'server.json').read_text())['scheduler'] == 'workstation'
+    assert any('-L' in call for call in ssh_calls(log))
+
+
 def test_revoke_forgets_the_connection(site):
     options, _, _ = site
     connect.connect('lab', **options)

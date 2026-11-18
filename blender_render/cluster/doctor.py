@@ -43,7 +43,7 @@ def apptainer_version(output):
 def run(config, scheduler, identity):
     if digest_file(config.image) != config.image_sha256:
         raise ValueError('SIF checksum mismatch')
-    for name in config.EXECUTABLES:
+    for name in config.executables:
         if not os.access(getattr(config, name), os.X_OK):
             raise ValueError(name + ' executable is missing')
     if not config.spool.is_dir():
@@ -68,5 +68,7 @@ def run(config, scheduler, identity):
         dry_run = scheduler.dry_run(Path(temporary))
     return {**check, 'status': 'configured', 'image_sha256': config.image_sha256,
             'runtime': config.runtime_root,
-            'apptainer': runtime, 'slurm_dry_run': dry_run, 'warnings': warnings,
+            'apptainer': runtime, 'scheduler': config.scheduler,
+            ('workstation_check' if config.scheduler == 'workstation' else 'slurm_dry_run'): dry_run,
+            'warnings': warnings,
             'render_verified': False}

@@ -64,6 +64,7 @@ def parser() -> argparse.ArgumentParser:
     submit.add_argument('--timeout', type=float, default=600, help='Local render deadline in seconds')
     submit.add_argument('--wait', type=float, default=0,
                         help='Lab only: seconds to wait for the job, then fetch it if it completed')
+    submit.add_argument('--fetch-output', help='Download destination with --wait; --output still identifies the receipt')
     submit.add_argument('--pymol-python', default='')
     submit.add_argument('--selection', default='(all)')
     add_render_options(submit)
@@ -97,7 +98,7 @@ def execute(args) -> dict:
             if args.wait > 0:
                 result = jobs.wait(result['receipt'], timeout=args.wait)
                 if result.get('status') == 'completed':
-                    result = jobs.fetch(result['receipt'])
+                    result = jobs.fetch(result['receipt'], args.fetch_output)
         return {**result, 'connection': connection['connection']}
     record = json.loads(Path(args.receipt).expanduser().read_text())
     with jobs.lab_connection(record['profile'], keep=args.keep_connected) as connection:

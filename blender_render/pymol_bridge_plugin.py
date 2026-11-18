@@ -1,7 +1,9 @@
 """PyMOL command adapter. Export the current pose and render with local Blender."""
 from __future__ import annotations
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 # PyMOL's default `run` executes in its own globals: __file__ still names
 # pymol/__init__.py, while __script__ identifies the file being run.
@@ -14,7 +16,9 @@ from blender_render.scene.export import build_render_payload, _normalize_cli_str
 
 def try_load_preview(cmd_obj, output_png):
     try:
-        cmd_obj.load_png(str(output_png), movie=1, quiet=1)
+        loaded = cmd_obj.load_png(str(output_png), movie=1, quiet=1)
+        if loaded is not None and loaded <= 0:
+            raise RuntimeError('PyMOL could not display the rendered image')
         return True
     except Exception:
         print("Rendered PNG: " + str(output_png))
@@ -22,16 +26,18 @@ def try_load_preview(cmd_obj, output_png):
 
 
 def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
-                  output_dir=".", output_name="render.png", rough=0, color_follow="",
+                  output_dir="", output_name="", rough=0, color_follow="",
                   save_blend="", state=-1, blender_exe="", keep_temp=0,
                   width="", height="", samples="", transparent_background="",
                   _self=None, overrides_json="", preserve_view="", timeout=600,
                   animation="", duration="", fps="", rock_angle="", gif="", auto_preview=1,
-                  cluster="", wait=0, warm=0, open_blender=0, gui_blender="", edit_bridge=0):
+                  cluster="", wait="", warm=0, open_blender=0, gui_blender="", edit_bridge=0):
     if _normalize_cli_string(cluster) and _parse_bool(warm):
         raise ValueError('warm=1 selects the local worker; omit cluster or use warm=0 for Slurm')
     if _normalize_cli_string(cluster) and (_parse_bool(open_blender) or _parse_bool(edit_bridge) or _normalize_cli_string(gui_blender)):
         raise ValueError('open_blender selects local desktop editing; fetch a Slurm scene with save_blend=1 and open it locally')
+    if _normalize_cli_string(cluster) and (_normalize_cli_string(blender_exe) or _parse_bool(keep_temp)):
+        raise ValueError('Cluster jobs use administrator-configured runtime and retention')
     if _self is None:
         from pymol import cmd
     else:
@@ -61,10 +67,19 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
                                 ('fps', fps, int), ('rock_angle', rock_angle, float), ('gif', gif, _parse_bool)]:
         if str(value).strip():
             options[key] = convert(value)
-    output = (Path(text(output_dir) or ".").expanduser() / (text(output_name) or "render.png")).with_suffix(".png").resolve()
+    # Like PyMOL's ray command, an unnamed still only updates the image
+    # buffer. Explicit file/scene/movie requests retain their on-disk outputs.
+    save_outputs = (text(output_dir) or text(output_name)
+                    or options.get('save_blend') or options.get('animation') or options.get('gif')
+                    or _parse_bool(keep_temp) or _parse_bool(open_blender) or _parse_bool(edit_bridge)
+                    or not _parse_bool(auto_preview))
+    if text(cluster) and not save_outputs:
+        return _cluster_preview(cmd, payload, options, text(cluster),
+                                wait=True if not text(wait) else _parse_bool(wait), timeout=float(timeout))
+    preview_root = None if save_outputs else Path(tempfile.mkdtemp(prefix='pymol-blender-preview-'))
+    output = ((preview_root or Path(text(output_dir) or ".").expanduser())
+              / (text(output_name) or "render.png")).with_suffix(".png").resolve()
     if text(cluster):
-        if text(blender_exe) or _parse_bool(keep_temp):
-            raise ValueError('Cluster jobs use administrator-configured runtime and retention')
         from blender_render.cluster_bridge import submit
         result = submit(payload, output=output, options=options, profile=text(cluster),
                         wait=_parse_bool(wait), timeout=float(timeout))
@@ -72,15 +87,54 @@ def bridge_render(selection="(all)", preset=DEFAULT_PRESET, style_json="",
             print(json.dumps(result, indent=2))
             return result
     else:
-        result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
-                       timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm),
-                       open_blender=_parse_bool(open_blender), gui_blender=text(gui_blender), edit_bridge=_parse_bool(edit_bridge))
+        try:
+            result = render_payload(payload, output=output, options=options, blender=text(blender_exe),
+                           timeout=float(timeout), keep_temp=_parse_bool(keep_temp), warm=_parse_bool(warm),
+                           open_blender=_parse_bool(open_blender), gui_blender=text(gui_blender), edit_bridge=_parse_bool(edit_bridge))
+        except Exception:
+            if preview_root is not None:
+                print('Blender render diagnostics: ' + str(preview_root))
+            raise
     if result and result.get('editor'):
         print(json.dumps({'editor': result['editor']}, indent=2))
-    return _present_result(cmd, result, output, auto_preview)
+    return _present_result(cmd, result, output, auto_preview, preview_root=preview_root)
 
 
-def _present_result(cmd, result, output, auto_preview):
+def _cluster_preview(cmd, payload, options, profile, *, wait, timeout):
+    from blender_render.cluster_bridge import preview_output, finish_preview, submit
+    with preview_output(profile) as output:
+        receipt = output.with_suffix('.cluster.json')
+        print(('Resuming' if receipt.exists() else 'Rendering') + ' cluster preview on ' + profile)
+        # A fresh download destination lets a retry fetch the same job even if a
+        # previous download/display was interrupted. Its receipt never changes.
+        download = Path(tempfile.mkdtemp(prefix='download-', dir=output.parent)) if wait else None
+        try:
+            result = submit(payload, options=options, output=output, profile=profile,
+                            wait=wait, timeout=timeout, fetch_output=download / 'render.png' if download else None)
+        except Exception:
+            print('Cluster preview files retained: ' + str(output.parent))
+            raise
+        if 'outputs' not in result:
+            if download is not None and not any(download.iterdir()):
+                download.rmdir()
+            if result.get('status') in ('failed', 'cancelled', 'expired'):
+                # Confirmed terminal failures can never launch more GPU work.
+                # Preserve their receipts, but let the next explicit call start fresh.
+                finish_preview(output, keep_files=True)
+            else:
+                print('Repeat blender_render cluster=' + profile + ' to resume this preview.')
+            print(json.dumps(result, indent=2))
+            return result
+        presented = _present_result(cmd, result, Path(result['outputs']['render.png']), 1, preview_root=download)
+        if presented is None:
+            finish_preview(output)
+        elif 'render.blend' in result['outputs'] or 'frames.zip' in result['outputs']:
+            # A style can request files even without explicit scene/movie flags.
+            finish_preview(output, keep_files=True)
+        return presented
+
+
+def _present_result(cmd, result, output, auto_preview, *, preview_root=None):
     if result and 'frames.zip' in result.get('outputs', {}):
         from blender_render.pymol_movie import remember, load_movie
         archive = result['outputs']['frames.zip']
@@ -93,7 +147,13 @@ def _present_result(cmd, result, output, auto_preview):
         print(json.dumps(result, indent=2))
         return result
     if _parse_bool(auto_preview):
-        try_load_preview(cmd, output)
+        loaded = try_load_preview(cmd, output)
+        # A style may request a saved scene even without the save_blend argument.
+        saved_scene = (result or {}).get('outputs', {}).get('render.blend')
+        if loaded and preview_root is not None and not saved_scene:
+            shutil.rmtree(preview_root)
+            print('Blender render displayed. Save it with: png filename.png')
+            return None
     print(str(output))
     return str(output)
 

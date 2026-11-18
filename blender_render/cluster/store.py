@@ -33,6 +33,11 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.root.stat().st_uid != os.getuid() or self.root.stat().st_mode & 0o077:
             raise ValueError('Cluster spool must be owned by the service account and mode 0700')
+        with self.locked():
+            for path in self.root.glob('*/job.json'):
+                record = read_json(path, 64 * 1024)
+                if not is_terminal(record['status']) and record.get('scheduler', 'slurm') != config.scheduler:
+                    raise ValueError('Use a separate spool when changing scheduler with active jobs')
 
     @contextmanager
     def locked(self):
@@ -75,15 +80,16 @@ class Store:
                 record.update(status=data['status'], finished_at=data['finished_at'])
                 self.save(record)
                 return record
-        if record.get('slurm_id'):
+        execution_id = record.get(self.config.execution_id_key)
+        if execution_id:
             try:
-                state = self.scheduler.state(record['slurm_id'])
+                state = self.scheduler.state(execution_id)
             except (OSError, subprocess.SubprocessError):
                 return record  # A scheduler outage is not a job failure.
             failed = {'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY', 'NODE_FAIL', 'BOOT_FAIL',
                       'DEADLINE', 'PREEMPTED', 'REVOKED', 'SPECIAL_EXIT'}
             if state == 'COMPLETED' and record['status'] != JobStatus.CANCELLING:
-                # Shared filesystems may expose the worker receipt after Slurm's
+                # Shared filesystems may expose the worker receipt after the scheduler's
                 # accounting update. Allow metadata propagation before failing.
                 record.setdefault('completion_seen_at', time.time())
                 if time.time() - record['completion_seen_at'] < 60:
@@ -92,7 +98,7 @@ class Store:
                     return record
             if state in failed or state == 'CANCELLED' or state == 'COMPLETED':
                 status = JobStatus.CANCELLED if state == 'CANCELLED' or record['status'] == JobStatus.CANCELLING else JobStatus.FAILED
-                # Slurm completion without the worker's verified result is not success.
+                # Scheduler completion without the worker's verified result is not success.
                 record.update(status=status, finished_at=time.time(), scheduler_state=state)
             elif state in {'RUNNING', 'COMPLETING'} and record['status'] != JobStatus.CANCELLING:
                 record['status'] = JobStatus.RUNNING
@@ -100,7 +106,7 @@ class Store:
         return record
 
     def public(self, record):
-        result = {key: record[key] for key in ('job_id', 'status', 'created_at', 'slurm_id', 'finished_at') if key in record}
+        result = {key: record[key] for key in ('job_id', 'status', 'created_at', 'slurm_id', 'worker_id', 'finished_at') if key in record}
         result['engine_build'] = record['engine_build']
         if record['status'] == JobStatus.COMPLETED:
             receipt = read_json(self.directory(record['job_id']) / 'result.json', 64 * 1024)
@@ -135,13 +141,15 @@ class Store:
                 raise Quota('Server storage quota reached')
             directory.mkdir(mode=0o700)
             record = {'job_id': identifier, 'owner': owner, 'request_sha256': digest,
-                      'status': JobStatus.SUBMITTING, 'created_at': time.time(), 'engine_build': self.engine_build}
-            self.save(record)  # Persist before sbatch: a crash must never cause duplicate work.
+                      'status': JobStatus.SUBMITTING, 'created_at': time.time(), 'engine_build': self.engine_build,
+                      'scheduler': self.config.scheduler}
+            self.save(record)  # Persist before launch: a crash must never cause duplicate work.
             atomic_json(directory / 'request.json', {'request': document,
                 'limits': vars(limits), 'engine_build': self.engine_build,
                 'execution': {'gpus': self.config.gpus}})
             try:
-                record.update(slurm_id=self.scheduler.submit(directory, identifier), status=JobStatus.QUEUED)
+                record[self.config.execution_id_key] = self.scheduler.submit(directory, identifier)
+                record['status'] = JobStatus.QUEUED
             except SubmissionUnknown:
                 record['status'] = JobStatus.SUBMISSION_UNKNOWN
             except (OSError, subprocess.SubprocessError) as exc:
@@ -156,7 +164,7 @@ class Store:
     def status(self, owner, identifier):
         with self.locked():
             record = self.owned(owner, identifier)
-            # A gateway crash during sbatch is ambiguous, never a license to resubmit.
+            # A gateway crash during launch is ambiguous, never a license to resubmit.
             if record['status'] == JobStatus.SUBMITTING:
                 record['status'] = JobStatus.SUBMISSION_UNKNOWN
                 self.save(record)
@@ -192,9 +200,9 @@ class Store:
         with self.locked():
             record = self.refresh(self.owned(owner, identifier))
             if not is_terminal(record['status']):
-                if not record.get('slurm_id'):
+                if not record.get(self.config.execution_id_key):
                     raise Conflict('Unknown submission needs administrator reconciliation before cancellation')
-                self.scheduler.cancel(record['slurm_id'])
+                self.scheduler.cancel(record[self.config.execution_id_key])
                 (self.directory(identifier) / 'cancel.requested').touch(mode=0o600)
                 record['status'] = JobStatus.CANCELLING
                 self.save(record)
@@ -236,6 +244,7 @@ class Store:
                 return self.public(self.refresh(record))
             found = self.scheduler.find_submission(identifier, record['created_at'])
             if found:
-                record.update(slurm_id=found, status=JobStatus.QUEUED)
+                record[self.config.execution_id_key] = found
+                record['status'] = JobStatus.QUEUED
                 self.save(record)
             return self.public(self.refresh(record))
