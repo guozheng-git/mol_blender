@@ -126,3 +126,48 @@ for viewing, or complete a small render when rendering was requested. Report
 the Claude surface, loaded plugin path, runtime readiness, actual checks and any
 remaining upload/restart step. Registration and `doctor` do not prove a render
 completed.
+
+## Upgrade from Structure Studio
+
+Rebuild and reinstall the plugin as `molblender-studio@mol-blender`, then point
+`STUDIO_SCRIPT` at the newly installed `scripts/studio.py`. Keep existing runtime
+and configuration directories at their original absolute paths: virtualenvs,
+managed Python interpreters, Blender shims and saved configuration contain those
+paths. Renaming or moving the cache directory is not a supported migration.
+
+To reuse the previous default Studio home in place:
+
+```sh
+export MOLBLENDER_STUDIO_HOME="$HOME/.cache/structure-studio"
+```
+
+Use your original absolute directory if you customized it. Old environment
+variable names are no longer read; set the new variable in every environment
+that launches Studio. Changing it alone does not update the renderer or its
+saved registration.
+
+For an **external renderer**, upgrade its existing checkout or installation
+first (`uv sync --locked --inexact` for a checkout), then register its new
+executable and original configuration directory explicitly:
+
+```sh
+python3 "$STUDIO_SCRIPT" setup --use-existing /absolute/path/to/.venv/bin/mol-blender \
+  --mol-blender-home /absolute/path/to/original/config/root
+python3 "$STUDIO_SCRIPT" doctor
+```
+
+This preserves Studio's PyMOL configuration. A previous external-renderer state
+cannot be repaired by plain `setup` or `setup --background`; those commands now
+report the re-registration command instead of crashing.
+
+For a **Studio-managed renderer**, keep the same Studio home and run
+`python3 "$STUDIO_SCRIPT" setup --background`, then check `doctor`. Setup reuses
+the environments in place, installs the renamed renderer and writes its new
+registration. It creates a new `mol-blender/` renderer configuration directory;
+copy any user presets from the old `blender-render/presets/` into
+`mol-blender/presets/` separately.
+
+For terminal renderer commands, set `MOL_BLENDER_HOME` to your original
+configuration directory instead of moving it. If you used separate lab profiles,
+set `MOL_BLENDER_CLUSTER_HOME` to their original root as well. Verify readiness
+and a small render before removing any old installation.
