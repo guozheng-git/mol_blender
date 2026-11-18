@@ -24,7 +24,7 @@ regexes = ['''^\s*"request_key": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 [[rules.allowlists]]
 description = "Historical prose misclassified as an authentication token"
 condition = "AND"
-paths = ['''(^|/)docs/plans/mol-blender-progress\.md$''']
+paths = ['''(^|/)docs/plans/blender-render-progress\.md$''']
 regexTarget = "match"
 regexes = ['''^authentication, quota/budget/retention $''']
 
