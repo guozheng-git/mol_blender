@@ -34,53 +34,22 @@ model_3 — ipTM 0.41 (others are 0.7+).
 - **PyMOL** (a normal desktop install — the plugin installs into PyMOL's bundled Python, not your system Python)
 - **An MCP client** — Codex, Claude Code, or Cursor 3.12.17 or newer. Older
   Cursor versions may not refresh the tool list when PyMOL starts after Cursor.
-- **macOS** — that's all I've tested on :/ Linux / conda / non-standard installs should work in principle (the recipe is just "install into PyMOL's bundled Python") but these haven't been tested.
+- **macOS** is the tested desktop installation path. Linux, conda and other
+  layouts need verification with their own PyMOL interpreter.
 
 ## Installing
 
-This integration ships with Blender Render. Follow the repository's
-[installation guide](../../README.md) for the separate renderer runtime and
-[AGENTS.md](../../AGENTS.md) for development constraints.
-
-**1. Clone and install**
-
-```bash
-git clone https://github.com/magnusbauer/blender_render.git
-cd blender_render
-/Applications/PyMOL.app/Contents/bin/python -m pip install --user -e ".[pymol]" --ignore-requires-python
-```
-
-Run these commands from this repository's root. `--ignore-requires-python`
-allows the PyMOL-side package to run in bundled Python 3.10; the renderer still
-uses its separate Python 3.11 environment. Use `python -m co_pymol` with PyMOL's
-interpreter for the CLI: this distribution does not install a `co-pymol`
-executable.
-
-**2. Set up the MCP client you use**
-
-Choose exactly one:
-
-```bash
-# Codex
-/Applications/PyMOL.app/Contents/bin/python -m co_pymol setup codex
-
-# Cursor
-/Applications/PyMOL.app/Contents/bin/python -m co_pymol setup cursor
-
-# Claude Code
-/Applications/PyMOL.app/Contents/bin/python -m co_pymol setup claude
-```
-
-Each command installs the shared PyMOL startup hook and configures only the
-selected client. The other clients do not need to be installed. The Codex and
-Claude choices require their existing CLI on `PATH`; the Cursor choice writes
-`~/.cursor/mcp.json` directly. These commands configure co-pymol for a client —
-they do not install Codex, Cursor, or Claude Code themselves. All are safe to
-re-run.
+Follow [Install through co-PyMOL](../install-co-pymol.md) for the complete setup:
+install into PyMOL's own Python, configure one client, enable rendering if needed
+and verify a real tool response. Reuse the same guide for an agent-led install.
+The renderer uses a separate Python 3.11 environment; basic PyMOL control does
+not require a Blender download.
 
 Lab rendering uses the shared renderer's cluster connection; see the
-[cluster guide](../shared-cluster.md). Client setup does not connect to a
-server or allocate compute.
+[cluster guide](../shared-cluster.md). Client setup does not connect to a server
+or allocate compute.
+
+## Connection behavior and troubleshooting
 
 The client setup is global, so `pymol` is available from every session and
 there is no need to `cd` into this repo. It uses the recommended bundled stdio
@@ -118,7 +87,7 @@ proxy connects; they do not change the address started by the automatic PyMOL
 hook, which is currently fixed at `127.0.0.1:8766`. Leave those options off for
 the normal installation.
 
-**3. Restart PyMOL and your selected client**
+### Restarting and checking the connection
 
 The PyMOL console should print:
 
@@ -138,12 +107,13 @@ shared by the ChatGPT desktop app, Codex CLI, and Codex IDE extension on the
 same host. See the
 [official Codex MCP documentation](https://developers.openai.com/codex/mcp/).
 
-**4. Confirm the agent is talking to PyMOL**
+### Verify a real tool response
 
 Ask the agent something like *"are you connected to PyMOL? what version is
 loaded?"* — if it calls a `pymol` tool (e.g. `get_version`) and reports a real
-answer, you're wired up. If it cannot see any `pymol` tools, re-check step 2 and
-make sure you opened a new client session after setup.
+answer, you're wired up. If it cannot see any `pymol` tools, re-check the
+[client setup](../install-co-pymol.md#connect-pymol-to-one-client) and open a new
+client session after setup.
 
 ## Upgrading
 
@@ -156,8 +126,9 @@ same `co_pymol` modules. The merged distribution is `pymol-plugin-bridge`.
 /Applications/PyMOL.app/Contents/bin/python -m pip install --user -e ".[pymol]" --ignore-requires-python
 ```
 
-Then re-run the setup command from step 2 for the client you use. If its entry
-still points at the older `-m co_pymol.proxy`, it won't start.
+Then re-run the [client setup command](../install-co-pymol.md#connect-pymol-to-one-client)
+for the client you use. If its entry still points at the older
+`-m co_pymol.proxy`, it won't start.
 
 ## Experimenting!
 

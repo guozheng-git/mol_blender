@@ -10,7 +10,6 @@
   },
   "renderer": {
     "engine": "CYCLES",
-    "device": "CPU",
     "view_transform": "Standard",
     "look": "None",
     "exposure": 0,

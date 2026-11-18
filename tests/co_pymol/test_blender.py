@@ -737,14 +737,26 @@ def test_disconnect_recovers_existing_job_without_resubmitting(bridge):
     assert calls(bridge).count("submit") == 1
 
 
-def test_ambiguous_submission_never_retries(bridge):
+def test_ambiguous_submission_result_recovers_the_saved_request(bridge):
     (Path(bridge.config.render_home) / "ambiguous").touch()
     request_id = submit(bridge)
     state = wait_for(bridge, request_id, "needs_attention")
     assert "Cluster connection failed" in state["error"]
+    receipt = Path(state["directory"]) / "render.cluster.json"
+    original = json.loads(receipt.read_text())
+    for process in bridge._processes:
+        process.wait(timeout=5)
     assert bridge.result(request_id)[1] is None
-    assert len(bridge._processes) == 1  # no job ID, so nothing to recover
+    # result() resumes a saved receipt even before a job ID is known. Counting
+    # live Popen objects races the original helper's exit and does not establish
+    # whether a new job was submitted. Observe the completed recovery instead.
+    for process in bridge._processes:
+        process.wait(timeout=5)
     assert calls(bridge).count("submit") == 1
+    assert calls(bridge).count("recover") == 1
+    assert calls(bridge).count("resend") == 1
+    assert json.loads(receipt.read_text())["request_id"] == original["request_id"]
+    assert bridge.status(request_id)["status"] == "completed"
 
 
 def test_a_submission_the_gateway_never_received_is_resent_under_its_request_id(bridge):

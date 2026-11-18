@@ -66,6 +66,38 @@
     }
   },
   {
+    "name": "certifi",
+    "version": "2026.10.23",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz",
+        "sha256": "a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd"
+      }
+    ],
+    "license": "MPL-2.0",
+    "project_urls": {
+      "Homepage": "https://github.com/certifi/python-certifi",
+      "Source": "https://github.com/certifi/python-certifi"
+    }
+  },
+  {
+    "name": "charset-normalizer",
+    "version": "3.5.2",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/33/1c/f41d4e74c28ab327ff3acd36053f7ea506c55872d7a90b0fa71aa3ab0c89/charset_normalizer-3.5.2.tar.gz",
+        "sha256": "39de2a259fc954455c57274dc94c79d5842774e1247a016aff30bc0efed0f4ef"
+      }
+    ],
+    "license": "MIT",
+    "project_urls": {
+      "Changelog": "https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md",
+      "Code": "https://github.com/jawah/charset_normalizer",
+      "Documentation": "https://charset-normalizer.readthedocs.io/",
+      "Issue tracker": "https://github.com/jawah/charset_normalizer/issues"
+    }
+  },
+  {
     "name": "colorama",
     "version": "0.4.6",
     "sources": [
@@ -155,19 +187,20 @@
   },
   {
     "name": "filelock",
-    "version": "3.20.3",
+    "version": "4.2.11",
     "sources": [
       {
-        "url": "https://files.pythonhosted.org/packages/1d/65/ce7f1b70157833bf3cb851b556a37d4547ceafc158aa9b34b36782f23696/filelock-3.20.3.tar.gz",
-        "sha256": "18c57ee915c7ec61cff0ecf7f0f869936c7c30191bb0cf406f1341778d0834e1"
+        "url": "https://files.pythonhosted.org/packages/bf/9d/7ec738e68764703d07eb4da4b43aabf0ae6f969f34cb3792a88af400abc5/filelock-4.2.11.tar.gz",
+        "sha256": "0cb84119fb8dce17898e1f69c974d5019daa59c4d7656be390a5fa59ccced912"
       }
     ],
-    "license": "Unlicense",
+    "license": "MIT",
     "project_urls": {
+      "Changelog": "https://py-filelock.readthedocs.io/en/latest/changelog.html",
       "Documentation": "https://py-filelock.readthedocs.io",
-      "Homepage": "https://github.com/tox-dev/py-filelock",
-      "Source": "https://github.com/tox-dev/py-filelock",
-      "Tracker": "https://github.com/tox-dev/py-filelock/issues"
+      "Homepage": "https://github.com/tox-dev/filelock",
+      "Source": "https://github.com/tox-dev/filelock",
+      "Tracker": "https://github.com/tox-dev/filelock/issues"
     }
   },
   {
@@ -197,6 +230,22 @@
     "project_urls": {
       "documentation": "https://www.mdanalysis.org/GridDataFormats/",
       "source": "https://github.com/MDAnalysis/GridDataFormats"
+    }
+  },
+  {
+    "name": "idna",
+    "version": "3.20",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/f5/08/8eea9d4b8302028f3abb2c0813953f7aec26d33b7a8960ed760e65ff29fa/idna-3.20.tar.gz",
+        "sha256": "a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44"
+      }
+    ],
+    "license": "BSD-3-Clause",
+    "project_urls": {
+      "Changelog": "https://github.com/kjd/idna/blob/master/HISTORY.md",
+      "Issue tracker": "https://github.com/kjd/idna/issues",
+      "Source": "https://github.com/kjd/idna"
     }
   },
   {
@@ -449,16 +498,16 @@
   },
   {
     "name": "msgpack",
-    "version": "1.1.2",
+    "version": "1.2.4",
     "sources": [
       {
-        "url": "https://files.pythonhosted.org/packages/4d/f2/bfb55a6236ed8725a96b0aa3acbd0ec17588e6a2c3b62a93eb513ed8783f/msgpack-1.1.2.tar.gz",
-        "sha256": "3b60763c1373dd60f398488069bcdc703cd08a711477b5d480eecc9f9626f47e"
+        "url": "https://files.pythonhosted.org/packages/cc/52/1ec7ead2c7528bf3d1db73e886fa4df10f9e6f0eb7854a448b7090cfcef7/msgpack-1.2.4.tar.gz",
+        "sha256": "475c44e12f2a5de766a8448783f149c9b33f3f49b88953c6cd739a77d93c732c"
       }
     ],
     "license": "Apache-2.0",
     "project_urls": {
-      "Changelog": "https://github.com/msgpack/msgpack-python/blob/main/ChangeLog.rst",
+      "Changelog": "https://github.com/msgpack/msgpack-python/blob/main/CHANGELOG.md",
       "Documentation": "https://msgpack-python.readthedocs.io/",
       "Homepage": "https://msgpack.org/",
       "Repository": "https://github.com/msgpack/msgpack-python/",
@@ -566,21 +615,22 @@
   },
   {
     "name": "pillow",
-    "version": "12.1.0",
+    "version": "13.0.0",
     "sources": [
       {
-        "url": "https://files.pythonhosted.org/packages/d0/02/d52c733a2452ef1ffcc123b68e6606d07276b0e358db70eabad7e40042b7/pillow-12.1.0.tar.gz",
-        "sha256": "5c5ae0a06e9ea030ab786b0251b32c7e4ce10e58d983c0d5c56029455180b5b9"
+        "url": "https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz",
+        "sha256": "cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510"
       }
     ],
     "license": "MIT-CMU",
     "project_urls": {
       "Changelog": "https://github.com/python-pillow/Pillow/releases",
       "Documentation": "https://pillow.readthedocs.io",
-      "Funding": "https://tidelift.com/subscription/pkg/pypi-pillow?utm_source=pypi-pillow&utm_medium=pypi",
-      "Homepage": "https://python-pillow.github.io",
+      "Funding": "https://tidelift.com/lifter/search/pypi/pillow",
+      "Homepage": "https://python-pillow.org",
       "Mastodon": "https://fosstodon.org/@pillow",
       "Release notes": "https://pillow.readthedocs.io/en/stable/releasenotes/index.html",
+      "Security": "https://pillow.readthedocs.io/en/stable/handbook/security.html",
       "Source": "https://github.com/python-pillow/Pillow"
     }
   },
@@ -628,12 +678,29 @@
     }
   },
   {
-    "name": "pygments",
-    "version": "2.19.2",
+    "name": "pyarrow",
+    "version": "26.0.1",
     "sources": [
       {
-        "url": "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz",
-        "sha256": "636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887"
+        "url": "https://files.pythonhosted.org/packages/bc/5e/9cb2a56d5e293aab4e2fbecc5b0620d93227d66b8d5a63c554c31e1f80fe/pyarrow-26.0.1.tar.gz",
+        "sha256": "93affcbd8a343e98dc19e9ec8fe17271ebf8fe98102d8b7454175074409f8b72"
+      }
+    ],
+    "license": "Apache-2.0",
+    "project_urls": {
+      "Documentation": "https://arrow.apache.org/docs/python",
+      "Homepage": "https://arrow.apache.org/",
+      "Issues": "https://github.com/apache/arrow/issues",
+      "Repository": "https://github.com/apache/arrow"
+    }
+  },
+  {
+    "name": "pygments",
+    "version": "2.21.0",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/49/2e/ced460408999b33da6b31b0021b0f37d329e202d4169aeb164493778f25b/pygments-2.21.0.tar.gz",
+        "sha256": "610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c"
       }
     ],
     "license": "BSD-2-Clause",
@@ -730,6 +797,21 @@
       "Issues": "https://github.com/python-jsonschema/referencing/issues/",
       "Source": "https://github.com/python-jsonschema/referencing",
       "Tidelift": "https://tidelift.com/subscription/pkg/pypi-referencing?utm_source=pypi-referencing&utm_medium=referral&utm_campaign=pypi-link"
+    }
+  },
+  {
+    "name": "requests",
+    "version": "2.34.2",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz",
+        "sha256": "f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed"
+      }
+    ],
+    "license": "Apache-2.0",
+    "project_urls": {
+      "Documentation": "https://requests.readthedocs.io",
+      "Source": "https://github.com/psf/requests"
     }
   },
   {
@@ -896,6 +978,24 @@
       "Documentation": "https://tzdata.readthedocs.io",
       "Homepage": "https://github.com/python/tzdata",
       "Source": "https://github.com/python/tzdata"
+    }
+  },
+  {
+    "name": "urllib3",
+    "version": "2.8.0",
+    "sources": [
+      {
+        "url": "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz",
+        "sha256": "63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63"
+      }
+    ],
+    "license": "MIT",
+    "project_urls": {
+      "Changelog": "https://github.com/urllib3/urllib3/blob/main/CHANGES.rst",
+      "Code": "https://github.com/urllib3/urllib3",
+      "Documentation": "https://urllib3.readthedocs.io",
+      "Issue tracker": "https://github.com/urllib3/urllib3/issues",
+      "Security policy": "https://urllib3.readthedocs.io/en/latest/security.html"
     }
   },
   {

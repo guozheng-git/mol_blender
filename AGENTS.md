@@ -1,5 +1,85 @@
 # Local molecular renderer
 
+## Installation requests
+
+Choose the route from the user's intended workflow. Run the selected guide's
+commands and verify the result; do not stop at giving the user a list of commands.
+Reuse this checkout and existing configuration. Resolve machine-specific paths
+from the installed tools, and configure only the requested client.
+
+### Install through co-PyMOL
+
+For controlling a live desktop PyMOL session from Codex, Claude Code or Cursor,
+follow [the co-PyMOL install guide](docs/install-co-pymol.md). Install `.[pymol]`
+into PyMOL's own Python, then run `python -m co_pymol setup CLIENT` with that same
+interpreter. Blender rendering uses the separate Python 3.11 environment. Verify
+a real PyMOL tool response after setup; client registration alone is not enough.
+
+### Install the Claude plugin
+
+For Structure Studio's file-based viewer, sessions and renders in Claude, follow
+[the Claude install guide](docs/install-claude.md). Build the plugin with
+`scripts/build_plugin.py`: the source marketplace alone omits its renderer wheel.
+Use the staged marketplace for Claude Code, the plugin ZIP for Claude's plugin
+upload, or the skill ZIP for its skill upload. Run `studio.py doctor` in the
+target Claude environment and finish the requested runtime setup there. A local
+Claude Code install does not install into the user's Claude web account.
+
+## Connect to an existing cluster
+
+For an authorized lab render or recovery, reuse the selected profile (`lab` in
+the examples) and the client's installed `blender-render` executable. In this
+checkout, use `.venv/bin/blender-render` if it is not on `PATH`. Keep local
+rendering as the default unless the user requested the cluster.
+
+Preserve `BLENDER_RENDER_HOME` for the renderer's presets/runtime. Lab profiles
+are under `BLENDER_RENDER_CLUSTER_HOME`, falling back to `BLENDER_RENDER_HOME`
+and then `~/.config/blender-render/`. co-PyMOL and Studio normally use the shared
+default lab folder independently of their runtime; respect co-PyMOL's configured
+`cluster_home` override. Check the correct profile root before treating a
+connection as missing. Use the CLI's summaries rather than printing credential
+files.
+
+Inspect the saved SSH connection first:
+
+```sh
+blender-render cluster connection --profile lab
+```
+
+A running gateway can have a closed local tunnel. If the saved connection has a
+closed tunnel or a gateway error, try reconnecting once with its saved settings,
+then verify the gateway responds:
+
+```sh
+blender-render cluster connect --profile lab
+blender-render cluster info --profile lab
+```
+
+`connect` uses noninteractive SSH and can reuse existing authentication. Ask the
+user to reconnect in their terminal only if that attempt needs login/MFA or
+fails with an actionable connection problem; never request or handle MFA codes.
+For a URL/credential-only profile, `connection` returns `null`: use `cluster
+info` directly, without inventing SSH settings. First-time client configuration
+uses the administrator-provided URL/credential or SSH alias, pinned node,
+controller and site-config paths in the [cluster guide](docs/shared-cluster.md).
+Setting up a new Slurm service is a separate task covered by
+[cluster-onboarding](.agents/skills/cluster-onboarding/SKILL.md).
+
+After a connection loss, recover the saved receipt through `blender-render job
+status RECEIPT` and `blender-render job fetch RECEIPT --wait 900`. Keep a local
+receipt distinct from gateway acceptance and GPU execution. If observation
+reports `prepared`, resend only through `jobs.submit`/`job submit` to the same
+output with the same request ID; never create a replacement job to repair a
+connection. Leave `submission_unknown` for administrator reconciliation.
+
+Use the job API/CLI for render operations and its existing connection leases.
+It connects once and closes only a tunnel it opened when no other client holds
+a lease. Preserve pre-existing/shared tunnels; do not use disconnect or credential
+revocation as a generic recovery step. Connection checks do not establish that
+a GPU job ran: report gateway connectivity and render status separately.
+
+## Development constraints
+
 This branch supports PyMOL export, direct local Blender rendering, preset authoring,
 and optional stdio MCP for Claude/Codex. Keep one shared renderer in
 `blender_render/blender_custom_render.py`. CLI, PyMOL and MCP use `local.py` and the
@@ -63,15 +143,6 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   render and settings for features the user has approved.
 - Use `.agents/skills/cluster-onboarding/SKILL.md` to configure the cluster service
   for a new Slurm site. Keep site differences in `server.json`, not launcher code.
-- For an authorized lab render, check the configured cluster connection before
-  submission. A running gateway can have a closed local SSH tunnel. If needed,
-  try `blender-render cluster connect --profile PROFILE` once with the saved
-  profile; its noninteractive SSH can reuse existing authentication. Ask the user
-  to reconnect in their terminal only if that attempt needs login/MFA or fails
-  with an actionable connection problem. Never request or handle their MFA codes.
-  Keep a local render receipt distinct from gateway acceptance and GPU execution.
-  Reconnect and recover existing jobs by their saved ID/receipt; never create a
-  duplicate render to repair a connection. Inspect ambiguous submissions first.
 - Write manifests and resolved styles; clean temporary source snapshots unless
   debugging retention was requested. Never commit research data or local paths.
 - Saved Blender scenes carry data-only preset editing metadata. Disable embedded
@@ -89,8 +160,12 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   `session_id`, and reconnect that session when needed. `editor_open` is only for
   an explicit request for another window. Background preview renders may run
   separately without opening desktop windows.
-- Run `python -m pytest` for relevant changes. Check a built wheel outside the
-  checkout for packaging changes. Record actual runtime and visual checks in
-  `docs/validation.md`; mocks do not establish Blender or host integration.
+- Run `python -m pytest` for relevant changes. For packaging changes, inspect the
+  source distribution and check a built wheel outside the checkout. Report
+  actual checks and limits in the pull request;
+  mocks do not establish Blender or host integration. Store detailed logs,
+  deployment records and research-specific evidence in ignored `.validation/`
+  or private storage outside the public repository. Add public guides to
+  `docs/README.md` and the explicit documentation list in `MANIFEST.in`.
 - Preserve upstream notices. Make coherent commits and respect the user's
   publication boundary.

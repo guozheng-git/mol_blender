@@ -17,7 +17,13 @@ and `blender-render render` keep their existing behavior unless a cluster is
 explicitly selected. The optional stdio MCP and hosted image-delivery adapter
 remain separate interfaces.
 
-For a new server, follow [build the image](#build-once-reuse-the-uv-environments),
+For an existing service, start with [client setup](#use-from-pymol),
+[job submission and recovery](#one-job-command-for-every-client), or
+[a saved SSH gateway](#your-own-gateway-over-ssh). Ask your administrator for the
+service URL/credential or the SSH settings; local rendering needs none of these.
+
+Administrators setting up a new server should follow
+[build the image](#build-once-reuse-the-uv-environments),
 [configure the service](#configure-the-service), then
 [install the persistent user service](#persistent-user-service-and-shared-clients).
 The configuration and systemd templates are included in this repository.
@@ -144,7 +150,7 @@ the timeout includes queue time. A timeout leaves the original job running.
 Animation controls work as they do locally:
 
 ```pymol
-blender_render cluster=lab, animation=rock, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=rock.png
+blender_render cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
 ```
 
 Omit `cluster=lab` to render locally. Custom styles and saved local presets are
@@ -169,12 +175,14 @@ PSE, Python, Blender scene uploads, arbitrary file paths or user-provided shell
 commands. Only data exported from the session crosses the network.
 
 The receipt is written before upload and contains recovery identity, not tokens
-or molecular coordinates. After a lost response, query that receipt even if it
-has no job ID yet. If the service reports an unknown submission, ask its
-administrator to reconcile it; do not create a replacement job speculatively.
-An explicit rejection or a confirmed missing request can be submitted again with
-a new output name. Downloads never overwrite existing outputs. A failed integrity
-check leaves no partial render in the requested output location.
+or molecular coordinates. After a lost response, reconnect and observe that
+receipt through `blender-render job status`, even if it has no job ID yet. A
+confirmed missing request is reported as `prepared`: repeat `job submit` with
+the same input/options and output to resend the same request ID. If the service
+reports `submission_unknown`, ask its administrator to reconcile it; do not
+create a replacement job speculatively. Downloads never overwrite existing
+outputs. A failed integrity check leaves no partial render in the requested
+output location.
 
 ### One job command for every client
 
@@ -570,8 +578,8 @@ in the job directory until cleanup; the API does not expose those logs.
 Run source and installed-wheel tests with the `dev`, `mcp` and `cluster` extras.
 Before opening a service to other users, exercise a real Slurm allocation, GPU
 selection if enabled, cancellation, image/movie download and cleanup on the target
-cluster. Local HTTP tests do not establish Slurm or Apptainer integration. The
-current executed checks and outstanding gates are in [validation](validation.md).
+cluster. Local HTTP tests do not establish Slurm or Apptainer integration.
+Keep site-specific acceptance evidence private.
 
 For reproducible real acceptance, run this on the Linux gateway with the installed
 wheel or the source environment. The output directory must be new and visible on
