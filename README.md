@@ -32,6 +32,17 @@ uv-managed runtime. Installation does not start or deploy a server.
 
 ## Install and configure
 
+Want your AI agent to handle installation? Give it this repository and ask it to
+follow [the setup instructions in AGENTS.md](AGENTS.md#installation-requests).
+Tell it whether you want [co-PyMOL](docs/install-co-pymol.md) to control a live
+PyMOL session or [Structure Studio in Claude](docs/install-claude.md) for the
+Claude plugin. For example:
+
+> Follow AGENTS.md to install co-PyMOL for Codex and verify the connection.
+
+If your lab already has a renderer, point your agent to the
+[cluster connection instructions](AGENTS.md#connect-to-an-existing-cluster).
+
 Use Python 3.11 (matching Blender's Python ABI):
 
 ```sh

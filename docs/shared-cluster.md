@@ -145,12 +145,14 @@ PSE, Python, Blender scene uploads, arbitrary file paths or user-provided shell
 commands. Only data exported from the session crosses the network.
 
 The receipt is written before upload and contains recovery identity, not tokens
-or molecular coordinates. After a lost response, query that receipt even if it
-has no job ID yet. If the service reports an unknown submission, ask its
-administrator to reconcile it; do not create a replacement job speculatively.
-An explicit rejection or a confirmed missing request can be submitted again with
-a new output name. Downloads never overwrite existing outputs. A failed integrity
-check leaves no partial render in the requested output location.
+or molecular coordinates. After a lost response, reconnect and observe that
+receipt through `blender-render job status`, even if it has no job ID yet. A
+confirmed missing request is reported as `prepared`: repeat `job submit` with
+the same input/options and output to resend the same request ID. If the service
+reports `submission_unknown`, ask its administrator to reconcile it; do not
+create a replacement job speculatively. Downloads never overwrite existing
+outputs. A failed integrity check leaves no partial render in the requested
+output location.
 
 ### One job command for every client
 

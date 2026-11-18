@@ -2286,3 +2286,65 @@ defaults checks from November 6.
 
 These are merge regression checks; they do not repeat the earlier live SSH,
 Slurm or installed desktop-app acceptance workflows.
+
+## Agent installation guides (2026-11-18)
+
+Added separate co-PyMOL and Claude installation guides, linked from `AGENTS.md`
+and the README. These are documentation changes; installer and renderer code
+were unchanged.
+
+- PyMOL's Python 3.10: `python -m pytest tests/co_pymol/test_cli.py -q` —
+  **12 passed**. These setup tests use isolated fixtures/mocks; they do not
+  establish a live desktop PyMOL connection.
+- Built the wheel and both Studio ZIPs with `scripts/build_plugin.py` in a new
+  temporary directory. The three relevant Studio tests passed with
+  `STRUCTURE_STUDIO_TEST_WHEEL` set: wheel/source identity, preset catalog and
+  plugin/marketplace manifests. Both ZIPs passed integrity checks and contained
+  exactly one renderer wheel.
+- Executed the Claude guide's complete marketplace/registration shell block
+  with a temporary `CLAUDE_CONFIG_DIR`. Local plugin and marketplace validation
+  passed, then Claude Code installed and enabled `structure-studio@blender-render`.
+  Validation retained the existing description/author warnings and directory
+  submission notices for missing README, license metadata and icon; this was
+  local installation validation, not public directory submission approval.
+- Located the loaded plugin through `claude plugin list --json` (this CLI
+  returned `readFromFolder`). Outside the checkout, its `studio.py doctor`
+  reported the bundled renderer identity and correctly reported no installed
+  runtime. Its workspace command generated files for public `examples/1stp.cif`
+  with Python `-I`, without creating the isolated Studio runtime directory.
+  This checked workspace generation, not browser display or a Blender render.
+- `uv sync --locked --inexact --dry-run` preserved existing optional dependencies;
+  plain exact sync would have removed them. Local guide links, shell-block syntax
+  and Git whitespace checks passed.
+
+No runtime download, render, lab job, live PyMOL reconnection or Claude web/Desktop
+upload was performed. The user's existing client configuration and runtimes were
+unchanged. Logs are retained under ignored `.validation/agent-install-guides/`;
+temporary packages, Claude configuration and workspace output were removed.
+
+## Agent cluster connection instructions (2026-11-18)
+
+Promoted the existing cluster connection rule into a dedicated `AGENTS.md`
+section with connection inspection, one saved-profile reconnect, gateway
+verification, profile-root selection and receipt recovery. Corrected the older
+cluster guide's missing-request retry advice to preserve the output/request ID.
+
+`python -m pytest tests/test_cluster_connect.py tests/test_jobs.py -q` passed
+**53 tests in 27.41 s**, with inherited `BLENDER_RENDER_CLUSTER_HOME` cleared.
+Connection tests use the real local helper/gateway with fake SSH; job tests
+include mocked gateway and tunnel behavior. CLI help confirmed the documented
+commands, and shell syntax, local links and Git whitespace checks passed. No
+live cluster connection, SSH authentication, Slurm submission or render was run.
+
+### PR validation against main
+
+Repeated the relevant checks in a separate worktree based on `main` at `96793e1`:
+**68 tests passed** (12 co-PyMOL setup, 53 connection/job lifecycle and three
+Studio packaging checks). Rebuilt the wheel and both ZIPs from that worktree,
+executed the documented Claude install block with a temporary client
+configuration, and verified the enabled plugin, bundled renderer identity,
+unconfigured-runtime doctor output and public 1STP workspace generation.
+ZIP integrity, documentation links, shell syntax and whitespace checks passed.
+The temporary client configuration and workspace were removed; install logs
+remain in the PR worktree's ignored `.validation/` directory. No live cluster
+or rendering runtime was used.
