@@ -448,7 +448,7 @@ def test_batch_returns_and_other_pymol_tool_runs_while_remote_is_blocked(
     async def check():
         server = create_server()
         result = await asyncio.wait_for(
-            server.call_tool("blender_render_batch", {"all_presets": True}), timeout=3
+            server.call_tool("mol_blender_batch", {"all_presets": True}), timeout=3
         )
         blocks = result[0] if isinstance(result, tuple) else result
         receipt = json.loads(next(item.text for item in blocks if item.type == "text"))
@@ -941,7 +941,7 @@ def test_network_work_starts_only_after_pymol_lock_is_released(bridge, monkeypat
     monkeypatch.setattr(pymol_session, "_cmd", object())
     monkeypatch.setattr(bridge, "submit", submit_scene)
     register_blender_tools(Server())
-    result = registered["blender_render"](name="Binding Site")
+    result = registered["mol_blender"](name="Binding Site")
     assert json.loads(result)["status"] == "starting"
 
 
@@ -958,16 +958,16 @@ def test_mcp_registration_and_native_image_content(bridge, monkeypatch):
         assert {
             "render",
             "snapshot",
-            "blender_render",
+            "mol_blender",
             "blender_result",
-            "blender_renders",
+            "mol_blender_renders",
         } <= names
         render_tool = next(
-            t for t in await server.list_tools() if t.name == "blender_render"
+            t for t in await server.list_tools() if t.name == "mol_blender"
         )
         assert "name" in render_tool.inputSchema["properties"]
         assert "name" not in render_tool.inputSchema.get("required", [])
-        listed = await server.call_tool("blender_renders", {})
+        listed = await server.call_tool("mol_blender_renders", {})
         # FastMCP may return structured content alongside the text blocks.
         blocks = listed[0] if isinstance(listed, tuple) else listed
         listing = json.loads(next(item.text for item in blocks if item.type == "text"))
@@ -1328,7 +1328,7 @@ def test_project_mcp_tool_passes_names_and_resolves_preset_aliases(
 
     async def check():
         result = await create_server().call_tool(
-            "blender_render",
+            "mol_blender",
             {
                 "preset": "mint",
                 "protein": "5GGS",

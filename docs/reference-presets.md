@@ -30,8 +30,8 @@ chain selections and saved camera determine the composition.
 
 ```python
 # Inside the existing PyMOL application; uses its current cmd object.
-blender_render preset=cyan_mint_cutaway
-blender_render preset=mint_sky_assembly, preserve_view=0
+mol_blender preset=cyan_mint_cutaway
+mol_blender preset=mint_sky_assembly, preserve_view=0
 ```
 
 ```sh

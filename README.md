@@ -201,20 +201,20 @@ Python used to run renders. In PyMOL, load the plugin using its absolute checkou
 
 ```pymol
 run /absolute/path/to/mol_blender/mol_blender/pymol_bridge_plugin.py
-blender_render
+mol_blender
 png figure.png
-blender_render selection=(all), preset=dried_paint_green, output_dir=renders, output_name=paint.png
-blender_render style_json=/absolute/path/to/my-style.json, output_name=custom.png
+mol_blender selection=(all), preset=dried_paint_green, output_dir=renders, output_name=paint.png
+mol_blender style_json=/absolute/path/to/my-style.json, output_name=custom.png
 ```
 
-The PyMOL command remains `blender_render`; the renamed Python package is
-`mol_blender` and the terminal command is `mol-blender`.
+The PyMOL command and Python package are both `mol_blender`;
+the terminal command is `mol-blender`.
 
 The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
 PyMOL. An unnamed local still behaves like PyMOL's `ray`: each call replaces the
 displayed image and removes its temporary render files after loading. Repeat
-`blender_render` freely, then use PyMOL's `png figure.png` to save the current image.
+`mol_blender` freely, then use PyMOL's `png figure.png` to save the current image.
 An existing `render.png` in the working directory does not affect these previews.
 If PyMOL cannot display a preview, its files are retained and their path is printed.
 
@@ -232,7 +232,7 @@ pixi add --manifest-path .runtime/pymol/pixi.toml pillow
 ```
 
 ```pymol
-blender_render animation=360, gif=1, width=640, height=480, output_name=spin.png
+mol_blender animation=360, gif=1, width=640, height=480, output_name=spin.png
 blender_movie_export filename=spin-again.gif
 ```
 
@@ -255,12 +255,12 @@ the cluster. Both support repeated unnamed PyMOL previews.
 Then explicitly select the profile in PyMOL:
 
 ```pymol
-blender_render cluster=lab
+mol_blender cluster=lab
 png figure.png
 ```
 
 An unnamed cluster still waits for completion and replaces the displayed image,
-just like a local preview. Repeat `blender_render cluster=lab` after it finishes
+just like a local preview. Repeat `mol_blender cluster=lab` after it finishes
 to render the current view again. Successful previews remove their local temporary
 files. Save the displayed image with PyMOL's `png` command.
 
@@ -274,9 +274,9 @@ their receipts for inspection and allow a new preview on the next call.
 Named exports retain their asynchronous submission and explicit fetch workflow:
 
 ```pymol
-blender_render cluster=lab, rough=1, output_name=cluster-preview.png
-blender_render_status JOB_ID, cluster=lab
-blender_render_fetch JOB_ID, cluster=lab, output_name=cluster-preview.png
+mol_blender cluster=lab, rough=1, output_name=cluster-preview.png
+mol_blender_status JOB_ID, cluster=lab
+mol_blender_fetch JOB_ID, cluster=lab, output_name=cluster-preview.png
 ```
 
 Named submission returns a job ID; fetching loads the verified image or animation.
@@ -289,8 +289,8 @@ and starts a fresh Blender process by default. For repeated local renders, add
 `warm=1` to reuse Blender between requests:
 
 ```pymol
-blender_render warm=1, width=640, height=480, samples=32, output_name=local-first.png
-blender_render warm=1, preset=dried_paint_green, output_name=local-paint.png
+mol_blender warm=1, width=640, height=480, samples=32, output_name=local-first.png
+mol_blender warm=1, preset=dried_paint_green, output_name=local-paint.png
 ```
 
 The worker shuts down after 15 idle minutes. Use `mol-blender worker status`
@@ -306,7 +306,7 @@ Legacy service/profile/remote arguments are unsupported.
 `co_pymol` runs an MCP server inside PyMOL. Claude Code, Codex or Cursor can then
 drive the live session: `run`, pLDDT colouring, metrics, triage and PyMOL images.
 The same server renders the current view with this checkout's Blender renderer:
-`blender_render`, `blender_render_batch`, `blender_status`, `blender_result`,
+`mol_blender`, `mol_blender_batch`, `blender_status`, `blender_result`,
 `blender_cancel` and `blender_presets`. Renders run in the background and save
 `scene.pse` beside each PNG.
 
@@ -426,7 +426,7 @@ for setup and example conversations.
 You can also make a preset by editing in Blender. Start from a look you like:
 
 ```pml
-blender_render preset=mint_sky_assembly, open_blender=1, output_name=edit.png
+mol_blender preset=mint_sky_assembly, open_blender=1, output_name=edit.png
 ```
 
 After changing materials, lights or the background, use **File → Save As** in
@@ -434,7 +434,7 @@ Blender, then save the supported changes as a reusable preset from PyMOL:
 
 ```pml
 blender_preset_from_blend /path/to/edited.blend, user/my-look
-blender_render preset=user/my-look, output_name=my-look.png
+mol_blender preset=user/my-look, output_name=my-look.png
 ```
 
 The terminal equivalents are `render --open-blender` and

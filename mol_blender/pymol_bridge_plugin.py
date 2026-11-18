@@ -122,7 +122,7 @@ def _cluster_preview(cmd, payload, options, profile, *, wait, timeout):
                 # Preserve their receipts, but let the next explicit call start fresh.
                 finish_preview(output, keep_files=True)
             else:
-                print('Repeat blender_render cluster=' + profile + ' to resume this preview.')
+                print('Repeat mol_blender cluster=' + profile + ' to resume this preview.')
             print(json.dumps(result, indent=2))
             return result
         presented = _present_result(cmd, result, Path(result['outputs']['render.png']), 1, preview_root=download)
@@ -200,16 +200,16 @@ def bridge_preset_from_blend(filename, preset, description="", camera_policy="pr
     return result
 
 
-blender_render = bridge_render
+mol_blender = bridge_render
 
 def register_plugin(cmd_obj=None):
     if cmd_obj is None:
         from pymol import cmd as cmd_obj
-    cmd_obj.extend("blender_render", bridge_render)
+    cmd_obj.extend("mol_blender", bridge_render)
     cmd_obj.extend("blender_movie_export", bridge_movie_export)
-    cmd_obj.extend("blender_render_status", bridge_cluster_status)
-    cmd_obj.extend("blender_render_fetch", bridge_cluster_fetch)
-    cmd_obj.extend("blender_render_cancel", bridge_cluster_cancel)
+    cmd_obj.extend("mol_blender_status", bridge_cluster_status)
+    cmd_obj.extend("mol_blender_fetch", bridge_cluster_fetch)
+    cmd_obj.extend("mol_blender_cancel", bridge_cluster_cancel)
     cmd_obj.extend("blender_preset_from_blend", bridge_preset_from_blend)
 
 try:

@@ -12,7 +12,7 @@ The gateway runs on a cluster service host with Slurm client tools. It accepts
 exported structure data and validated styles, submits one job, and serves the
 results. Token authentication gives each user a private queue. An administrator
 can explicitly select open access for a trusted cluster network, with one shared
-queue and no credentials. It never renders in the web process. Local `blender_render`
+queue and no credentials. It never renders in the web process. Local `mol_blender`
 and `mol-blender render` keep their existing behavior unless a cluster is
 explicitly selected. The optional stdio MCP and hosted image-delivery adapter
 remain separate interfaces.
@@ -49,7 +49,7 @@ local runtime as described in the [README](../README.md#install-and-configure),
 omit `cluster` in PyMOL:
 
 ```pymol
-blender_render selection=(all), width=384, height=288, samples=8, output_dir=renders, output_name=local-test.png
+mol_blender selection=(all), width=384, height=288, samples=8, output_dir=renders, output_name=local-test.png
 ```
 
 The default preset requests GPU rendering and detects an available backend.
@@ -121,16 +121,16 @@ account, including jobs submitted by other cluster users.
 Load `mol_blender/pymol_bridge_plugin.py` as described in the README, then:
 
 ```pymol
-blender_render cluster=lab
+mol_blender cluster=lab
 png figure.png
-blender_render cluster=lab, preset=mint_sky_assembly, output_dir=renders, output_name=protein.png
-blender_render_status JOB_ID, cluster=lab
-blender_render_fetch JOB_ID, cluster=lab, output_dir=renders, output_name=protein.png
-blender_render_cancel JOB_ID, cluster=lab
+mol_blender cluster=lab, preset=mint_sky_assembly, output_dir=renders, output_name=protein.png
+mol_blender_status JOB_ID, cluster=lab
+mol_blender_fetch JOB_ID, cluster=lab, output_dir=renders, output_name=protein.png
+mol_blender_cancel JOB_ID, cluster=lab
 ```
 
 Submission exports the current enabled selection, transforms, colors, secondary
-structure and view. An unnamed still (`blender_render cluster=lab`) waits for the
+structure and view. An unnamed still (`mol_blender cluster=lab`) waits for the
 verified image and displays it in PyMOL. After successful display, repeating the
 command starts a new render of the current view. Temporary local files are removed;
 use `png figure.png` to save the displayed image.
@@ -150,7 +150,7 @@ the timeout includes queue time. A timeout leaves the original job running.
 Animation controls work as they do locally:
 
 ```pymol
-blender_render cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
+mol_blender cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
 ```
 
 Omit `cluster=lab` to render locally. Custom styles and saved local presets are
@@ -320,9 +320,9 @@ are provisioned privately by `connect`; no public HTTP port or manual token
 copy is needed. Then, in local PyMOL:
 
 ```pymol
-blender_render cluster=lab
+mol_blender cluster=lab
 png figure.png
-blender_render cluster=lab
+mol_blender cluster=lab
 ```
 
 The image returns to PyMOL on this computer. Repeating the command after display

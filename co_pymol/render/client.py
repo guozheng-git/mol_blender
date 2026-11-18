@@ -164,7 +164,7 @@ def _render_defaults() -> tuple[str | None, str]:
 class BlenderConfig:
     """Where renders run and land. Every field has a working default."""
 
-    output_directory: str = str(Path.home() / "Documents/blender-renders")
+    output_directory: str = str(Path.home() / "Documents/mol-blender-renders")
     backend: str = "local"
     cluster_profile: str = "lab"
     render_python: str | None = None
@@ -657,7 +657,7 @@ class BlenderBridge:
             raise ValueError("Ambiguous render reference; use its unique request_id")
         if not matches:
             raise ValueError(
-                "Unknown Blender render. Use blender_renders to find saved runs."
+                "Unknown Blender render. Use mol_blender_renders to find saved runs."
             )
         return matches[0]
 

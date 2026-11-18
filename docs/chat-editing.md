@@ -22,7 +22,7 @@ After updating, restart PyMOL and load the updated `pymol_bridge_plugin.py`
 using the [PyMOL bridge setup](../README.md#pymol-bridge). Then run:
 
 ```pml
-blender_render selection=(all), preset=mint_sky_assembly, edit_bridge=1, width=640, height=480, samples=32, output_name=edit.png
+mol_blender selection=(all), preset=mint_sky_assembly, edit_bridge=1, width=640, height=480, samples=32, output_name=edit.png
 ```
 
 Or from the terminal:

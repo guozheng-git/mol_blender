@@ -65,7 +65,7 @@ not require Blender or the original structure. Export filenames must be new.
 Use the README's plugin setup, then for example:
 
 ```pymol
-blender_render animation=360, duration=2, fps=12, gif=1, width=320, height=240, samples=8, output_name=spin.png
+mol_blender animation=360, duration=2, fps=12, gif=1, width=320, height=240, samples=8, output_name=spin.png
 blender_movie_export filename=spin-again.gif
 ```
 

@@ -94,7 +94,7 @@ the selected client. PyMOL should print
   `print(cmd.get_version())`, from that client. A real response verifies the
   connection. If the tools are missing, restart the chat to discover them.
 - If rendering was requested, check `blender_presets` and complete a small
-  preview through `blender_render`. Retain the PNG, manifest and resolved style;
+  preview through `mol_blender`. Retain the PNG, manifest and resolved style;
   `doctor` and preset enumeration alone do not verify rendering.
 
 For an agent-led install, the completion report should identify the client,

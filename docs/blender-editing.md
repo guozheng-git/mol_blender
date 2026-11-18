@@ -14,7 +14,7 @@ chat connection. Ordinary manual editing needs no chat bridge.
 Reload the updated bridge in a fresh PyMOL session, then run:
 
 ```pml
-blender_render selection=(all), preset=mint_sky_assembly, open_blender=1, width=640, height=480, samples=32, output_dir=~/Desktop/blender-edit, output_name=start.png
+mol_blender selection=(all), preset=mint_sky_assembly, open_blender=1, width=640, height=480, samples=32, output_dir=~/Desktop/blender-edit, output_name=start.png
 ```
 
 This renders a preview, saves `start.render/render.blend`, and opens it in a
@@ -27,7 +27,7 @@ In Blender, use **File → Save As** to save your edited scene, for example as
 
 ```pml
 blender_preset_from_blend ~/Desktop/blender-edit/my-look.blend, user/my-look
-blender_render selection=(all), preset=user/my-look, output_dir=~/Desktop/blender-edit, output_name=with-my-look.png
+mol_blender selection=(all), preset=user/my-look, output_dir=~/Desktop/blender-edit, output_name=with-my-look.png
 ```
 
 The new preset is available through `mol-blender presets` and through the

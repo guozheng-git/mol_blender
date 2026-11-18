@@ -47,7 +47,7 @@ def register_blender_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @error_wrapper
-    def blender_render(
+    def mol_blender(
         preset: str = IMAGE["preset"],
         selection: str = "all",
         state: int = -1,
@@ -118,7 +118,7 @@ def register_blender_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @error_wrapper
-    def blender_render_batch(
+    def mol_blender_batch(
         presets: list[str] | None = None,
         all_presets: bool = False,
         selection: str = "all",
@@ -135,7 +135,7 @@ def register_blender_tools(mcp: FastMCP) -> None:
     ) -> str:
         """Submit multiple presets from ONE frozen PyMOL scene and return promptly.
 
-        backend: "local" or "lab"/"cluster", as for blender_render.
+        backend: "local" or "lab"/"cluster", as for mol_blender.
 
         Use when the user requests several presets or all presets. Set
         all_presets=True only for an explicit all-presets request; otherwise
@@ -180,7 +180,7 @@ def register_blender_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @error_wrapper
-    def blender_renders(limit: int = 20) -> str:
+    def mol_blender_renders(limit: int = 20) -> str:
         """List recent saved renders, newest first, even from previous chats.
 
         Reads the configured local output directory only; statuses are cached.
