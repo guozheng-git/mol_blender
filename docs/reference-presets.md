@@ -133,35 +133,24 @@ Two presets provide related bright and dark looks:
 - `northern_nights_cutaway`: a rounded pocket opening and black background,
   using a violet–blue–purple binder palette and teal-to-mint peptide gradient.
 
-Both previews use public **1SPS** (Src SH2 domain bound to the pY peptide
-pQpYEEIP), from the bundled `examples/1sps.cif`. The file holds three copies of
-the complex; the previews keep biological assembly 1, which is SH2 chain A with
-peptide chain D (author chain IDs). Chain D was relabeled B to match the presets'
-peptide selection, and coordinates were not moved. The camera is PyMOL's
-load-time view of the deposited coordinates: no `orient`, only `zoom` with a
-2 angstrom buffer. Build the same pose in PyMOL:
-
-```python
-cmd.load("examples/1sps.cif", "structure")
-cmd.remove("not (chain A+D)")
-cmd.alter("chain D", 'chain="B"')
-cmd.hide("everything"); cmd.show("cartoon", "polymer"); cmd.show("sticks", "organic")
-cmd.zoom("all", buffer=2)
-cmd.save("1sps_assembly1.pse")
-```
+Like the other 1SPS examples, both previews use the bundled
+`examples/1sps_pose.pse`: public **1SPS** (Src SH2 domain bound to the pY
+peptide pQpYEEIP), chains A and D, solvent removed.
 
 ```sh
-blender-render render 1sps_assembly1.pse --preset northern_nights -o bright.png
-blender-render render 1sps_assembly1.pse --preset northern_nights_cutaway -o cutaway.png
+blender-render render examples/1sps_pose.pse --preset northern_nights -o bright.png
+blender-render render examples/1sps_pose.pse --preset northern_nights_cutaway -o cutaway.png
 # Select the authored PTR close-up framing (27 angstrom orthographic extent):
-blender-render render 1sps_assembly1.pse --preset northern_nights --no-preserve-view -o detail.png
+blender-render render examples/1sps_pose.pse --preset northern_nights --no-preserve-view -o detail.png
 # Optional camera turntable, not a molecular trajectory:
-blender-render render 1sps_assembly1.pse --preset northern_nights_cutaway --animation 360 --gif -o turntable.png
+blender-render render examples/1sps_pose.pse --preset northern_nights_cutaway --animation 360 --gif -o turntable.png
 ```
 
-Rendering `examples/1sps.cif` directly is different: the CLI orients the whole
-file, so all three copies appear and protein chain B takes the peptide colors.
-For your own complex, prepare the selections and camera the same way.
+The presets treat chain B as the peptide. In this pose the peptide is chain D,
+so it takes the binder palette instead of mint, while the PTR glow (selected by
+residue name) still applies. For the mint peptide, relabel it first with
+`alter chain D, chain="B"` in PyMOL. For your own complex, adapt the chain
+selections the same way.
 
 In PyMOL, select `preset=northern_nights` or `preset=northern_nights_cutaway`.
 These presets select chain B as the peptide. Adapt the chain palette and all
