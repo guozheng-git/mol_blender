@@ -2286,3 +2286,36 @@ defaults checks from November 6.
 
 These are merge regression checks; they do not repeat the earlier live SSH,
 Slurm or installed desktop-app acceptance workflows.
+
+## Repeatable PyMOL image previews (2026-11-17)
+
+Unnamed local stills now update PyMOL's image buffer like `ray`. They render in a
+fresh temporary directory, load the image, and remove the temporary files only
+after a successful load. Explicit exports retain their files. Display failures
+retain the PNG; renderer failures retain diagnostics and print their location.
+
+- Focused regression suite: **122 passed** in **21.65 s**, with two existing
+  Authlib deprecation warnings:
+  `python -m pytest -q tests/test_local.py tests/test_preview_fallback.py
+  tests/test_cluster_client.py tests/test_scene_edit.py tests/test_editor.py
+  tests/test_warm_worker.py`.
+- Real headless PyMOL **2.5.4**, Python **3.9.16**: loaded the plugin with `run`,
+  loaded public `examples/1sps.cif`, and ran
+  `blender_render width=160, height=120, samples=2` twice in the same process.
+  The plugin was reloaded before the second call, and the camera was rotated
+  between calls. Rendering preserved each requested live camera.
+- Both renders completed on the **Apple M4 Metal GPU** in **9.95 s** and **8.87 s**.
+  Captured source manifests matched this edited checkout and the plugin's actual
+  digest; both used source SHA-256
+  `6718ee674f586a09e615fb0d6885a5dd21cb7059e5a33a71f5fc0900cc36c7b5`.
+  Runtime manifests reported Blender **5.0.1**, Molecular Nodes **4.5.10**,
+  Blender Python **3.11.13**, NumPy **1.26.4**, and Biotite **1.6.0**; the
+  controller used Python **3.11.15**.
+- Native `png saved.png` saved each displayed Blender image with identical RGBA
+  pixels, including replacing that saved file on the second call. Both temporary
+  render directories were gone after display. Existing `render.png` and
+  `render.render/preview.log` fixtures in the working directory were unchanged.
+- Inspected the second saved PNG. These 160 × 120, two-sample images establish
+  the preview/save workflow, not figure-quality rendering. The desktop GUI,
+  animation playback and live cluster were not exercised. These checks did not
+  install runtimes, change configuration, or deploy services.

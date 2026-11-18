@@ -191,13 +191,23 @@ Python used to run renders. In PyMOL, load the plugin using its absolute checkou
 ```pymol
 run /absolute/path/to/blender_render/blender_render/pymol_bridge_plugin.py
 blender_render
+png figure.png
 blender_render selection=(all), preset=dried_paint_green, output_dir=renders, output_name=paint.png
 blender_render style_json=/absolute/path/to/my-style.json, output_name=custom.png
 ```
 
 The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
-PyMOL. Rendering is synchronous. `width`, `height`, `samples`, `rough`, `save_blend`,
+PyMOL. An unnamed local still behaves like PyMOL's `ray`: each call replaces the
+displayed image and removes its temporary render files after loading. Repeat
+`blender_render` freely, then use PyMOL's `png figure.png` to save the current image.
+An existing `render.png` in the working directory does not affect these previews.
+If PyMOL cannot display a preview, its files are retained and their path is printed.
+
+Supplying `output_name` or `output_dir` saves the PNG and its `.render/` folder.
+Movie, saved-scene, cluster, `keep_temp=1` and `auto_preview=0` requests also keep
+their files; those exports still require a new output name. Rendering is synchronous.
+`width`, `height`, `samples`, `rough`, `save_blend`,
 `color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
 For animations, add `animation=rock` or `animation=360`, `gif=1`, `duration`, `fps`
 and (for rocking) `rock_angle`. Optional movie preview needs Pillow installed in
