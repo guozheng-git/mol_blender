@@ -21,6 +21,7 @@ For a new server, follow [build the image](#build-once-reuse-the-uv-environments
 [configure the service](#configure-the-service), then
 [install the persistent user service](#persistent-user-service-and-shared-clients).
 The configuration and systemd templates are included in this repository.
+For a Linux desktop GPU without Slurm, see [GPU workstation over SSH](#gpu-workstation-over-ssh).
 
 ## GPU use and warm starts
 
@@ -35,6 +36,7 @@ walltime does not keep a completed worker running.
 | Direct local rendering | The local computer, using its configured Blender runtime and available GPU | A fresh process for each render request |
 | Optional warm local rendering | The same local computer and configured runtime | One process reused until stopped or its idle limit expires |
 | Shared cluster rendering | A Slurm compute node inside Apptainer | A fresh process for each submitted job |
+| Workstation gateway | The Linux gateway host's selected GPU inside Apptainer | A fresh process for each submitted job |
 
 Local GPU rendering remains available without a server. After configuring the
 local runtime as described in the [README](../README.md#install-and-configure),
@@ -53,7 +55,7 @@ For repeated local renders, explicitly add `warm=1` in PyMOL or `--warm` in the
 CLI. This keeps a private local Blender worker alive between requests, with a
 15-minute idle shutdown by default. See [the warm local worker guide](local-worker.md)
 for start/status/stop commands, source checks and Apptainer usage. The cluster
-profile continues to select Slurm, and cannot be combined with `warm=1`.
+profile selects the gateway's configured scheduler, and cannot be combined with `warm=1`.
 
 Each Slurm render submission creates one job. An animation renders all its frames
 inside that job; status polling and fetching results do not create jobs. The
@@ -246,6 +248,71 @@ lost or times out after the client has written a receipt, Studio returns
 also finds it. Recover that request before considering another submission.
 
 Check whether your site permits short-lived user services on login nodes.
+
+## GPU workstation over SSH
+
+An explicit `"scheduler": "workstation"` server configuration runs the same
+Apptainer worker on the gateway machine itself. Use this for an authorized Linux
+desktop GPU. The default remains `"scheduler": "slurm"`; a rejected Slurm job
+never falls back to the workstation. Clients use the same job API and receipts.
+
+The workstation needs Linux x86_64, Apptainer 1.1+, systemd 254+ with a working
+user manager, and an NVIDIA driver for CUDA. Its user cgroup must support CPU and
+memory controls. Keep the user manager available for the lifetime of submitted
+jobs (for example, through an administrator-enabled lingering user session).
+Install a matching controller and SIF as described below; nothing is installed
+when a render is submitted. A local Blender installation on the submitting Mac
+is unnecessary for rendering the current PyMOL session.
+
+Start from [workstation-server.json](../examples/workstation-server.json). Set
+the private spool and image paths, SIF checksum, CPU/memory/time limits, and
+`gpu_index` (zero-based CUDA device index; use `0` on a single-GPU workstation).
+Set `gpus` to `0` for CPU rendering. Slurm resource selectors are rejected for
+this mode, and `limits.max_active_total` must be `1`: one job runs per gateway
+at a time. Separate gateways and other workstation applications can still share
+the GPU, so use one gateway/profile per workstation for sequential previews.
+
+```sh
+blender-render cluster doctor --config /srv/blender-render/workstation/server.json
+```
+
+Doctor checks the matching image and systemd user manager without launching a
+render. It reports `workstation_check` instead of a Slurm dry run; only an actual
+render establishes working CUDA and resource controls. Each accepted request
+gets one systemd user service with a fixed container command, clean environment,
+CPU quota, memory ceiling and runtime deadline. The unit survives a gateway or
+SSH tunnel restart and is collected after exit. Cancellation stops its process
+group. The existing `job.json` records its `worker_id`; the worker's verified
+result is still required before completion can be reported. An uncertain launch
+is reconciled by the exact unit name, never by starting another render.
+
+On the submitting computer, configure the IP and SSH forwarding once (replace
+the example values with your workstation's settings):
+
+```sh
+blender-render cluster connect --profile rtx4080 --ssh-host my-workstation --node 192.0.2.10 \
+  --remote-executable /srv/blender-render/workstation/controller/bin/blender-render \
+  --server-config /srv/blender-render/workstation/server.json
+```
+
+`--ssh-host` is the SSH alias containing your user/key/jump settings; `--node`
+may be its reachable IP. The gateway listens only on remote loopback and the
+connection forwards a local loopback port over authenticated SSH. Credentials
+are provisioned privately by `connect`; no public HTTP port or manual token
+copy is needed. Then, in local PyMOL:
+
+```pymol
+blender_render cluster=rtx4080
+png figure.png
+blender_render cluster=rtx4080
+```
+
+The image returns to PyMOL on this computer. Repeating the command after display
+renders the current view again. If the connection drops during a render, repeat
+the command to recover that same request. Saved profiles reconnect automatically
+through the job API; `blender-render cluster connect --profile rtx4080` also
+reopens the tunnel explicitly. Disconnecting stops the gateway and tunnel while
+already submitted systemd workers continue within their deadline.
 
 ## Build once, reuse the uv environments
 

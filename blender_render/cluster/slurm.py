@@ -14,6 +14,13 @@ class SubmissionUnknown(RuntimeError):
     """A job may have been accepted. Never resubmit automatically."""
 
 
+def scheduler_for(config):
+    if config.scheduler == 'workstation':
+        from .workstation import Workstation
+        return Workstation(config)
+    return Slurm(config)
+
+
 class Slurm:
     def __init__(self, config):
         self.config = config
@@ -44,7 +51,7 @@ class Slurm:
             raise ValueError(f'{what} failed: {exc}') from exc
 
     def search_path(self):
-        directories = [os.path.dirname(getattr(self.config, name)) for name in self.config.EXECUTABLES]
+        directories = [os.path.dirname(getattr(self.config, name)) for name in self.config.executables]
         return ':'.join(dict.fromkeys(directories + ['/usr/bin', '/bin']))
 
     def container_command(self, directory):

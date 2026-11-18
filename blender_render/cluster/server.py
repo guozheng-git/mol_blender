@@ -10,7 +10,7 @@ import subprocess
 from .auth import authenticate, users
 from .jsonio import decode_json, digest_file
 from .protocol import PROTOCOL
-from .slurm import Slurm
+from .slurm import scheduler_for
 from .store import Conflict, NotFound, Quota, Store
 
 
@@ -28,7 +28,7 @@ def create_app(config, *, scheduler=None):
     if config.authentication == 'token':
         users(config.tokens_file)
     identity = generate_manifest(Path(__file__).resolve().parents[1])['engine_build']
-    store = Store(config, scheduler or Slurm(config), identity)
+    store = Store(config, scheduler or scheduler_for(config), identity)
 
     async def maintenance():
         while True:
@@ -78,6 +78,7 @@ def create_app(config, *, scheduler=None):
 
     async def info(request, owner):
         return JSONResponse({'protocol': PROTOCOL, 'version': VERSION, 'engine_build': identity,
+                             'scheduler': config.scheduler,
                              'authentication': config.authentication,
                              'limits': vars(config.limits)})
 

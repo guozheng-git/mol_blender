@@ -26,15 +26,15 @@ def parser():
     revoke = commands.add_parser('user-revoke')
     revoke.add_argument('--config', required=True)
     revoke.add_argument('--user', required=True)
-    doctor = commands.add_parser('doctor', help='Check the SIF, container runtime and a Slurm dry run without installing, queuing or rendering')
+    doctor = commands.add_parser('doctor', help='Check the SIF, container runtime and selected scheduler without installing, queuing or rendering')
     doctor.add_argument('--config', required=True)
     reconcile = commands.add_parser('reconcile', help='Recover an ambiguous submission without launching another job')
     reconcile.add_argument('--config', required=True)
     reconcile.add_argument('job')
-    connect = commands.add_parser('connect', help="Start or reuse your own gateway on one login node over SSH, open a tunnel and import a private credential")
+    connect = commands.add_parser('connect', help="Start or reuse your own gateway on one host over SSH, open a tunnel and import a private credential")
     connect.add_argument('--profile', default='lab')
     connect.add_argument('--ssh-host', help='SSH alias that already logs in without prompts, e.g. mycluster')
-    connect.add_argument('--node', help='Login node to pin the gateway and tunnel to, e.g. login-03.cluster.example')
+    connect.add_argument('--node', help='Host name or IP to pin the gateway and tunnel to, e.g. login-03.cluster.example')
     connect.add_argument('--remote-executable', help="Administrator-installed controller's blender-render on that host")
     connect.add_argument('--server-config', help='Validated site server.json on that host (spool and tokens are per connection)')
     connect.add_argument('--connection-dir', help='Private per-connection directory on that host (default: next to the config)')
@@ -92,10 +92,10 @@ def execute(args):
         if args.command in ('user-add', 'user-revoke') and config.authentication != 'token':
             raise ValueError('User credentials are disabled in open cluster mode')
         if args.command in ('doctor', 'reconcile'):
-            from .slurm import Slurm
+            from .slurm import scheduler_for
             from ..engine import generate_manifest
             identity = generate_manifest(Path(__file__).resolve().parents[1])['engine_build']
-            scheduler = Slurm(config)
+            scheduler = scheduler_for(config)
             if args.command == 'reconcile':
                 from .store import Store
                 return Store(config, scheduler, identity).reconcile(args.job)

@@ -251,7 +251,7 @@ def _disconnect(profile, *, keep_gateway, revoke):
     result = {'status': 'disconnected', 'profile': profile, 'tunnel_closed': tunnel,
               'gateway_stopped': gateway['stopped'], 'active_jobs': pending}
     if pending:
-        result['note'] = ('Slurm jobs keep running without the gateway. Run `blender-render cluster connect --profile '
+        result['note'] = ('Submitted jobs keep running without the gateway. Run `blender-render cluster connect --profile '
                           + profile + '` again to check and fetch them.')
     conf.pop('tunnel_pid', None)
     if revoke:

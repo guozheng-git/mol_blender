@@ -1,4 +1,4 @@
-"""One Slurm job, one existing local render. Runs in the image's uv environment."""
+"""One gateway job, one existing local render. Runs in the image's uv environment."""
 import argparse
 import fcntl
 import os

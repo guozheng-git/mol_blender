@@ -234,6 +234,10 @@ blender-render cluster configure --profile lab --url https://render.cluster.exam
 
 Use `--ca-file` if your administrator provides a private CA certificate. Services
 with individual authentication use `--credential-file` instead of `--url`.
+For a Linux GPU workstation, use the same client through
+[SSH forwarding](docs/shared-cluster.md#gpu-workstation-over-ssh). A workstation
+profile runs Apptainer on that host's GPU; the default Slurm profile submits to
+the cluster. Both support repeated unnamed PyMOL previews.
 Then explicitly select the profile in PyMOL:
 
 ```pymol

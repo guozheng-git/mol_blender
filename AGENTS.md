@@ -7,7 +7,8 @@ isolated `developer.preview` runner. The optional `blender_render.hosted` adapte
 presents already-authorized outputs; keep service queues and remote execution out
 of the renderer. Import hosted dependencies only when explicitly selected.
 The optional `blender_render.cluster` service owns authentication, the private job
-spool and Slurm/Apptainer submission. Workers call the same `local.py` renderer.
+spool and Apptainer submission through Slurm or the explicit Linux workstation
+scheduler (systemd user units). Workers call the same `local.py` renderer.
 Keep local rendering the default; never accept executable session uploads or
 client-supplied paths/commands on the cluster API. Reuse uv runtimes built from
 the shared pins; Linux environments must stay at their original absolute paths.
