@@ -17,9 +17,10 @@ class BuildEngine(build_py):
         generate = inventory_api['generate_manifest']
         inventory = generate(source)['files']
         root = Path(self.build_lib) / 'mol_blender'
-        # Clear both packages so incremental builds cannot retain removed code.
+        # Clear current and pre-rename packages so incremental wheels cannot
+        # retain the old renderer from an earlier build in this checkout.
         # This is setuptools-owned build output, never the source checkout.
-        for package in ('mol_blender', 'co_pymol'):
+        for package in ('mol_blender', 'blender_render', 'co_pymol'):
             target = Path(self.build_lib) / package
             if target.resolve() == (project / package).resolve():
                 raise ValueError('Build output must be separate from package source')
