@@ -1,7 +1,5 @@
 # Blender Render
 
-https://github.com/user-attachments/assets/e60d06d2-78e0-495c-b2f9-3964e9689df0
-
 If you're tired of seeing AI slop proteins on social media, with branching chains
 and loopy salad wrapped around them, start with an actual structure and give it a
 look you like.
