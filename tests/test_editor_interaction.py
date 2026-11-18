@@ -6,14 +6,14 @@ from types import SimpleNamespace as NS
 import sys
 
 import pytest
-import blender_render.scene
-from blender_render import editor
+import mol_blender.scene
+from mol_blender import editor
 
 
 def interaction(monkeypatch, bpy):
     monkeypatch.setitem(sys.modules, 'bpy', bpy)
-    monkeypatch.setattr(blender_render.scene, 'capture', NS(), raising=False)
-    spec = importlib.util.spec_from_file_location('blender_render._interaction_test',
+    monkeypatch.setattr(mol_blender.scene, 'capture', NS(), raising=False)
+    spec = importlib.util.spec_from_file_location('mol_blender._interaction_test',
                                                  Path(editor.__file__).with_name('editor_interaction.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -40,7 +40,7 @@ def test_playback_is_idempotent_and_scoped_to_selected_scene(monkeypatch):
              app=NS(is_job_running=lambda _: False),
              ops=NS(screen=NS(animation_play=play, animation_cancel=pause)))
     module = interaction(monkeypatch, bpy)
-    monkeypatch.setattr(blender_render, 'editor_controls', NS(inspect=lambda scene: {'playing': window.screen.is_animation_playing}), raising=False)
+    monkeypatch.setattr(mol_blender, 'editor_controls', NS(inspect=lambda scene: {'playing': window.screen.is_animation_playing}), raising=False)
     assert not module.playback(chosen, 'pause')['playback']['changed']
     with pytest.raises(ValueError, match='Another scene'):
         module.playback(chosen, 'play')
@@ -61,7 +61,7 @@ def test_animation_speed_rejects_ambiguity_and_nonperiod_controls(monkeypatch):
     edits = []
     controls = NS(metadata=lambda: {}, controls=lambda *a: available,
                   edit=lambda scene, changes: (edits.append(changes) or {}, []))
-    monkeypatch.setattr(blender_render, 'editor_controls', controls, raising=False)
+    monkeypatch.setattr(mol_blender, 'editor_controls', controls, raising=False)
     result, _ = module.animation_speed('scene', '', 2)
     assert edits == [[{'control': 'animation/loop/protein/motion/period_frames', 'value': 48}]]
     assert result['animation_speed']['period_after'] == 48

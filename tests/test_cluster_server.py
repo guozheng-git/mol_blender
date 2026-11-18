@@ -5,8 +5,8 @@ from dataclasses import replace
 import pytest
 from starlette.testclient import TestClient
 
-from blender_render.cluster.jsonio import atomic_json
-from blender_render.cluster.server import create_app
+from mol_blender.cluster.jsonio import atomic_json
+from mol_blender.cluster.server import create_app
 from test_cluster_jobs import Scheduler, config, request
 
 

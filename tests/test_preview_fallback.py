@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from blender_render.pymol_bridge_plugin import try_load_preview
+from mol_blender.pymol_bridge_plugin import try_load_preview
 
 
 class LoadSuccessCmd:

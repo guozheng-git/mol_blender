@@ -1,4 +1,4 @@
-"""Optional executed PyMOL export check against a real Blender Render checkout."""
+"""Optional executed PyMOL export check against a real mol-blender checkout."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_live_coordinates_colors_enabled_objects_and_camera_survive_export(tmp_p
 def test_bridge_export_keeps_hand_annotated_secondary_structure():
     """bridge_render exports a single live object; DSS must not overwrite its ss."""
     pymol2 = pytest.importorskip("pymol2")
-    from blender_render.scene.export import build_render_payload
+    from mol_blender.scene.export import build_render_payload
 
     with pymol2.PyMOL() as instance:
         cmd = instance.cmd

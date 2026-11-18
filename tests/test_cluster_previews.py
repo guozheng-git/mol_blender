@@ -8,11 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render import cluster_bridge, job_cli, pymol_bridge_plugin as plugin
-from blender_render.cluster.client import Client, RemoteError
-from blender_render.cluster.jsonio import read_json
-from blender_render.cluster.slurm import SubmissionUnknown
-from blender_render.config import cluster_root, save_config
+from mol_blender import cluster_bridge, job_cli, pymol_bridge_plugin as plugin
+from mol_blender.cluster.client import Client, RemoteError
+from mol_blender.cluster.jsonio import read_json
+from mol_blender.cluster.slurm import SubmissionUnknown
+from mol_blender.config import cluster_root, save_config
 from test_cluster_client import completed, live_service
 from test_cluster_jobs import config, payload
 
@@ -148,7 +148,7 @@ def test_interruption_after_download_does_not_block_recovery(previews, monkeypat
 
 @pytest.mark.parametrize('status', ['failed', 'cancelled', 'expired'])
 def test_confirmed_terminal_failure_preserves_receipt_and_allows_next_preview(tmp_path, monkeypatch, status):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     monkeypatch.setattr(plugin, 'build_render_payload', lambda *a, **kw: payload())
     outputs = []
     def terminal(data, **kw):
@@ -165,7 +165,7 @@ def test_confirmed_terminal_failure_preserves_receipt_and_allows_next_preview(tm
 
 
 def test_preview_lock_and_profile_isolation(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     with cluster_bridge.preview_output('lab') as first:
         with pytest.raises(RuntimeError, match='already active'):
             with cluster_bridge.preview_output('lab'):
@@ -175,7 +175,7 @@ def test_preview_lock_and_profile_isolation(tmp_path, monkeypatch):
             cluster_bridge.finish_preview(other)
     # Reopening a command selects the same pending output, not a fresh request.
     probe = subprocess.run([sys.executable, '-c',
-        "from blender_render.cluster_bridge import preview_output\n"
+        "from mol_blender.cluster_bridge import preview_output\n"
         "with preview_output('lab') as output:\n    print(output)\n"],
         env=cluster_bridge.controller_environment(), capture_output=True, text=True, check=True)
     assert Path(probe.stdout.strip()) == first

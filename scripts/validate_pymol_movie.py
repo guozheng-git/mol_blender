@@ -13,8 +13,8 @@ import traceback
 def validate():
     from pymol import cmd
     from PIL import Image
-    from blender_render.animation import unpack
-    from blender_render.pymol_movie import remember, load_movie, movie_export
+    from mol_blender.animation import unpack
+    from mol_blender.pymol_movie import remember, load_movie, movie_export
     root=Path(os.environ['PYMOL_MOVIE_EVIDENCE']);root.mkdir(parents=True,exist_ok=True)
     try:
         archive=Path(os.environ['PYMOL_MOVIE_ARCHIVE'])

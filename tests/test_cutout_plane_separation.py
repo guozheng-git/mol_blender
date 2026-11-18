@@ -8,11 +8,11 @@ import pytest
 
 
 def test_overlapping_surfaces_have_distinct_cut_depths(tmp_path):
-    blender = os.environ.get('BLENDER_RENDER_TEST_BLENDER')
+    blender = os.environ.get('MOL_BLENDER_TEST_BLENDER')
     if not blender:
-        pytest.skip('Set BLENDER_RENDER_TEST_BLENDER for the real Boolean check')
+        pytest.skip('Set MOL_BLENDER_TEST_BLENDER for the real Boolean check')
     root = Path(__file__).resolve().parents[1]
-    runtime_site = os.environ.get('BLENDER_RENDER_TEST_SITE')
+    runtime_site = os.environ.get('MOL_BLENDER_TEST_SITE')
     script = tmp_path / 'check_planes.py'
     script.write_text(textwrap.dedent(f'''
         import sys, json
@@ -21,7 +21,7 @@ def test_overlapping_surfaces_have_distinct_cut_depths(tmp_path):
         sys.path.insert(0, {str(root)!r})
         import bpy
         from mathutils import Vector
-        from blender_render.blender_custom_render import (
+        from mol_blender.blender_custom_render import (
             _separate_cutout_planes, _create_plane_cutout_prism,
             _add_boolean_difference_modifier,
         )

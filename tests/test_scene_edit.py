@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render import authoring, cli, core, developer, local, local_bridge
-from blender_render.scene import edit as scene_edit
-from blender_render.presets import preset_path
+from mol_blender import authoring, cli, core, developer, local, local_bridge
+from mol_blender.scene import edit as scene_edit
+from mol_blender.presets import preset_path
 
 
 @pytest.fixture
@@ -57,8 +57,8 @@ def test_derived_material_controls_must_agree_and_emission_keeps_socket_color(st
 
 
 def test_relative_camera_declares_its_capability(style):
-    from blender_render.presets import required_capabilities
-    from blender_render.engine import CAPABILITIES
+    from mol_blender.presets import required_capabilities
+    from mol_blender.engine import CAPABILITIES
     style['camera']['relative_pose'] = {}
     assert 'camera.relative_pose' in required_capabilities(style)
     assert 'camera.relative_pose' in CAPABILITIES
@@ -144,7 +144,7 @@ def test_headless_runtime_requires_explicit_desktop_executable(tmp_path, monkeyp
 
 
 def test_cli_and_embedded_adapters_forward_explicit_edit_options(monkeypatch, tmp_path):
-    from blender_render import pymol_bridge_plugin as plugin
+    from mol_blender import pymol_bridge_plugin as plugin
     calls = []
     monkeypatch.setattr(local, 'render_file', lambda *a, **kw: calls.append(kw))
     cli.execute(cli.parser().parse_args(['render', 'a.cif', '--open-blender', '--gui-blender', '/desktop/blender']))

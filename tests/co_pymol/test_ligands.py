@@ -1,4 +1,4 @@
-"""co-pymol and Structure Studio choose the same default animation focus."""
+"""co-pymol and molblender-studio choose the same default animation focus."""
 from pathlib import Path
 
 import pytest

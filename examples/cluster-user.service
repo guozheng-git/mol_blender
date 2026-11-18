@@ -1,11 +1,11 @@
 [Unit]
-Description=Blender Render shared Slurm gateway
+Description=mol-blender shared Slurm gateway
 StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-WorkingDirectory=%h/blender-render-cluster
-ExecStart=%h/blender-render-cluster/controller/bin/blender-render cluster serve --config %h/.config/blender-render-cluster/server.json --bind @CLUSTER_ADDRESS@ --port @PORT@ --tls-cert %h/.config/blender-render-cluster/server.crt --tls-key %h/.config/blender-render-cluster/server.key
+WorkingDirectory=%h/mol-blender-cluster
+ExecStart=%h/mol-blender-cluster/controller/bin/mol-blender cluster serve --config %h/.config/mol-blender-cluster/server.json --bind @CLUSTER_ADDRESS@ --port @PORT@ --tls-cert %h/.config/mol-blender-cluster/server.crt --tls-key %h/.config/mol-blender-cluster/server.key
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 UMask=0077

@@ -16,9 +16,9 @@ from threading import Barrier
 
 import pytest
 
-from blender_render.cluster import connect, connect_remote
-from blender_render.cluster.client import Client, profile_path
-from blender_render.cluster.jsonio import atomic_json
+from mol_blender.cluster import connect, connect_remote
+from mol_blender.cluster.client import Client, profile_path
+from mol_blender.cluster.jsonio import atomic_json
 from test_cluster_jobs import config  # noqa: F401  (fixture)
 
 FAKE_SSH = Path(__file__).with_name('fake_ssh.py')
@@ -28,7 +28,7 @@ FAKE_SSH = Path(__file__).with_name('fake_ssh.py')
 def site(config, tmp_path, monkeypatch):
     """A validated site config on the 'gateway host' plus fake ssh."""
     home = tmp_path / 'mac-config'
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(home))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(home))
     log = tmp_path / 'ssh.log'
     monkeypatch.setenv('FAKE_SSH_LOG', str(log))
     monkeypatch.setattr(connect, 'SSH', str(FAKE_SSH))
@@ -39,7 +39,7 @@ def site(config, tmp_path, monkeypatch):
                 'image_sha256': config.image_sha256, 'tokens_file': str(install / 'unused-users.json')}
     (install / 'server-gpu.json').write_text(json.dumps(document))
     options = dict(ssh_host='mycluster', node='login-03.cluster.example',
-                   remote_executable=str(Path(sys.executable).with_name('blender-render')),
+                   remote_executable=str(Path(sys.executable).with_name('mol-blender')),
                    server_config=str(install / 'server-gpu.json'))
     yield options, install, log
     state = connect.load_state('lab')
@@ -219,7 +219,7 @@ def test_replacement_controller_can_stop_gateway_after_old_install_is_removed(si
     connect.connect('lab', **options)
     saved = connect.load_state('lab')
     original_pid = saved['gateway_pid']
-    saved['remote_executable'] = '/removed/controller/bin/blender-render'
+    saved['remote_executable'] = '/removed/controller/bin/mol-blender'
     atomic_json(connect.state_path('lab'), saved)
     result = connect.connect('lab', remote_executable=options['remote_executable'])
     assert result['gateway_started'] and not result['tunnel_reused']
@@ -271,12 +271,12 @@ def test_concurrent_local_connects_share_one_tunnel_and_credential(site):
 @pytest.mark.parametrize('field,value,message', [
     ('ssh_host', '-oProxyCommand=evil', 'Invalid ssh_host'),
     ('node', 'node;rm', 'Invalid node'),
-    ('remote_executable', 'controller/bin/blender-render', 'absolute path'),
+    ('remote_executable', 'controller/bin/mol-blender', 'absolute path'),
     ('server_config', '', 'First connection needs'),
 ])
 def test_settings_are_validated_before_any_ssh(tmp_path, monkeypatch, field, value, message):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
-    options = dict(ssh_host='mycluster', node='login-03.cluster.example', remote_executable='/x/bin/blender-render',
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
+    options = dict(ssh_host='mycluster', node='login-03.cluster.example', remote_executable='/x/bin/mol-blender',
                    server_config='/x/server.json')
     options[field] = value
     with pytest.raises(ValueError, match=message):
@@ -284,8 +284,8 @@ def test_settings_are_validated_before_any_ssh(tmp_path, monkeypatch, field, val
 
 
 def test_saved_identity_cannot_be_silently_changed(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
-    atomic_json(connect.state_path('lab', create=True), dict(ssh_host='mycluster', node='n1', remote_executable='/x/bin/blender-render',
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
+    atomic_json(connect.state_path('lab', create=True), dict(ssh_host='mycluster', node='n1', remote_executable='/x/bin/mol-blender',
                                                server_config='/x/s.json', remote_user='client-a', local_port=30000,
                                                connection_dir='/x/connections/lab-client-a'))
     assert connect.settings('lab', {'node': 'n2'})['node'] == 'n2'  # Moving nodes is allowed.
@@ -294,13 +294,13 @@ def test_saved_identity_cannot_be_silently_changed(tmp_path, monkeypatch):
 
 
 def test_missing_profile_error_names_the_fix(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path))
     with pytest.raises(ValueError, match="No cluster profile 'lab'.*cluster connect"):
         Client('lab')
 
 
 def test_status_creates_nothing(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'home'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'home'))
     assert connect.status('lab') == {'profile': 'lab', 'connection': None}
     assert not (tmp_path / 'home').exists()
 
@@ -368,9 +368,9 @@ def test_failed_gateway_record_write_cleans_child_and_temporary_file(site, tmp_p
 @pytest.mark.parametrize('module', ['jsonio', 'common'])
 def test_remote_helper_runs_on_controllers_from_before_and_after_the_jsonio_split(tmp_path, module):
     """The helper runs in the gateway host's installed controller, which may be older than this client."""
-    cluster = tmp_path / 'blender_render/cluster'
+    cluster = tmp_path / 'mol_blender/cluster'
     cluster.mkdir(parents=True)
-    (tmp_path / 'blender_render/__init__.py').write_text('')
+    (tmp_path / 'mol_blender/__init__.py').write_text('')
     (cluster / '__init__.py').write_text('')
     (cluster / (module + '.py')).write_text('def atomic_json(path, value):\n    pass\n')
     script = Path(connect_remote.__file__).read_text()

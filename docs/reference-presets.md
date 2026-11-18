@@ -2,7 +2,7 @@
 
 Choose a built-in look with `--preset ID` in the CLI or `preset=ID` in PyMOL.
 `mint_sky_assembly` is the default. The [README gallery](../README.md#preset-gallery)
-shows featured styles; `blender-render presets` lists all 17 built-ins and your
+shows featured styles; `mol-blender presets` lists all 17 built-ins and your
 saved presets. PNG is the default output; `--save-blend` explicitly saves a scene.
 
 ## Public structure examples
@@ -30,15 +30,15 @@ chain selections and saved camera determine the composition.
 
 ```python
 # Inside the existing PyMOL application; uses its current cmd object.
-blender_render preset=cyan_mint_cutaway
-blender_render preset=mint_sky_assembly, preserve_view=0
+mol_blender preset=cyan_mint_cutaway
+mol_blender preset=mint_sky_assembly, preserve_view=0
 ```
 
 ```sh
 # Configured local PyMOL and Blender runtimes.
-blender-render render pose.pse --preset cyan_mint_cutaway -o pocket.png
-blender-render render structure.cif --preset neon_duplex_hero --no-preserve-view -o hero.png
-blender-render render pose.pse --style-json edited-style.json -o custom.png
+mol-blender render pose.pse --preset cyan_mint_cutaway -o pocket.png
+mol-blender render structure.cif --preset neon_duplex_hero --no-preserve-view -o hero.png
+mol-blender render pose.pse --style-json edited-style.json -o custom.png
 ```
 
 Named presets preserve the input pose by default. `--no-preserve-view` selects the preset's authored camera; explicit camera overrides and full JSON retain their requested settings. Some styles use `direction_source=pymol`, so the initial orientation still matters. The gallery metadata stores each example view and exact render dimensions; a preset alone cannot imply the same pose for an unrelated structure. Full JSON and preset-plus-overrides share the same resolver. Objects merge recursively; arrays such as `styles` replace in full.
@@ -49,7 +49,7 @@ The same installed PyMOL is used throughout. Its `pymol2` API creates isolated i
 
 Preset JSON keeps the required `renderer.engine` and its explicit appearance
 settings. Optional execution settings inherit from
-[`renderer_defaults.py`](../blender_render/renderer_defaults.py): GPU with AUTO
+[`renderer_defaults.py`](../mol_blender/renderer_defaults.py): GPU with AUTO
 backend selection, opaque background, adaptive sampling enabled with threshold
 0.01, denoising disabled, and seed 0. A preset or request can override each value;
 for example, `"denoise": true`, `"seed": 19`, or `"device": "CPU"`.
@@ -106,7 +106,7 @@ recessed mesh and vivid pink/yellow rounded helical tubes. Its material and
 geometry settings are available in the full preset JSON.
 
 ```sh
-blender-render render prepared-pose.pse --preset cyan_candy_mesh -o candy.png
+mol-blender render prepared-pose.pse --preset cyan_candy_mesh -o candy.png
 ```
 
 The preview uses public **1QJB**, with solvent removed. Original chain A residues
@@ -138,12 +138,12 @@ Like the other 1SPS examples, both previews use the bundled
 peptide pQpYEEIP), chains A and D, solvent removed.
 
 ```sh
-blender-render render examples/1sps_pose.pse --preset northern_nights -o bright.png
-blender-render render examples/1sps_pose.pse --preset northern_nights_cutaway -o cutaway.png
+mol-blender render examples/1sps_pose.pse --preset northern_nights -o bright.png
+mol-blender render examples/1sps_pose.pse --preset northern_nights_cutaway -o cutaway.png
 # Select the authored PTR close-up framing (27 angstrom orthographic extent):
-blender-render render examples/1sps_pose.pse --preset northern_nights --no-preserve-view -o detail.png
+mol-blender render examples/1sps_pose.pse --preset northern_nights --no-preserve-view -o detail.png
 # Optional camera turntable, not a molecular trajectory:
-blender-render render examples/1sps_pose.pse --preset northern_nights_cutaway --animation 360 --gif -o turntable.png
+mol-blender render examples/1sps_pose.pse --preset northern_nights_cutaway --animation 360 --gif -o turntable.png
 ```
 
 The presets treat chain B as the peptide. In this pose the peptide is chain D,

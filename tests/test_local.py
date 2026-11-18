@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from blender_render import cli, local, local_bridge, developer, pymol_bridge_plugin
-from blender_render.config import save_config
-from blender_render.scene.export import from_file
+from mol_blender import cli, local, local_bridge, developer, pymol_bridge_plugin
+from mol_blender.config import save_config
+from mol_blender.scene.export import from_file
 
 
 def bundle():
@@ -17,7 +17,7 @@ def bundle():
 
 @pytest.fixture
 def local_runtime(tmp_path, monkeypatch):
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'config'))
     blender = tmp_path / 'blender'; blender.touch()
     ccd = tmp_path / 'components.bcif'; ccd.touch()
     deps = tmp_path / 'deps'; deps.mkdir()
@@ -26,9 +26,9 @@ def local_runtime(tmp_path, monkeypatch):
 
 
 def test_local_render_keeps_outputs_and_resolves_saved_preset(local_runtime, monkeypatch):
-    from blender_render import authoring, core
-    from blender_render.config import config_root
-    from blender_render.presets import preset_path
+    from mol_blender import authoring, core
+    from mol_blender.config import config_root
+    from mol_blender.presets import preset_path
     authoring.save_preset('user/test', core.load_and_validate_style_json(preset_path('pastel')),
                          config_root()/'presets', description='test')
     calls = []
@@ -58,7 +58,7 @@ def test_invalid_style_never_launches_blender(local_runtime, monkeypatch):
 
 
 def test_local_cancellation_reaches_preview(local_runtime, monkeypatch):
-    from blender_render.errors import RenderCancelled
+    from mol_blender.errors import RenderCancelled
     cancelled = lambda: True
     def preview(**kwargs):
         assert kwargs['cancelled'] is cancelled
@@ -116,11 +116,11 @@ def test_controller_starts_in_its_own_environment(variable, monkeypatch, tmp_pat
     foreign = str(tmp_path / 'embedded' / 'bin' / 'python')
     monkeypatch.setenv(variable, foreign)
     monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'foreign-packages'))
-    monkeypatch.setenv('BLENDER_RENDER_HOME', str(tmp_path / 'client-config'))
+    monkeypatch.setenv('MOL_BLENDER_HOME', str(tmp_path / 'client-config'))
     monkeypatch.setenv('CUDA_VISIBLE_DEVICES', '2')
-    probe = """import json, sys, jsonschema, blender_render, os
-print(json.dumps({'prefix': sys.prefix, 'package': blender_render.__file__,
-                  'config': os.environ['BLENDER_RENDER_HOME'],
+    probe = """import json, sys, jsonschema, mol_blender, os
+print(json.dumps({'prefix': sys.prefix, 'package': mol_blender.__file__,
+                  'config': os.environ['MOL_BLENDER_HOME'],
                   'gpu': os.environ['CUDA_VISIBLE_DEVICES']}))
 """
     # This executes a real interpreter/import, not a subprocess substitute.
@@ -247,7 +247,7 @@ def test_pymol_style_saved_scene_survives_preview(pymol_preview, monkeypatch):
 
 def test_reference_outputs_full_valid_style_and_refuses_overwrite(tmp_path):
     from PIL import Image
-    from blender_render import core
+    from mol_blender import core
     image=tmp_path/'reference.png'; Image.new('RGB',(16,16),'white').save(image)
     obs=tmp_path/'observations.json'
     obs.write_text(json.dumps({'representations':['cartoon','sticks'],'material_family':'clay',
@@ -265,7 +265,7 @@ def test_reference_outputs_full_valid_style_and_refuses_overwrite(tmp_path):
 def test_mcp_native_image_and_local_render_route(tmp_path,monkeypatch):
     pytest.importorskip('fastmcp')
     from fastmcp import Client
-    from blender_render.mcp_server import create_stdio
+    from mol_blender.mcp_server import create_stdio
     from PIL import Image
     path=tmp_path/'image.png'; Image.new('RGB',(8,8),'red').save(path)
     calls=[]
@@ -303,7 +303,7 @@ def test_animation_cli_and_bridge_controls(monkeypatch, local_runtime):
 
 
 def test_animation_missing_encoder_fails_before_preview(local_runtime, monkeypatch):
-    from blender_render import animation
+    from mol_blender import animation
     monkeypatch.setattr(animation.shutil, 'which', lambda _: None)
     monkeypatch.setattr(developer, 'preview', lambda **kw: pytest.fail('allocated Blender'))
     with pytest.raises(ValueError, match='FFmpeg'):
@@ -312,7 +312,7 @@ def test_animation_missing_encoder_fails_before_preview(local_runtime, monkeypat
 
 @pytest.mark.parametrize('missing', [None, 'render.gif', 'frames.zip'])
 def test_animation_outputs_must_all_exist(local_runtime, monkeypatch, missing):
-    from blender_render import animation
+    from mol_blender import animation
     monkeypatch.setattr(animation, 'encoder', lambda: 'ffmpeg')
     def preview(**kwargs):
         kwargs['output'].mkdir()
@@ -334,7 +334,7 @@ def test_animation_outputs_must_all_exist(local_runtime, monkeypatch, missing):
 
 
 def test_animation_existing_movie_never_overwritten(local_runtime, monkeypatch):
-    from blender_render import animation
+    from mol_blender import animation
     monkeypatch.setattr(animation, 'encoder', lambda: 'ffmpeg')
     monkeypatch.setattr(developer, 'preview', lambda **kw: pytest.fail('allocated Blender'))
     out = local_runtime/'taken.gif'; out.write_bytes(b'existing')
@@ -344,7 +344,7 @@ def test_animation_existing_movie_never_overwritten(local_runtime, monkeypatch):
 
 
 def test_pymol_animation_controls_and_no_preview(monkeypatch, tmp_path):
-    from blender_render import pymol_movie
+    from mol_blender import pymol_movie
     context = SimpleNamespace()
     monkeypatch.setattr(pymol_bridge_plugin, 'build_render_payload', lambda *a, **kw: bundle())
     def render(payload, **kwargs):
@@ -372,8 +372,8 @@ def test_cli_and_embedded_bridge_use_mint_by_default(monkeypatch, local_runtime)
 
 
 def test_original_presets_remain_available():
-    from blender_render.presets import catalog
-    from blender_render.spec import resolve_options
+    from mol_blender.presets import catalog
+    from mol_blender.spec import resolve_options
     originals = ['preset_1_interface', 'preset_2_frosted_blue', 'preset_3_black_tubes',
                  'preset_4_milky_green', 'preset_5_black_interface']
     assert set(originals) <= {row['id'] for row in catalog()}

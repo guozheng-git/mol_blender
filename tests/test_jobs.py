@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from blender_render import jobs
-from blender_render.cluster import client as cluster_client
-from blender_render.cluster import connect
-from blender_render.cluster.client import RemoteError
+from mol_blender import jobs
+from mol_blender.cluster import client as cluster_client
+from mol_blender.cluster import connect
+from mol_blender.cluster.client import RemoteError
 
 
 class FakeClient:
@@ -175,7 +175,7 @@ class FakeConnect:
 @pytest.fixture
 def tunnel(monkeypatch, tmp_path):
     """Install a FakeConnect; lease files live under a private cluster home."""
-    monkeypatch.setenv("BLENDER_RENDER_CLUSTER_HOME", str(tmp_path / "cluster-home"))
+    monkeypatch.setenv("MOL_BLENDER_CLUSTER_HOME", str(tmp_path / "cluster-home"))
 
     def install(*args, **kwargs):
         fake = FakeConnect(*args, **kwargs)
@@ -241,18 +241,18 @@ def test_recovery_continues_with_the_saved_profile_when_ssh_fails(tunnel):
 
 
 def test_lab_profiles_can_live_apart_from_the_renderer_configuration(tmp_path, monkeypatch):
-    from blender_render.config import cluster_root, config_root
-    monkeypatch.setenv("BLENDER_RENDER_HOME", str(tmp_path / "studio"))
-    monkeypatch.delenv("BLENDER_RENDER_CLUSTER_HOME", raising=False)
+    from mol_blender.config import cluster_root, config_root
+    monkeypatch.setenv("MOL_BLENDER_HOME", str(tmp_path / "studio"))
+    monkeypatch.delenv("MOL_BLENDER_CLUSTER_HOME", raising=False)
     assert cluster_root() == config_root() == tmp_path / "studio"  # Unchanged default.
-    monkeypatch.setenv("BLENDER_RENDER_CLUSTER_HOME", str(tmp_path / "terminal"))
+    monkeypatch.setenv("MOL_BLENDER_CLUSTER_HOME", str(tmp_path / "terminal"))
     assert config_root() == tmp_path / "studio"  # Presets and runtimes stay the client's own.
     assert cluster_client.profile_path("lab") == tmp_path / "terminal/clusters/lab.json"
     assert connect.state_path("lab") == tmp_path / "terminal/cluster-connections/lab.json"
 
 
 def test_local_bundles_have_no_size_cap_but_lab_uploads_do(tmp_path):
-    from blender_render.local import load_payload
+    from mol_blender.local import load_payload
     bundle = tmp_path / "scene.json"
     bundle.write_text(json.dumps({"atoms": "x" * 2048}))
     assert load_payload(bundle)["atoms"] == "x" * 2048
@@ -261,8 +261,8 @@ def test_local_bundles_have_no_size_cap_but_lab_uploads_do(tmp_path):
 
 
 def test_render_takes_the_same_options_as_job_submit(monkeypatch):
-    from blender_render import cli, local
-    from blender_render.presets import DEFAULT_PRESET
+    from mol_blender import cli, local
+    from mol_blender.presets import DEFAULT_PRESET
     calls = []
     monkeypatch.setattr(local, "render_file", lambda path, **kw: calls.append(kw["options"]))
     cli.execute(cli.parser().parse_args(["render", "x.json", "--width", "64", "--no-transparent"]))

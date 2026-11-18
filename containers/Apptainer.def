@@ -9,7 +9,7 @@ From: debian@sha256:1e1a22175fbf1b32157ddaf0219e1db4e5401fab2b94ed285add64d18587
     BUILD_PROXY=
 
 %files
-    {{ RELEASE_DIR }}/plugin/structure-studio /opt/structure-studio
+    {{ RELEASE_DIR }}/plugin/molblender-studio /opt/molblender-studio
     {{ RELEASE_DIR }}/release.json /opt/release.json
 
 %post
@@ -28,24 +28,24 @@ From: debian@sha256:1e1a22175fbf1b32157ddaf0219e1db4e5401fab2b94ed285add64d18587
     python3 -m venv /opt/uv-tool
     /opt/uv-tool/bin/pip install uv==0.11.32
     export PATH=/opt/uv-tool/bin:$PATH
-    export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
-    export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
-    python3 /opt/structure-studio/skills/structure-studio/scripts/studio.py setup
+    export MOLBLENDER_STUDIO_HOME=/opt/studio-runtime
+    export MOL_BLENDER_HOME=/opt/studio-runtime/mol-blender
+    python3 /opt/molblender-studio/skills/molblender-studio/scripts/studio.py setup
     # The same uv-managed render/PyMOL environments serve local CLI and Slurm jobs.
     # No dependency resolution, installation or environment copy happens at runtime.
-    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check
+    /opt/studio-runtime/render/bin/python -m mol_blender.cluster.worker --check
     rm -rf /var/lib/apt/lists/* /opt/studio-runtime/uv-cache
 
 %environment
     export PATH=/opt/studio-runtime/render/bin:/opt/studio-runtime/bin:/opt/uv-tool/bin:$PATH
-    export STRUCTURE_STUDIO_HOME=/opt/studio-runtime
-    export BLENDER_RENDER_HOME=/opt/studio-runtime/blender-render
+    export MOLBLENDER_STUDIO_HOME=/opt/studio-runtime
+    export MOL_BLENDER_HOME=/opt/studio-runtime/mol-blender
     export PYTHONDONTWRITEBYTECODE=1
 
 %runscript
-    exec /opt/studio-runtime/render/bin/blender-render "$@"
+    exec /opt/studio-runtime/render/bin/mol-blender "$@"
 
 %test
-    /opt/studio-runtime/render/bin/blender-render --version
+    /opt/studio-runtime/render/bin/mol-blender --version
     /opt/studio-runtime/pymol/bin/python -c 'import pymol2'
-    /opt/studio-runtime/render/bin/python -m blender_render.cluster.worker --check
+    /opt/studio-runtime/render/bin/python -m mol_blender.cluster.worker --check

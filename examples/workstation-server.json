@@ -1,9 +1,9 @@
 {
   "scheduler": "workstation",
-  "spool": "/srv/blender-render/workstation/jobs",
-  "image": "/srv/blender-render/workstation/renderer.sif",
+  "spool": "/srv/mol-blender/workstation/jobs",
+  "image": "/srv/mol-blender/workstation/renderer.sif",
   "image_sha256": "REPLACE_WITH_SHA256_OF_BUILT_SIF",
-  "tokens_file": "/srv/blender-render/workstation/users.json",
+  "tokens_file": "/srv/mol-blender/workstation/users.json",
   "apptainer": "/usr/bin/apptainer",
   "systemd_run": "/usr/bin/systemd-run",
   "systemctl": "/usr/bin/systemctl",

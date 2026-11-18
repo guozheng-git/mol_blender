@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from blender_render.sequence_palette import sequence_colors
+from mol_blender.sequence_palette import sequence_colors
 
 
 def test_sequence_order_handles_insertions_and_separate_chains():

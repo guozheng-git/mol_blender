@@ -3,7 +3,7 @@
 This reference is for developers embedding completed renders in an authenticated
 host. For local rendering, start with the [installation guides](README.md#get-started).
 
-Install the `hosted` extra to use `blender_render.hosted.adapter.create_adapter`.
+Install the `hosted` extra to use `mol_blender.hosted.adapter.create_adapter`.
 The ordinary CLI, local stdio MCP, PyMOL bridge and renderer do not import this
 adapter or start an HTTP listener.
 

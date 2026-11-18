@@ -55,13 +55,13 @@ uv run --no-sync python scripts/build_plugin.py --output .validation/package-che
 Run co-PyMOL tests in a Python environment containing real PyMOL, with the
 renderer tests' detached helpers using Python 3.11. Browser checks require an
 explicit Chrome/Chromium path through `--browser=PATH`; native Blender/PyMOL
-checks use `BLENDER_RENDER_TEST_BLENDER`, `BLENDER_RENDER_TEST_SITE` and
-`STRUCTURE_STUDIO_TEST_PYMOL`. The default CI suite does not establish Blender
+checks use `MOL_BLENDER_TEST_BLENDER`, `MOL_BLENDER_TEST_SITE` and
+`MOLBLENDER_STUDIO_TEST_PYMOL`. The default CI suite does not establish Blender
 GPU or Slurm acceptance. Report executed checks and limits in the pull request.
 
 Refresh locks with the commands in [runtime environments](runtime-environments.md).
 Keep scientific ABI pins stable unless separate runtime validation justifies
-changing them. Update `blender_render/runtime-sources.json` whenever a native
+changing them. Update `mol_blender/runtime-sources.json` whenever a native
 runtime version changes, preserving upstream source URLs, hashes and notices.
 The advisory script fails on findings, unverified packages or service errors;
 it does not ignore vulnerabilities or silently skip alternate lock versions.

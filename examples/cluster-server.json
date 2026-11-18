@@ -1,8 +1,8 @@
 {
-  "spool": "/srv/blender-render/jobs",
-  "image": "/srv/blender-render/renderer.sif",
+  "spool": "/srv/mol-blender/jobs",
+  "image": "/srv/mol-blender/renderer.sif",
   "image_sha256": "REPLACE_WITH_SHA256_OF_BUILT_SIF",
-  "tokens_file": "/srv/blender-render/users.json",
+  "tokens_file": "/srv/mol-blender/users.json",
   "apptainer": "/usr/bin/apptainer",
   "sbatch": "/usr/bin/sbatch",
   "srun": "/usr/bin/srun",

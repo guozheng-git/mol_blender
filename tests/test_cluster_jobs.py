@@ -5,13 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from blender_render.cluster.config import Limits
-from blender_render.cluster.jsonio import atomic_json
-from blender_render.cluster.protocol import validate_request
-from blender_render.cluster.config import ServerConfig
-from blender_render.cluster.slurm import Slurm, SubmissionUnknown
-from blender_render.cluster.store import Conflict, NotFound, Quota, Store
-from blender_render.spec import resolve_options
+from mol_blender.cluster.config import Limits
+from mol_blender.cluster.jsonio import atomic_json
+from mol_blender.cluster.protocol import validate_request
+from mol_blender.cluster.config import ServerConfig
+from mol_blender.cluster.slurm import Slurm, SubmissionUnknown
+from mol_blender.cluster.store import Conflict, NotFound, Quota, Store
+from mol_blender.spec import resolve_options
 
 
 def payload():
@@ -184,7 +184,7 @@ def test_slurm_uses_admin_arguments_and_private_single_job_bind(config, monkeypa
     assert f'{directory}:/job' in script
     assert str(config.tokens_file) not in script
     assert 'uv sync' not in script and 'pip install' not in script
-    assert '/opt/studio-runtime/render/bin/python -I -m blender_render.cluster.worker /job' in script
+    assert '/opt/studio-runtime/render/bin/python -I -m mol_blender.cluster.worker /job' in script
 
 
 def test_slurm_accounting_fallback_and_ambiguous_output(config, monkeypatch):
@@ -236,7 +236,7 @@ def test_reuses_linux_uv_environment_at_its_original_path(config, tmp_path):
     command = Slurm(config).container_command(config.spool)
     assert f'{runtime}:{runtime}:ro' in command
     assert str(runtime / 'render/bin/python') in command
-    assert 'BLENDER_RENDER_HOME=' + str(runtime / 'blender-render') in command
+    assert 'MOL_BLENDER_HOME=' + str(runtime / 'mol-blender') in command
     assert '--nv' in command
     script = Slurm(config).script(config.spool)
     assert '--cpu-bind=cores' in script and '/usr/bin/srun' in script
@@ -258,8 +258,8 @@ def test_reconcile_attaches_the_original_slurm_job_without_resubmitting(store):
 def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):
     import tempfile
     import os
-    from blender_render import local, engine
-    from blender_render.cluster import worker
+    from mol_blender import local, engine
+    from mol_blender.cluster import worker
     root = config.spool
     root.mkdir()
     build = engine.generate_manifest(Path(worker.__file__).resolve().parents[1])['engine_build']
@@ -290,8 +290,8 @@ def test_worker_uses_shared_renderer_and_refuses_repeat(config, monkeypatch):
 
 
 def test_worker_rejects_changed_environment_before_render(config, monkeypatch):
-    from blender_render import local
-    from blender_render.cluster import worker
+    from mol_blender import local
+    from mol_blender.cluster import worker
     config.spool.mkdir()
     atomic_json(config.spool / 'request.json', {'request': request(), 'limits': vars(config.limits), 'engine_build': 'wrong'})
     monkeypatch.setattr(local, 'render_payload', lambda *a, **kw: pytest.fail('must not render'))
@@ -378,13 +378,13 @@ def test_dry_run_reports_slurm_rejection(config, monkeypatch, tmp_path):
     ('apptainer version 1.2\n', 'apptainer', '1.2.0'),
 ])
 def test_supported_apptainer_versions(output, product, version):
-    from blender_render.cluster.doctor import apptainer_version
+    from mol_blender.cluster.doctor import apptainer_version
     runtime, warnings = apptainer_version(output)
     assert (runtime['product'], runtime['version'], warnings) == (product, version, [])
 
 
 def test_old_apptainer_is_refused_and_singularity_warns():
-    from blender_render.cluster.doctor import apptainer_version
+    from mol_blender.cluster.doctor import apptainer_version
     with pytest.raises(ValueError, match='1.0.3 is too old; 1.1 or newer'):
         apptainer_version('apptainer version 1.0.3')
     for output in ('singularity-ce version 4.1.2', 'singularity version 3.8.7'):
@@ -396,7 +396,7 @@ def test_old_apptainer_is_refused_and_singularity_warns():
 
 def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatch):
     import json
-    from blender_render.cluster import doctor
+    from mol_blender.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
     config.spool.mkdir()
     calls = []
@@ -421,7 +421,7 @@ def test_doctor_checks_runtime_container_and_dry_run_in_order(config, monkeypatc
 
 
 def test_doctor_stops_before_container_check_on_old_apptainer(config, monkeypatch):
-    from blender_render.cluster import doctor
+    from mol_blender.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
     config.spool.mkdir()
     calls = []
@@ -481,7 +481,7 @@ def test_non_string_settings_name_the_field(config, tmp_path, settings):
 
 
 def test_apptainer_version_after_wrapper_messages():
-    from blender_render.cluster.doctor import apptainer_version
+    from mol_blender.cluster.doctor import apptainer_version
     runtime, _ = apptainer_version('INFO: loading module apptainer/1.3\napptainer version 1.3.4\n')
     assert runtime['version'] == '1.3.4'
     with pytest.raises(ValueError, match='Could not determine'):
@@ -489,7 +489,7 @@ def test_apptainer_version_after_wrapper_messages():
 
 
 def test_doctor_reports_container_check_stderr(config, monkeypatch):
-    from blender_render.cluster import doctor
+    from mol_blender.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
     config.spool.mkdir()
 
@@ -504,7 +504,7 @@ def test_doctor_reports_container_check_stderr(config, monkeypatch):
 
 
 def test_doctor_requires_the_shared_spool(config, monkeypatch):
-    from blender_render.cluster import doctor
+    from mol_blender.cluster import doctor
     monkeypatch.setattr(doctor.os, 'access', lambda path, mode: True)
     with pytest.raises(ValueError, match='Create the private shared spool'):
         doctor.run(config, Slurm(config), 'b' * 64)
@@ -512,8 +512,8 @@ def test_doctor_requires_the_shared_spool(config, monkeypatch):
 
 def test_container_python_is_checked_against_the_runtime_lock(config, monkeypatch):
     import json
-    from blender_render.cluster import doctor
-    from blender_render.config import runtime_versions
+    from mol_blender.cluster import doctor
+    from mol_blender.config import runtime_versions
     locked = runtime_versions()['python']
     assert doctor.python_matches_lock(locked + '.15') and doctor.python_matches_lock(locked)
     assert not doctor.python_matches_lock(locked + '1.0') and not doctor.python_matches_lock('3.12.1')

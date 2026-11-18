@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from blender_render import core
-from blender_render.chain_palette import expand_polymer_styles_for_multichain_palette
-from blender_render.presets import required_capabilities
+from mol_blender import core
+from mol_blender.chain_palette import expand_polymer_styles_for_multichain_palette
+from mol_blender.presets import required_capabilities
 
 
 def base():
@@ -78,8 +78,8 @@ REFERENCE_IDS = [
 
 @pytest.mark.parametrize('identifier', REFERENCE_IDS)
 def test_reference_presets_share_json_override_and_output_contracts(identifier):
-    from blender_render.presets import preset_path, preset_id
-    from blender_render.spec import resolve_options
+    from mol_blender.presets import preset_path, preset_id
+    from mol_blender.spec import resolve_options
     style = json.loads(preset_path(identifier).read_text())
     assert style['output']['save_blend'] is False
     assert style['output']['format'] == 'PNG'
@@ -98,7 +98,7 @@ def test_reference_presets_share_json_override_and_output_contracts(identifier):
 
 
 def test_cutaway_preset_only_cuts_isolated_surfaces():
-    from blender_render.presets import preset_path
+    from mol_blender.presets import preset_path
     style = json.loads(preset_path('cyan_mint_cutaway').read_text())
     for entry in style['styles']:
         if entry['style'] == 'surface':
@@ -112,7 +112,7 @@ def test_cutaway_preset_only_cuts_isolated_surfaces():
 
 
 def test_cutaway_pocket_residues_are_complete_and_element_colored():
-    from blender_render.presets import preset_path
+    from mol_blender.presets import preset_path
     style = json.loads(preset_path('cyan_mint_cutaway').read_text())
     pocket = next(entry for entry in style['styles'] if entry['name'] == 'pocket_sidechains')
     assert pocket['style'] == 'sticks'
@@ -125,7 +125,7 @@ def test_cutaway_pocket_residues_are_complete_and_element_colored():
 
 
 def test_reference_materials_keep_glow_and_glass_controls_explicit():
-    from blender_render.presets import preset_path, required_capabilities
+    from mol_blender.presets import preset_path, required_capabilities
     cutaway = json.loads(preset_path('cyan_mint_cutaway').read_text())
     ligand = cutaway['materials']['ligand']
     assert ligand['edge_highlight']['color'] == '#FFE5F7'
@@ -183,7 +183,7 @@ def test_emission_halo_and_sequence_attributes_are_explicit():
 
 
 def test_rounded_cutaway_requires_isolated_colored_surface():
-    from blender_render.presets import preset_path
+    from mol_blender.presets import preset_path
     style=json.loads(preset_path('northern_nights_cutaway').read_text())
     core.validate_style_document(style)
     surface=next(s for s in style['styles'] if s['style']=='surface')

@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
-from blender_render import core
+from mol_blender import core
 
-from blender_render.bridge_runner import (
+from mol_blender.bridge_runner import (
     CAMERA_KEYS,
     COLOR_FOLLOW_KEYS,
     LIGHT_KEYS,

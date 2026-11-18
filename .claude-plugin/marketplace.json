@@ -1,11 +1,11 @@
 {
-  "name": "blender-render",
-  "owner": { "name": "blender render" },
-  "description": "Molecular rendering plugins built on the blender_render renderer.",
+  "name": "mol-blender",
+  "owner": { "name": "mol-blender" },
+  "description": "Molecular rendering plugins built on the mol-blender renderer.",
   "plugins": [
     {
-      "name": "structure-studio",
-      "source": "./plugins/structure-studio",
+      "name": "molblender-studio",
+      "source": "./plugins/molblender_studio",
       "description": "Interactive Mol* workspaces, PyMOL sessions, Blender preset renders and reusable molecular animation recipes for protein and nucleic-acid structures."
     }
   ]

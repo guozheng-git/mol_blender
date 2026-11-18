@@ -8,7 +8,7 @@ import time
 import pytest
 from PIL import Image
 
-from blender_render.hosted.adapter import CompletedPNG, VIEWER_URI, create_adapter
+from mol_blender.hosted.adapter import CompletedPNG, VIEWER_URI, create_adapter
 
 
 @pytest.fixture

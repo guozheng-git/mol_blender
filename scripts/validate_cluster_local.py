@@ -22,7 +22,7 @@ class LocalValidationScheduler:
     def submit(self, directory, identifier):
         handle = (directory / 'local-worker.log').open('w')
         self.handles.append(handle)
-        process = subprocess.Popen([sys.executable, '-I', '-m', 'blender_render.cluster.worker', str(directory)],
+        process = subprocess.Popen([sys.executable, '-I', '-m', 'mol_blender.cluster.worker', str(directory)],
                                    stdout=handle, stderr=subprocess.STDOUT, cwd=directory)
         self.processes[str(process.pid)] = process
         return str(process.pid)
@@ -53,13 +53,13 @@ def main():
     config_home = root / 'config'
     config_home.mkdir(mode=0o700)
     (config_home / 'config.json').write_text(json.dumps(runtime))
-    os.environ['BLENDER_RENDER_HOME'] = str(config_home)
-    from blender_render.cluster.jsonio import atomic_json, digest_file
-    from blender_render.cluster.config import ServerConfig
-    from blender_render.cluster.auth import add_user
-    from blender_render.cluster.client import Client, configure
-    from blender_render.cluster.server import create_app
-    from blender_render import engine, pymol_bridge_plugin
+    os.environ['MOL_BLENDER_HOME'] = str(config_home)
+    from mol_blender.cluster.jsonio import atomic_json, digest_file
+    from mol_blender.cluster.config import ServerConfig
+    from mol_blender.cluster.auth import add_user
+    from mol_blender.cluster.client import Client, configure
+    from mol_blender.cluster.server import create_app
+    from mol_blender import engine, pymol_bridge_plugin
     import uvicorn
     from PIL import Image
     sock = socket.socket()
@@ -92,7 +92,7 @@ def main():
 from pathlib import Path
 sys.path.insert(0, str(Path(sys.argv[1]).parents[1]))
 import pymol2
-from blender_render.pymol_bridge_plugin import bridge_render
+from mol_blender.pymol_bridge_plugin import bridge_render
 with pymol2.PyMOL() as p:
     p.cmd.load(sys.argv[2], 'molecule')
     p.cmd.remove('solvent'); p.cmd.dss('all'); p.cmd.orient('all'); p.cmd.viewport(192,144)
@@ -128,7 +128,7 @@ with pymol2.PyMOL() as p:
             (root / (name + '-reopen.log')).write_text(reopened.stdout + '\n' + reopened.stderr)
             assert reopened.returncode == 0 and 'REOPEN_OK' in reopened.stdout
             if name == 'rock':
-                from blender_render.animation import unpack
+                from mol_blender.animation import unpack
                 with unpack(fetched['outputs']['frames.zip']) as (frames, metadata):
                     assert len(list(frames.glob('*.png'))) == metadata['frames'] == 4
                 subprocess.run(['ffmpeg', '-v', 'error', '-i', fetched['outputs']['render.mp4'],

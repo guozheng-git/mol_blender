@@ -41,7 +41,7 @@ def page(page_factory):
 
 @pytest.fixture
 def html():
-    from blender_render.hosted.viewer import inline_viewer_html
+    from mol_blender.hosted.viewer import inline_viewer_html
     return inline_viewer_html()
 
 

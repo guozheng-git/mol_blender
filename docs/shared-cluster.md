@@ -12,8 +12,8 @@ The gateway runs on a cluster service host with Slurm client tools. It accepts
 exported structure data and validated styles, submits one job, and serves the
 results. Token authentication gives each user a private queue. An administrator
 can explicitly select open access for a trusted cluster network, with one shared
-queue and no credentials. It never renders in the web process. Local `blender_render`
-and `blender-render render` keep their existing behavior unless a cluster is
+queue and no credentials. It never renders in the web process. Local `mol_blender`
+and `mol-blender render` keep their existing behavior unless a cluster is
 explicitly selected. The optional stdio MCP and hosted image-delivery adapter
 remain separate interfaces.
 
@@ -49,7 +49,7 @@ local runtime as described in the [README](../README.md#install-and-configure),
 omit `cluster` in PyMOL:
 
 ```pymol
-blender_render selection=(all), width=384, height=288, samples=8, output_dir=renders, output_name=local-test.png
+mol_blender selection=(all), width=384, height=288, samples=8, output_dir=renders, output_name=local-test.png
 ```
 
 The default preset requests GPU rendering and detects an available backend.
@@ -69,8 +69,8 @@ gateway has no persistent GPU allocation. Reusing the uv environment alone is
 not a warm Blender process.
 
 The existing warm worker can stay running on a configured server with
-`blender-render worker start --idle-timeout 0`. Subsequent server-side
-`blender-render render ... --warm` calls reuse it. Start and render must use the
+`mol-blender worker start --idle-timeout 0`. Subsequent server-side
+`mol-blender render ... --warm` calls reuse it. Start and render must use the
 same configuration and, for Apptainer, the same container session; see
 [the warm worker guide](local-worker.md#inside-apptainer-on-linux).
 This is distinct from the current forwarded gateway: both its Slurm and
@@ -80,15 +80,15 @@ Blender reuse.
 
 ## Use from PyMOL
 
-Install the base package in a local uv environment and run `blender-render setup`
+Install the base package in a local uv environment and run `mol-blender setup`
 there to record its Python interpreter. A local Blender installation is not
 required for remote submission from an already running PyMOL. The administrator
 provides either an open service URL or a private credential JSON file. For an
 open cluster, configure the URL once:
 
 ```sh
-blender-render cluster configure --profile lab --url https://render.cluster.example:8772
-blender-render cluster info --profile lab
+mol-blender cluster configure --profile lab --url https://render.cluster.example:8772
+mol-blender cluster info --profile lab
 ```
 
 Add `--ca-file /shared/render-ca.pem` if the service uses a private CA. There is
@@ -99,8 +99,8 @@ therefore applies to the whole shared queue, alongside the total service limit.
 For a service using individual credentials, import the provided file instead:
 
 ```sh
-blender-render cluster configure --profile lab --credential-file /private/alice.json
-blender-render cluster info --profile lab
+mol-blender cluster configure --profile lab --credential-file /private/alice.json
+mol-blender cluster info --profile lab
 ```
 
 The file must be owned by you and mode `0600`. The client stores a private profile
@@ -118,19 +118,19 @@ network address. TLS, input validation, resource limits and Slurm isolation appl
 in both modes. All jobs use the gateway's Unix identity and configured Slurm
 account, including jobs submitted by other cluster users.
 
-Load `blender_render/pymol_bridge_plugin.py` as described in the README, then:
+Load `mol_blender/pymol_bridge_plugin.py` as described in the README, then:
 
 ```pymol
-blender_render cluster=lab
+mol_blender cluster=lab
 png figure.png
-blender_render cluster=lab, preset=mint_sky_assembly, output_dir=renders, output_name=protein.png
-blender_render_status JOB_ID, cluster=lab
-blender_render_fetch JOB_ID, cluster=lab, output_dir=renders, output_name=protein.png
-blender_render_cancel JOB_ID, cluster=lab
+mol_blender cluster=lab, preset=mint_sky_assembly, output_dir=renders, output_name=protein.png
+mol_blender_status JOB_ID, cluster=lab
+mol_blender_fetch JOB_ID, cluster=lab, output_dir=renders, output_name=protein.png
+mol_blender_cancel JOB_ID, cluster=lab
 ```
 
 Submission exports the current enabled selection, transforms, colors, secondary
-structure and view. An unnamed still (`blender_render cluster=lab`) waits for the
+structure and view. An unnamed still (`mol_blender cluster=lab`) waits for the
 verified image and displays it in PyMOL. After successful display, repeating the
 command starts a new render of the current view. Temporary local files are removed;
 use `png figure.png` to save the displayed image.
@@ -150,7 +150,7 @@ the timeout includes queue time. A timeout leaves the original job running.
 Animation controls work as they do locally:
 
 ```pymol
-blender_render cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
+mol_blender cluster=lab, animation=360, duration=2, fps=12, gif=1, width=640, height=480, samples=16, output_name=spin.png
 ```
 
 Omit `cluster=lab` to render locally. Custom styles and saved local presets are
@@ -161,11 +161,11 @@ does not silently fall back to CPU.
 ## CLI submission and recovery
 
 ```sh
-blender-render cluster submit structure.cif --profile lab --rough -o renders/first.png
-blender-render cluster status renders/first.cluster.json
-blender-render cluster fetch renders/first.cluster.json
-blender-render cluster list --profile lab
-blender-render cluster delete JOB_ID --profile lab
+mol-blender cluster submit structure.cif --profile lab --rough -o renders/first.png
+mol-blender cluster status renders/first.cluster.json
+mol-blender cluster fetch renders/first.cluster.json
+mol-blender cluster list --profile lab
+mol-blender cluster delete JOB_ID --profile lab
 ```
 
 CLI imports of CIF/PDB/PSE require the configured local PyMOL interpreter. An
@@ -176,7 +176,7 @@ commands. Only data exported from the session crosses the network.
 
 The receipt is written before upload and contains recovery identity, not tokens
 or molecular coordinates. After a lost response, reconnect and observe that
-receipt through `blender-render job status`, even if it has no job ID yet. A
+receipt through `mol-blender job status`, even if it has no job ID yet. A
 confirmed missing request is reported as `prepared`: repeat `job submit` with
 the same input/options and output to resend the same request ID. If the service
 reports `submission_unknown`, ask its administrator to reconcile it; do not
@@ -186,14 +186,14 @@ output location.
 
 ### One job command for every client
 
-co-pymol, Structure Studio and the PyMOL bridge all submit and recover through
-`blender_render.jobs`, available as one JSON command line:
+co-pymol, molblender-studio and the PyMOL bridge all submit and recover through
+`mol_blender.jobs`, available as one JSON command line:
 
 ```sh
-blender-render job submit scene.bundle.json -o renders/first.png --backend lab --profile lab
-blender-render job status renders/first.cluster.json
-blender-render job fetch renders/first.cluster.json --wait 900
-blender-render job cancel renders/first.cluster.json
+mol-blender job submit scene.bundle.json -o renders/first.png --backend lab --profile lab
+mol-blender job status renders/first.cluster.json
+mol-blender job fetch renders/first.cluster.json --wait 900
+mol-blender job cancel renders/first.cluster.json
 ```
 
 `--backend local` renders on this computer instead. Lab subcommands connect once
@@ -217,11 +217,11 @@ installed a matching controller and image (see below), one command connects this
 computer without a shared service:
 
 ```sh
-blender-render cluster connect --profile lab --ssh-host mycluster --node login-03.cluster.example \
-  --remote-executable /shared/install/controller/bin/blender-render \
+mol-blender cluster connect --profile lab --ssh-host mycluster --node login-03.cluster.example \
+  --remote-executable /shared/install/controller/bin/mol-blender \
   --server-config /shared/install/server-gpu.json
-blender-render cluster submit structure.cif --profile lab -o renders/first.png
-blender-render cluster disconnect --profile lab
+mol-blender cluster submit structure.cif --profile lab -o renders/first.png
+mol-blender cluster disconnect --profile lab
 ```
 
 `connect` sends a small helper over SSH stdin to the controller's Python. It
@@ -254,11 +254,11 @@ refreshed while keeping its job spool, credentials and local port, so existing
 receipts still work. Revocation is not needed. Invalid configuration updates
 leave the previous derived configuration intact.
 
-Profiles and SSH connection state live under `BLENDER_RENDER_CLUSTER_HOME` when
-it is set, otherwise under `BLENDER_RENDER_HOME`, otherwise in the default
-`~/.config/blender-render/`. Structure Studio and co-pymol pin
-`BLENDER_RENDER_CLUSTER_HOME` to that default folder (co-pymol: `cluster_home`
-when configured) while keeping their own `BLENDER_RENDER_HOME`, so they share the
+Profiles and SSH connection state live under `MOL_BLENDER_CLUSTER_HOME` when
+it is set, otherwise under `MOL_BLENDER_HOME`, otherwise in the default
+`~/.config/mol-blender/`. molblender-studio and co-pymol pin
+`MOL_BLENDER_CLUSTER_HOME` to that default folder (co-pymol: `cluster_home`
+when configured) while keeping their own `MOL_BLENDER_HOME`, so they share the
 terminal's lab profiles and a lab render resolves presets exactly like a local one.
 Studio saves its `.lab.json` recovery context before submission. If a response is
 lost or times out after the client has written a receipt, Studio returns
@@ -291,7 +291,7 @@ at a time. Separate gateways and other workstation applications can still share
 the GPU, so use one gateway/profile per workstation for sequential previews.
 
 ```sh
-blender-render cluster doctor --config /srv/blender-render/workstation/server.json
+mol-blender cluster doctor --config /srv/mol-blender/workstation/server.json
 ```
 
 Doctor checks the matching image and systemd user manager without launching a
@@ -308,9 +308,9 @@ On the submitting computer, configure the IP and SSH forwarding once (replace
 the example values with your workstation's settings):
 
 ```sh
-blender-render cluster connect --profile lab --ssh-host my-server --node 192.0.2.10 \
-  --remote-executable /srv/blender-render/workstation/controller/bin/blender-render \
-  --server-config /srv/blender-render/workstation/server.json
+mol-blender cluster connect --profile lab --ssh-host my-server --node 192.0.2.10 \
+  --remote-executable /srv/mol-blender/workstation/controller/bin/mol-blender \
+  --server-config /srv/mol-blender/workstation/server.json
 ```
 
 `--ssh-host` is the SSH alias containing your user/key/jump settings; `--node`
@@ -320,15 +320,15 @@ are provisioned privately by `connect`; no public HTTP port or manual token
 copy is needed. Then, in local PyMOL:
 
 ```pymol
-blender_render cluster=lab
+mol_blender cluster=lab
 png figure.png
-blender_render cluster=lab
+mol_blender cluster=lab
 ```
 
 The image returns to PyMOL on this computer. Repeating the command after display
 renders the current view again. If the connection drops during a render, repeat
 the command to recover that same request. Saved profiles reconnect automatically
-through the job API; `blender-render cluster connect --profile lab` also
+through the job API; `mol-blender cluster connect --profile lab` also
 reopens the tunnel explicitly. Disconnecting stops the gateway and tunnel while
 already submitted systemd workers continue within their deadline.
 
@@ -370,7 +370,7 @@ setting to the server config:
 ```
 
 The gateway binds this directory read-only **at the same absolute path** inside
-Apptainer and uses its `render/bin/python` and `blender-render/config.json`.
+Apptainer and uses its `render/bin/python` and `mol-blender/config.json`.
 It must be a complete Linux runtime created with the same Studio setup and pins,
 including uv's managed Python beneath that directory. Install the exact release
 wheel there before serving. Its configured Blender shim, dependencies and CCD
@@ -433,7 +433,7 @@ no `user-add` step is needed. For individual authentication, keep
 credentials before starting the service:
 
 ```sh
-blender-render cluster user-add --config /srv/blender-render/server.json \
+mol-blender cluster user-add --config /srv/mol-blender/server.json \
   --user alice --url https://render.example.org \
   --credential-output /private/alice.json
 ```
@@ -446,8 +446,8 @@ new credential if needed. Revocation does not cancel already submitted jobs.
 For either access mode, check the configuration and start the gateway:
 
 ```sh
-blender-render cluster doctor --config /srv/blender-render/server.json
-blender-render cluster serve --config /srv/blender-render/server.json
+mol-blender cluster doctor --config /srv/mol-blender/server.json
+mol-blender cluster serve --config /srv/mol-blender/server.json
 ```
 
 `doctor` runs on the gateway host and never installs, queues or renders. It checks
@@ -495,7 +495,7 @@ library path, while discarding unrelated library paths and credentials.
 ## Persistent user service and shared clients
 
 [`cluster-user.service`](../examples/cluster-user.service) is a systemd user-unit
-template. Put a uv controller environment at `~/blender-render-cluster/controller`,
+template. Put a uv controller environment at `~/mol-blender-cluster/controller`,
 created at that final path using the pinned Linux Python. Export controller
 dependencies from `uv.lock` with `uv export --frozen --no-dev --extra cluster
 --no-emit-project`, install them with `uv pip sync --require-hashes`, and install
@@ -503,23 +503,23 @@ the release wheel with `uv pip install --no-deps`. The service does no installat
 at startup or per job.
 
 Keep `server.json`, `server.crt` and `server.key` under the private
-`~/.config/blender-render-cluster` directory. Keep the spool private and visible
+`~/.config/mol-blender-cluster` directory. Keep the spool private and visible
 on compute nodes. Set `authentication` to `none` only for an intentionally shared
 cluster queue. Choose the appropriate Slurm account/partition and bounded active
 job limits; open callers all count toward `max_active_per_user`.
 
 Replace `@CLUSTER_ADDRESS@` and `@PORT@` in the unit with an available cluster
 interface address and free port, and install it as
-`~/.config/systemd/user/blender-render-cluster.service`. Supply a certificate
+`~/.config/systemd/user/mol-blender-cluster.service`. Supply a certificate
 whose SANs match the service hostname/IP. For a private CA, share only its public
-certificate as `~/blender-render-cluster/ca.pem`; keep both private keys private.
+certificate as `~/mol-blender-cluster/ca.pem`; keep both private keys private.
 Track certificate expiry and renew the leaf before it expires.
 
 ```sh
 systemctl --user daemon-reload
-systemctl --user enable --now blender-render-cluster.service
-systemctl --user status blender-render-cluster.service
-journalctl --user -u blender-render-cluster.service
+systemctl --user enable --now mol-blender-cluster.service
+systemctl --user status mol-blender-cluster.service
+journalctl --user -u mol-blender-cluster.service
 loginctl show-user "$USER" -p Linger
 ```
 
@@ -542,8 +542,8 @@ their configured local Blender/PyMOL paths. Users on another computer can instal
 the release wheel into their own uv environment and use the URL/CA configuration
 shown above.
 
-Stop only this service with `systemctl --user stop blender-render-cluster.service`;
-disable boot startup with `systemctl --user disable blender-render-cluster.service`.
+Stop only this service with `systemctl --user stop mol-blender-cluster.service`;
+disable boot startup with `systemctl --user disable mol-blender-cluster.service`.
 Stopping the gateway does not cancel already submitted Slurm jobs. For an update,
 finish active jobs, stage a new immutable image/controller with matching identities,
 update the configuration and unit, then restart. Keep the previous release for rollback.
@@ -556,7 +556,7 @@ or the gateway exits after submitting, the service reports uncertainty rather th
 retrying. Reconcile using the exact Slurm job name and service Unix owner:
 
 ```sh
-blender-render cluster reconcile JOB_ID --config /srv/blender-render/server.json
+mol-blender cluster reconcile JOB_ID --config /srv/mol-blender/server.json
 ```
 
 Reconciliation attaches an existing allocation. It never submits a new job. If
@@ -590,7 +590,7 @@ python scripts/validate_cluster_slurm.py \
   --server-config /private/acceptance-server.json \
   --pymol /shared/blender-runtime/pymol/bin/python \
   --fixture examples/1stp.cif \
-  --skill dist/cluster-release/plugin/structure-studio/skills/structure-studio \
+  --skill dist/cluster-release/plugin/molblender-studio/skills/molblender-studio \
   --output /shared/acceptance/cpu
 ```
 

@@ -17,7 +17,7 @@ a real PyMOL tool response after setup; client registration alone is not enough.
 
 ### Install the Claude plugin
 
-For Structure Studio's file-based viewer, sessions and renders in Claude, follow
+For molblender-studio's file-based viewer, sessions and renders in Claude, follow
 [the Claude install guide](docs/install-claude.md). Build the plugin with
 `scripts/build_plugin.py`: the source marketplace alone omits its renderer wheel.
 Use the staged marketplace for Claude Code, the plugin ZIP for Claude's plugin
@@ -28,13 +28,13 @@ Claude Code install does not install into the user's Claude web account.
 ## Connect to an existing cluster
 
 For an authorized lab render or recovery, reuse the selected profile (`lab` in
-the examples) and the client's installed `blender-render` executable. In this
-checkout, use `.venv/bin/blender-render` if it is not on `PATH`. Keep local
+the examples) and the client's installed `mol-blender` executable. In this
+checkout, use `.venv/bin/mol-blender` if it is not on `PATH`. Keep local
 rendering as the default unless the user requested the cluster.
 
-Preserve `BLENDER_RENDER_HOME` for the renderer's presets/runtime. Lab profiles
-are under `BLENDER_RENDER_CLUSTER_HOME`, falling back to `BLENDER_RENDER_HOME`
-and then `~/.config/blender-render/`. co-PyMOL and Studio normally use the shared
+Preserve `MOL_BLENDER_HOME` for the renderer's presets/runtime. Lab profiles
+are under `MOL_BLENDER_CLUSTER_HOME`, falling back to `MOL_BLENDER_HOME`
+and then `~/.config/mol-blender/`. co-PyMOL and Studio normally use the shared
 default lab folder independently of their runtime; respect co-PyMOL's configured
 `cluster_home` override. Check the correct profile root before treating a
 connection as missing. Use the CLI's summaries rather than printing credential
@@ -43,7 +43,7 @@ files.
 Inspect the saved SSH connection first:
 
 ```sh
-blender-render cluster connection --profile lab
+mol-blender cluster connection --profile lab
 ```
 
 A running gateway can have a closed local tunnel. If the saved connection has a
@@ -51,8 +51,8 @@ closed tunnel or a gateway error, try reconnecting once with its saved settings,
 then verify the gateway responds:
 
 ```sh
-blender-render cluster connect --profile lab
-blender-render cluster info --profile lab
+mol-blender cluster connect --profile lab
+mol-blender cluster info --profile lab
 ```
 
 `connect` uses noninteractive SSH and can reuse existing authentication. Ask the
@@ -65,8 +65,8 @@ controller and site-config paths in the [cluster guide](docs/shared-cluster.md).
 Setting up a new Slurm service is a separate task covered by
 [cluster-onboarding](.agents/skills/cluster-onboarding/SKILL.md).
 
-After a connection loss, recover the saved receipt through `blender-render job
-status RECEIPT` and `blender-render job fetch RECEIPT --wait 900`. Keep a local
+After a connection loss, recover the saved receipt through `mol-blender job
+status RECEIPT` and `mol-blender job fetch RECEIPT --wait 900`. Keep a local
 receipt distinct from gateway acceptance and GPU execution. If observation
 reports `prepared`, resend only through `jobs.submit`/`job submit` to the same
 output with the same request ID; never create a replacement job to repair a
@@ -82,11 +82,11 @@ a GPU job ran: report gateway connectivity and render status separately.
 
 This branch supports PyMOL export, direct local Blender rendering, preset authoring,
 and optional stdio MCP for Claude/Codex. Keep one shared renderer in
-`blender_render/blender_custom_render.py`. CLI, PyMOL and MCP use `local.py` and the
-isolated `developer.preview` runner. The optional `blender_render.hosted` adapter
+`mol_blender/blender_custom_render.py`. CLI, PyMOL and MCP use `local.py` and the
+isolated `developer.preview` runner. The optional `mol_blender.hosted` adapter
 presents already-authorized outputs; keep service queues and remote execution out
 of the renderer. Import hosted dependencies only when explicitly selected.
-The optional `blender_render.cluster` service owns authentication, the private job
+The optional `mol_blender.cluster` service owns authentication, the private job
 spool and Apptainer submission through Slurm or the explicit Linux workstation
 scheduler (systemd user units). Workers call the same `local.py` renderer.
 Keep local rendering the default; never accept executable session uploads or
@@ -97,9 +97,9 @@ captured Blender process through `warm_worker`. Keep source/runtime identity
 checks, bounded local IPC and idle shutdown. Fresh local rendering remains the
 default; Slurm jobs keep one independent Blender process per submitted request.
 
-- Every client submits through one job API, `blender_render/jobs.py` (submit,
+- Every client submits through one job API, `mol_blender/jobs.py` (submit,
   observe, wait, fetch, cancel), exposed to processes that must not import the
-  renderer as `blender-render job … --json`. A lab run is identified only by the
+  renderer as `mol-blender job … --json`. A lab run is identified only by the
   receipt the client writes before uploading; recovery observes it by request ID,
   and an upload the gateway never received is sent again only under that same
   request ID (`jobs.submit` to the same output), never as a new job. Lab commands
@@ -108,22 +108,22 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   another poll loop, job record or launcher.
 - `co_pymol/` is the PyMOL-side MCP server; it runs in PyMOL's Python (3.10+) and must
   not import the renderer. Its detached `render/worker.py` runs in the render
-  environment and calls `blender_render.jobs`. Keep it a
-  sibling of `blender_render/` so the engine inventory is unaffected. Test it with
+  environment and calls `mol_blender.jobs`. Keep it a
+  sibling of `mol_blender/` so the engine inventory is unaffected. Test it with
   PyMOL's Python: `python -m pytest tests/co_pymol`.
 - Every PyMOL capture goes through `build_render_payload`, which restores the
   session's secondary structure and camera itself. A client that prepares a
   session (co-pymol's snapshot, Studio's styled `.pse`) exports its scene bundle in
   that same PyMOL run and hands the renderer the JSON, never the session to reload.
   A plain trusted file the client did not change (`studio.py render x.cif`,
-  `blender-render render x.pse`) is exported once by the renderer's `export_file`.
+  `mol-blender render x.pse`) is exported once by the renderer's `export_file`.
 - Keep the pure recipe compiler in `co_pymol/scene/animation.py` and reuse its
   PyMOL `scene/camera.py`, `scene/capture.py` and `scene/ligands.py` helpers (and
-  `co_pymol/defaults.py`) from Structure Studio. Studio reads these helpers and
+  `co_pymol/defaults.py`) from molblender-studio. Studio reads these helpers and
   their data from the bundled wheel; do not copy their algorithms or data files
   into plugin scripts or assets.
-- `BLENDER_RENDER_HOME` is a client's renderer configuration (runtimes, presets);
-  lab profiles may live apart under `BLENDER_RENDER_CLUSTER_HOME`, so a lab render
+- `MOL_BLENDER_HOME` is a client's renderer configuration (runtimes, presets);
+  lab profiles may live apart under `MOL_BLENDER_CLUSTER_HOME`, so a lab render
   resolves presets exactly like a local one.
   Compiled paths enter the existing renderer payload. PyMOL's ghost-shell
   preview is a display mapping of the same cutaway opacity timeline.

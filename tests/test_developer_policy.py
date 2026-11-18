@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from blender_render import authoring, core, developer
-from blender_render.presets import preset_path
-from blender_render.spec import resolve_options
+from mol_blender import authoring, core, developer
+from mol_blender.presets import preset_path
+from mol_blender.spec import resolve_options
 
 
 @pytest.fixture

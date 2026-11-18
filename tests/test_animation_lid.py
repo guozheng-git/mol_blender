@@ -1,4 +1,4 @@
-"""Real Blender geometry regression; opt in with BLENDER_RENDER_TEST_BLENDER."""
+"""Real Blender geometry regression; opt in with MOL_BLENDER_TEST_BLENDER."""
 import os
 from pathlib import Path
 import subprocess
@@ -8,16 +8,16 @@ import pytest
 
 
 def test_cutaway_lid_has_only_outer_faces_and_consistent_visibility(tmp_path):
-    blender = os.environ.get('BLENDER_RENDER_TEST_BLENDER')
+    blender = os.environ.get('MOL_BLENDER_TEST_BLENDER')
     if not blender:
-        pytest.skip('Set BLENDER_RENDER_TEST_BLENDER to run the real Blender check')
+        pytest.skip('Set MOL_BLENDER_TEST_BLENDER to run the real Blender check')
     root = Path(__file__).resolve().parents[1]
     script = tmp_path / 'check_lid.py'
     script.write_text(textwrap.dedent(f'''
         import sys
         sys.path.insert(0, {str(root)!r})
         import bpy
-        from blender_render.animation_blender import make_cutaway_lid, _set_lid, LID_PROPERTY, LID_TRANSPARENT_BOUNCES
+        from mol_blender.animation_blender import make_cutaway_lid, _set_lid, LID_PROPERTY, LID_TRANSPARENT_BOUNCES
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete(use_global=False)
         material = bpy.data.materials.new('Shared surface and cutter material')

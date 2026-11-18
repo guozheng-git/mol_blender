@@ -10,8 +10,8 @@ import zipfile
 
 import pytest
 
-from blender_render import animation
-from blender_render.spec import resolve_options
+from mol_blender import animation
+from mol_blender.spec import resolve_options
 
 
 def test_defaults_hash_capabilities_and_still_compatibility():
@@ -65,7 +65,7 @@ def test_full_size_cutaway_passes_before_dispatch():
     assert output['animation']['duration'] == 11.5
 
 
-@pytest.mark.parametrize('preset', [p['id'] for p in __import__('blender_render.presets', fromlist=['catalog']).catalog()])
+@pytest.mark.parametrize('preset', [p['id'] for p in __import__('mol_blender.presets', fromlist=['catalog']).catalog()])
 def test_every_preset_resolves_animation(preset):
     result = resolve_options({'preset':preset,'animation':'360','duration':1,'fps':4,'width':320,'height':240}, {})
     assert result['style_doc']['output']['animation']['mode'] == '360'
@@ -154,7 +154,7 @@ def test_encoder_interrupts_and_reaps_child(cancel):
 
 
 def test_pymol_import_and_export_without_submission(archive,tmp_path):
-    from blender_render.pymol_movie import load_movie,remember,movie_export
+    from mol_blender.pymol_movie import load_movie,remember,movie_export
     class Cmd:
         def __init__(self): self.calls=[]
         def _call_in_gui_thread(self,fn): return fn()
@@ -175,14 +175,14 @@ def test_pymol_import_and_export_without_submission(archive,tmp_path):
 
 
 def test_animation_capabilities_are_in_local_engine():
-    from blender_render.engine import CAPABILITIES
+    from mol_blender.engine import CAPABILITIES
     resolved = resolve_options({'animation': 'rock'}, {})
     assert set(resolved['render_spec']['required_capabilities']) <= set(CAPABILITIES)
 
 
 def test_animation_capability_diagnostics_are_preserved():
-    from blender_render.compatibility import sanitize
-    from blender_render.engine import CAPABILITIES
+    from mol_blender.compatibility import sanitize
+    from mol_blender.engine import CAPABILITIES
     evidence = dict(version=1, reason='capability_missing', phase='negotiation',
                     component='engine', before_execution=True,
                     expected={'capabilities': list(CAPABILITIES)}, observed={}, log_refs=[])
@@ -210,7 +210,7 @@ def test_reexport_never_overwrites_existing_file(archive, tmp_path):
 
 
 def test_source_inventory_ignores_mutable_finder_metadata(tmp_path):
-    from blender_render import engine, developer
+    from mol_blender import engine, developer
     (tmp_path/'animation.py').write_text('source')
     (tmp_path/'.DS_Store').write_bytes(b'finder')
     assert set(engine.package_inventory(tmp_path)) == {'animation.py'}

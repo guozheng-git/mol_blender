@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Ligand classification shared by co-pymol and Structure Studio.
+"""Ligand classification shared by co-pymol and molblender-studio.
 
 The data (additives, standard and modified residues, colours) lives beside this
 module and is read with importlib.resources, so it also loads from Studio's

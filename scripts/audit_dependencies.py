@@ -17,9 +17,9 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_LOCKS = (
-    'blender_render/runtime-requirements.txt',
-    'plugins/structure-studio/skills/structure-studio/references/render-requirements.txt',
-    'plugins/structure-studio/skills/structure-studio/references/pymol-requirements.txt',
+    'mol_blender/runtime-requirements.txt',
+    'plugins/molblender_studio/skills/molblender-studio/references/render-requirements.txt',
+    'plugins/molblender_studio/skills/molblender-studio/references/pymol-requirements.txt',
 )
 
 

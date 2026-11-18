@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-from blender_render import engine, telemetry
+from mol_blender import engine, telemetry
 
 
 def test_packaged_manifest_and_import_locations():

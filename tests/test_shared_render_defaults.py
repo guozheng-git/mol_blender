@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from sync_render_defaults import compile_defaults, synchronize
 
-STUDIO = Path('plugins/structure-studio/skills/structure-studio')
+STUDIO = Path('plugins/molblender_studio/skills/molblender-studio')
 
 
 def test_generated_defaults_and_schema_are_current():
@@ -34,7 +34,7 @@ def test_invalid_authored_defaults_fail_before_packaging(tmp_path, section, key,
 
 
 def test_changed_yaml_reaches_renderer_pymol_and_studio_without_losing_overrides(tmp_path):
-    for package in ('blender_render', 'co_pymol'):
+    for package in ('mol_blender', 'co_pymol'):
         shutil.copytree(ROOT / package, tmp_path / package,
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     shutil.copytree(ROOT / STUDIO / 'scripts', tmp_path / STUDIO / 'scripts',
@@ -68,7 +68,7 @@ root = Path(sys.argv[1])
 sys.path.insert(0, str(root))
 from co_pymol import cli
 from co_pymol.scene import animation as pymol_animation
-assert not any(name == 'blender_render' or name.startswith('blender_render.') for name in sys.modules)
+assert not any(name == 'mol_blender' or name.startswith('mol_blender.') for name in sys.modules)
 assert 'yaml' not in sys.modules
 still = cli.build_parser().parse_args(['render', 'example.pse'])
 movie = cli.build_parser().parse_args(['animate', 'example.pse'])
@@ -79,9 +79,9 @@ assert pymol_animation.RECIPE_DEFAULTS['rock'] == {'duration': 8, 'rock_angle': 
 view = (1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -50, 0, 0, 0, 40, 60, 0)
 assert len(pymol_animation.frames_for('rock', pymol_animation.Keys(overview=view))) == 160
 
-from blender_render import animation, core
-from blender_render.scene import export
-from blender_render.spec import resolve_options
+from mol_blender import animation, core
+from mol_blender.scene import export
+from mol_blender.spec import resolve_options
 resolved = resolve_options({'animation': 'rock', 'width': 160, 'height': 120}, {})
 assert resolved['preset'] == 'northern_nights'
 assert resolved['style_doc']['output']['animation'] == {
@@ -97,10 +97,10 @@ assert animation.MAX_FRAMES == export.MAX_STATES == 400
 assert core._state_coordinate_errors({'base': 1, 'coordinates': [[0, 0, 0]] * 400}) == []
 assert animation.normalize({'mode': 'path', 'fps': 40, 'path': [list(view)] * 400},
                            {'width': 10, 'height': 10})['duration'] == 10
-schema = json.loads((root / 'blender_render/style.schema.json').read_text())
+schema = json.loads((root / 'mol_blender/style.schema.json').read_text())
 assert schema['properties']['output']['properties']['animation']['properties']['path']['maxItems'] == 400
 
-sys.path.insert(0, str(root / 'plugins/structure-studio/skills/structure-studio/scripts'))
+sys.path.insert(0, str(root / 'plugins/molblender_studio/skills/molblender-studio/scripts'))
 import studio
 from studio import animation_recipes
 assert len(animation_recipes.frames_for('rock', animation_recipes.Keys(overview=view))) == 160

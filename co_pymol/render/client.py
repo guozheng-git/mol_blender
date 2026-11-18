@@ -147,7 +147,7 @@ def _render_defaults() -> tuple[str | None, str]:
     home = REPO_ROOT / ".runtime"
     candidates = [home] if (home / "config.json").is_file() else []
     candidates.append(
-        Path(os.environ.get("BLENDER_RENDER_HOME", "~/.config/blender-render"))
+        Path(os.environ.get("MOL_BLENDER_HOME", "~/.config/mol-blender"))
         .expanduser()
     )
     for root in candidates:
@@ -164,7 +164,7 @@ def _render_defaults() -> tuple[str | None, str]:
 class BlenderConfig:
     """Where renders run and land. Every field has a working default."""
 
-    output_directory: str = str(Path.home() / "Documents/blender-renders")
+    output_directory: str = str(Path.home() / "Documents/mol-blender-renders")
     backend: str = "local"
     cluster_profile: str = "lab"
     render_python: str | None = None
@@ -205,8 +205,8 @@ class BlenderConfig:
             raise ValueError("backend must be 'local' or 'cluster'")
         if not Path(cfg.render_python).is_file():
             raise ValueError(
-                "render_python must point to the Blender Render environment's Python "
-                "(run blender-render setup in this checkout)"
+                "render_python must point to the mol-blender environment's Python "
+                "(run mol-blender setup in this checkout)"
             )
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", cfg.cluster_profile):
             raise ValueError("Invalid cluster profile name")
@@ -281,11 +281,11 @@ class BlenderBridge:
         )
         # One renderer home for both backends, so a lab render resolves presets like a
         # local one. Lab profiles live apart: cluster_home, else the terminal's folder.
-        env.pop("BLENDER_RENDER_HOME", None)
+        env.pop("MOL_BLENDER_HOME", None)
         if cfg.render_home:
-            env["BLENDER_RENDER_HOME"] = cfg.render_home
-        env["BLENDER_RENDER_CLUSTER_HOME"] = cfg.cluster_home or str(
-            Path.home() / ".config/blender-render"
+            env["MOL_BLENDER_HOME"] = cfg.render_home
+        env["MOL_BLENDER_CLUSTER_HOME"] = cfg.cluster_home or str(
+            Path.home() / ".config/mol-blender"
         )
         return env
 
@@ -657,7 +657,7 @@ class BlenderBridge:
             raise ValueError("Ambiguous render reference; use its unique request_id")
         if not matches:
             raise ValueError(
-                "Unknown Blender render. Use blender_renders to find saved runs."
+                "Unknown Blender render. Use mol_blender_renders to find saved runs."
             )
         return matches[0]
 

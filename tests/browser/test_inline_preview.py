@@ -173,7 +173,7 @@ def test_model_image_delivery(host, page, html, preview, reject):
 
 @pytest.mark.parametrize('mode', ['background', 'message', 'control', 'blender'])
 def test_diagnostic_modes_use_production_delivery(host, page, preview, mode):
-    from blender_render.hosted.viewer import inline_viewer_html
+    from mol_blender.hosted.viewer import inline_viewer_html
     html = inline_viewer_html(background_context=mode in ('background', 'blender'),
                               image_message=mode in ('message', 'blender'),
                               message_prompt=' Read the five-character code.')

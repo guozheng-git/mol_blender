@@ -1,4 +1,4 @@
-# Blender Render documentation
+# mol-blender documentation
 
 Start with the installation route for the way you want to work. Local rendering
 is the default; a shared cluster is optional.
@@ -7,7 +7,7 @@ is the default; a shared cluster is optional.
 
 - [Control desktop PyMOL with co-PyMOL](install-co-pymol.md): connect Codex,
   Claude Code or Cursor to your live PyMOL session, then enable Blender rendering.
-- [Install Structure Studio in Claude](install-claude.md): build the complete
+- [Install molblender-studio in Claude](install-claude.md): build the complete
   plugin or skill ZIP, install it in the chosen Claude environment and set up its
   runtime.
 - [Install the renderer CLI and PyMOL bridge](../README.md#install-and-configure):
@@ -43,7 +43,7 @@ and specify your client and workflow.
 - [Completed-render delivery API](hosted-adapter.md): the optional adapter for
   developers embedding completed images in an authenticated host.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md) and
-  [current runtime sources](../blender_render/runtime-sources.json).
+  [current runtime sources](../mol_blender/runtime-sources.json).
   The [historical dependency inventory](dependency-source-manifest.json) preserves
   upstream provenance, including dependencies no longer used; it is not the
   current dependency list.

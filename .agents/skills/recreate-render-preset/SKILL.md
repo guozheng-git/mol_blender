@@ -1,6 +1,6 @@
 ---
 name: recreate-render-preset
-description: Recreate the visual style of an example molecular structure render as a reusable Blender Render preset JSON, using local previews to compare and refine it. Use when given a reference image to match, not for ordinary rendering with an existing preset.
+description: Recreate the visual style of an example molecular structure render as a reusable mol-blender preset JSON, using local previews to compare and refine it. Use when given a reference image to match, not for ordinary rendering with an existing preset.
 ---
 
 Produce a full, schema-valid style JSON and an honest visual comparison using this
@@ -13,7 +13,7 @@ match its visible appearance without claiming the original parameters were recov
    retain the original and create a lossless PNG working copy. If no structure is
    supplied, create the draft JSON and ask for the structure/pose needed to validate
    it. A public example may demonstrate styling, but cannot prove the same composition.
-2. Run `blender-render dev catalog`, `dev inspect PRESET` and `dev schema`.
+2. Run `mol-blender dev catalog`, `dev inspect PRESET` and `dev schema`.
    Compare representation first (cartoon, surface, ribbon, sticks), then material,
    palette, background, lights, edges, composition and ligand emphasis. Preserve the
    supplied pose and chain colors unless matching the reference requires a change.
@@ -43,9 +43,9 @@ match its visible appearance without claiming the original parameters were recov
 4. Bind the observations to the reference's hash and create the full JSON:
 
    ```sh
-   blender-render dev reference reference.png --observations observations.json \
+   mol-blender dev reference reference.png --observations observations.json \
      --style-output candidate.json > decision.json
-   blender-render dev validate candidate.json
+   mol-blender dev validate candidate.json
    ```
 
    This command records and ranks **your** observations; it does not perform vision.
@@ -54,10 +54,10 @@ match its visible appearance without claiming the original parameters were recov
    describe the gap; do not invent fields or silently edit the engine as part of a
    preset-only request. `candidate.json` is a full style, whereas a saved catalog
    envelope contains metadata plus `style`; pass the full style to `--style-json`.
-5. With local runtime configured (`blender-render doctor`; setup in README), render:
+5. With local runtime configured (`mol-blender doctor`; setup in README), render:
 
    ```sh
-   blender-render render structure.pse --style-json candidate.json \
+   mol-blender render structure.pse --style-json candidate.json \
      --rough -o renders/match-01.png
    ```
 
@@ -91,10 +91,10 @@ match its visible appearance without claiming the original parameters were recov
 6. Save the reusable preset and prove it reloads in a fresh process:
 
    ```sh
-   blender-render dev save user/reference-match candidate.json \
+   mol-blender dev save user/reference-match candidate.json \
      --description "Describe the observed style" --provenance decision.json
-   blender-render dev inspect user/reference-match
-   blender-render render structure.pse --preset user/reference-match \
+   mol-blender dev inspect user/reference-match
+   mol-blender render structure.pse --preset user/reference-match \
      -o renders/saved-preset-check.png
    ```
 

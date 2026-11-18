@@ -19,20 +19,20 @@ async def validate(args):
     from fastmcp import Client
     from fastmcp.client.transports import StdioTransport
     from PIL import Image, ImageChops, ImageStat
-    from blender_render.local import render_file
-    from blender_render import engine, editor, warm_worker
+    from mol_blender.local import render_file
+    from mol_blender import engine, editor, warm_worker
     root = args.output.resolve(); root.mkdir(parents=True, exist_ok=False)
     home = root / 'config'; home.mkdir(mode=0o700)
     config = json.loads(args.config.read_text()); config['local_python'] = sys.executable
     (home / 'config.json').write_text(json.dumps(config))
-    os.environ['BLENDER_RENDER_HOME'] = str(home)
+    os.environ['MOL_BLENDER_HOME'] = str(home)
     evidence = {'passed': False, 'engine_build': engine.engine_identity()['engine_build'], 'module': engine.__file__}
     evidence_path = root / 'evidence.json'
     starting = render_file(args.fixture, output=root / 'start.png',
         options={'preset': 'mint_sky_assembly', 'width': 256, 'height': 192, 'samples': 8, 'save_blend': True})
     print(json.dumps({'stage': 'starting_render', 'status': starting['status']}), flush=True)
-    transport = StdioTransport(sys.executable, ['-I', '-m', 'blender_render.cli', 'mcp', '--editor'],
-                               env={'BLENDER_RENDER_HOME': str(home)}, cwd=str(root))
+    transport = StdioTransport(sys.executable, ['-I', '-m', 'mol_blender.cli', 'mcp', '--editor'],
+                               env={'MOL_BLENDER_HOME': str(home)}, cwd=str(root))
     session_id = pid = None
     async with Client(transport, timeout=180) as client:
         async def tool(name, **fields):
@@ -110,7 +110,7 @@ async def validate(args):
             with Image.open(root / 'final.png') as a, Image.open(root / 'replayed.png') as b:
                 rms = ImageStat.Stat(ImageChops.difference(a.convert('RGBA'), b.convert('RGBA'))).rms
             assert max(rms) < 2, rms
-            from blender_render.scene.edit import inspect_scene
+            from mol_blender.scene.edit import inspect_scene
             reopened = inspect_scene(root / 'edited.blend')
             assert not reopened['preserve_input']['unsupported']
             evidence.update(native_stdio_png=True, revision_conflict_rejected=True,

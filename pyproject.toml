@@ -27,14 +27,14 @@ pymol = ["mcp>=1.30.0,<2", "anyio>=4.0", "numpy>=1.24", "gemmi>=0.6"]
 security = ["pip-audit==2.10.1"]
 
 [project.scripts]
-blender-render = "blender_render.cli:main"
+mol-blender = "mol_blender.cli:main"
 
 [tool.setuptools]
-packages = ["blender_render", "blender_render.scene", "blender_render.hosted", "blender_render.cluster",
+packages = ["mol_blender", "mol_blender.scene", "mol_blender.hosted", "mol_blender.cluster",
             "co_pymol", "co_pymol.core", "co_pymol.scene", "co_pymol.render", "co_pymol.tools", "co_pymol.utils"]
 
 [tool.setuptools.package-data]
-blender_render = ["*.json", "*.txt"]
+mol_blender = ["*.json", "*.txt"]
 co_pymol = ["instructions.md", "scene/molecular-data.json"]
 
 [project.urls]

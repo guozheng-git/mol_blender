@@ -38,7 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgl1 libegl1 libglu1-mesa libxrender1 libxext6
       - name: Install pinned PyMOL into the test interpreter
-        run: uv pip install --python .venv/bin/python --no-deps --require-hashes -r plugins/structure-studio/skills/structure-studio/references/pymol-requirements.txt
+        run: uv pip install --python .venv/bin/python --no-deps --require-hashes -r plugins/molblender_studio/skills/molblender-studio/references/pymol-requirements.txt
       - name: Install headless Chromium
         run: uv run --no-sync playwright install --with-deps chromium
       - name: Locate Chromium
@@ -54,7 +54,7 @@ jobs:
         run: uv run --no-sync python scripts/sync_render_defaults.py --check
       - name: Run renderer, browser and real PyMOL checks
         env:
-          STRUCTURE_STUDIO_TEST_PYMOL: ${{ github.workspace }}/.venv/bin/python
+          MOLBLENDER_STUDIO_TEST_PYMOL: ${{ github.workspace }}/.venv/bin/python
         run: uv run --no-sync python -m pytest tests --ignore=tests/co_pymol --browser='${{ steps.browser.outputs.executable }}' -ra --junitxml=.validation/renderer-tests.xml
       - name: Run co-PyMOL suite in its test interpreter
         run: uv run --no-sync python -m pytest tests/co_pymol -ra --junitxml=.validation/co-pymol-tests.xml
@@ -67,8 +67,8 @@ jobs:
           from pathlib import Path
           wheel, = Path('.validation/package').glob('*.whl')
           subprocess.run([sys.executable, '-m', 'pytest',
-                          'tests/test_structure_studio.py::test_staged_wheel_matches_renderer_source', '-q'],
-                         env={**os.environ, 'STRUCTURE_STUDIO_TEST_WHEEL': str(wheel)}, check=True)
+                          'tests/test_molblender_studio.py::test_staged_wheel_matches_renderer_source', '-q'],
+                         env={**os.environ, 'MOLBLENDER_STUDIO_TEST_WHEEL': str(wheel)}, check=True)
           PY
       - name: Check installed wheel outside checkout
         run: |
@@ -78,13 +78,13 @@ jobs:
           "$RUNNER_TEMP/wheel-check/bin/python" -I - <<'PY'
           import json
           from pathlib import Path
-          from blender_render import engine
+          from mol_blender import engine
           import co_pymol
           root = Path(engine.__file__).parent
           assert json.loads((root / 'engine-manifest.json').read_text()) == engine.generate_manifest(root) == engine.engine_identity()
           print('Installed wheel manifest verified')
           PY
-          "$RUNNER_TEMP/wheel-check/bin/blender-render" presets
+          "$RUNNER_TEMP/wheel-check/bin/mol-blender" presets
       - name: Save test evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

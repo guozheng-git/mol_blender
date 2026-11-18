@@ -1,4 +1,4 @@
-"""Local preset examples, composed using Pillow in Blender Render's interpreter."""
+"""Local preset examples, composed using Pillow in mol-blender's interpreter."""
 
 from __future__ import annotations
 
