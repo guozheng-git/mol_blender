@@ -51,10 +51,10 @@ def live_service(config, tmp_path, monkeypatch, request):
         assert not thread.is_alive()
 
 
-def completed(store, identifier):
+def completed(store, identifier, color='green'):
     root = store.directory(identifier)
     (root / 'out').mkdir()
-    Image.new('RGB', (32, 24), 'green').save(root / 'out/render.png')
+    Image.new('RGB', (32, 24), color).save(root / 'out/render.png')
     path = root / 'out/render.png'
     atomic_json(root / 'result.json', {'status': 'completed', 'finished_at': time.time(), 'artifacts': {
         'render.png': {'path': 'out/render.png', 'bytes': path.stat().st_size, 'sha256': digest_file(path)}}})

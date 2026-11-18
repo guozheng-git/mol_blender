@@ -103,6 +103,8 @@ account, including jobs submitted by other cluster users.
 Load `blender_render/pymol_bridge_plugin.py` as described in the README, then:
 
 ```pymol
+blender_render cluster=lab
+png figure.png
 blender_render cluster=lab, preset=mint_sky_assembly, output_dir=renders, output_name=protein.png
 blender_render_status JOB_ID, cluster=lab
 blender_render_fetch JOB_ID, cluster=lab, output_dir=renders, output_name=protein.png
@@ -110,12 +112,22 @@ blender_render_cancel JOB_ID, cluster=lab
 ```
 
 Submission exports the current enabled selection, transforms, colors, secondary
-structure and view, then returns a job ID and a local `.cluster.json` recovery
-receipt. Uploading takes time, but PyMOL does not wait through the queue or render
-by default. Fetch downloads and checks every artifact before loading the PNG or
-animation into PyMOL. Use `wait=1, timeout=600` to wait and fetch in one command;
-this blocks PyMOL, and the timeout includes queue time. A wait timeout leaves the
-original job running and never submits another one.
+structure and view. An unnamed still (`blender_render cluster=lab`) waits for the
+verified image and displays it in PyMOL. After successful display, repeating the
+command starts a new render of the current view. Temporary local files are removed;
+use `png figure.png` to save the displayed image.
+
+An interrupted or timed-out preview retains its `.cluster.json` receipt under the
+cluster configuration's `pymol-previews/` directory. Repeating the command resumes
+that same request, even after restarting PyMOL; it never duplicates an uncertain
+submission. `wait=0` returns a job ID immediately, and repeating the command with
+the default wait retrieves that preview. One unnamed preview per profile can be
+active at a time; named outputs can be used for independent concurrent jobs.
+
+Named exports and movie/saved-scene requests return a job ID and receipt without
+waiting by default. Fetch checks every artifact before loading it. Use
+`wait=1, timeout=600` to wait and fetch in one command. Waiting blocks PyMOL, and
+the timeout includes queue time. A timeout leaves the original job running.
 
 Animation controls work as they do locally:
 

@@ -2319,3 +2319,50 @@ retain the PNG; renderer failures retain diagnostics and print their location.
   the preview/save workflow, not figure-quality rendering. The desktop GUI,
   animation playback and live cluster were not exercised. These checks did not
   install runtimes, change configuration, or deploy services.
+
+## Repeatable cluster previews (2026-11-17)
+
+Unnamed `blender_render cluster=lab` previews now wait for the verified image by
+default. A successful display releases the preview so the next call submits the
+current view. The existing job receipt remains the only request identity while
+an upload, wait, download or display is unresolved. An active symlink selects that
+receipt across PyMOL restarts, with a per-profile lock preventing concurrent
+commands from starting duplicate previews. Each fetch gets a separate temporary
+destination without changing the submitted request's receipt.
+
+- Focused regression suite: **229 passed** in **26.29 s**, with two existing
+  Authlib deprecation warnings:
+  `python -m pytest -q tests/test_cluster_previews.py tests/test_cluster_client.py
+  tests/test_jobs.py tests/test_cluster_jobs.py tests/test_local.py
+  tests/test_preview_fallback.py tests/test_scene_edit.py tests/test_editor.py
+  tests/test_warm_worker.py`.
+- Real HTTP tests cover both open and token authentication, distinct jobs after
+  completed previews, asynchronous submission, timeouts, upload replies lost
+  before/after acceptance, uncertain Slurm submission, failed display and
+  interrupted download handoff. Retries preserve the request/job identity.
+  Confirmed failed/cancelled/expired previews retain their receipts and allow a
+  new explicit request. A separate process recovered the same pending preview
+  path; the profile-lock/restart test passed after adding that process check.
+- End-to-end check: real headless **PyMOL 2.5.4 / Python 3.9.16**, the configured
+  Python 3.11 controller subprocess, a loopback HTTP gateway and two native
+  `cluster.worker` processes. The client configuration contained no Blender path.
+  Public `examples/1sps.cif` rendered twice at **160 × 120, two samples** through
+  the same unnamed PyMOL command, with a camera change between calls. Both jobs
+  completed, in **12.48 s** and **9.41 s**, and native `png saved.png` saved the
+  displayed pixels exactly. The live camera and pre-existing output/receipt files
+  were preserved; both temporary preview directories were removed.
+- Those workers used **Blender 5.0.1**, Molecular Nodes **4.5.10**, Blender Python
+  **3.11.13**, NumPy **1.26.4**, Biotite **1.6.0**, and CPU rendering on this Mac.
+  Loaded module digests matched this checkout; source SHA-256 was
+  `06660800b6c5508377ff5614acd3b2b85baadfc01a78965dd57aea2d0b3223ee`.
+  The second PNG was visually inspected. This harness substitutes native worker
+  processes for Slurm/Apptainer; it does not establish container execution.
+- Live cluster attempt: the existing shared gateway and SSH host were reachable.
+  The hostname did not resolve on this Mac, so an isolated test profile used the
+  server IP covered by the trusted TLS certificate. The gateway accepted one
+  request, but `sbatch` rejected it before assigning a Slurm job ID: scratch
+  utilization was **95.5%**, above the site's **95%** submission threshold.
+  PyMOL reported the confirmed failure and retained its receipt. The generated
+  batch script selected Apptainer, but no container/GPU render started. No retry
+  was submitted while that quota restriction remained. Live Slurm/Apptainer
+  execution therefore remains unverified for this change.

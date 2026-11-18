@@ -205,7 +205,7 @@ An existing `render.png` in the working directory does not affect these previews
 If PyMOL cannot display a preview, its files are retained and their path is printed.
 
 Supplying `output_name` or `output_dir` saves the PNG and its `.render/` folder.
-Movie, saved-scene, cluster, `keep_temp=1` and `auto_preview=0` requests also keep
+Movie, saved-scene, `keep_temp=1` and `auto_preview=0` requests also keep
 their files; those exports still require a new output name. Rendering is synchronous.
 `width`, `height`, `samples`, `rough`, `save_blend`,
 `color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
@@ -237,12 +237,31 @@ with individual authentication use `--credential-file` instead of `--url`.
 Then explicitly select the profile in PyMOL:
 
 ```pymol
+blender_render cluster=lab
+png figure.png
+```
+
+An unnamed cluster still waits for completion and replaces the displayed image,
+just like a local preview. Repeat `blender_render cluster=lab` after it finishes
+to render the current view again. Successful previews remove their local temporary
+files. Save the displayed image with PyMOL's `png` command.
+
+With `wait=0`, submission returns immediately. A timeout, connection loss, or
+interrupted display keeps the original receipt; repeating the same command resumes
+that job, including after restarting PyMOL. The active preview is tracked per cluster
+profile under the cluster configuration directory. An uncertain Slurm submission
+never starts a replacement job. Confirmed failed, cancelled, or expired jobs keep
+their receipts for inspection and allow a new preview on the next call.
+
+Named exports retain their asynchronous submission and explicit fetch workflow:
+
+```pymol
 blender_render cluster=lab, rough=1, output_name=cluster-preview.png
 blender_render_status JOB_ID, cluster=lab
 blender_render_fetch JOB_ID, cluster=lab, output_name=cluster-preview.png
 ```
 
-Submission returns a job ID; fetching loads the verified image or animation.
+Named submission returns a job ID; fetching loads the verified image or animation.
 Omitting `cluster` keeps direct local rendering. See the
 [shared cluster guide](docs/shared-cluster.md) for open or authenticated access,
 cancellation, persistent service setup, Slurm configuration and reuse of the uv
