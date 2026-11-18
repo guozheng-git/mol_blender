@@ -24,13 +24,26 @@ local tools for you. Export a transparent PNG for a slide or paper, save an edit
 Blender scene, or use Structure Studio's six animation recipes to rotate your
 structure, reveal a binding site or play through supplied molecular states.
 
-Optional local MCP tools connect compatible assistants to the renderer. An opt-in
-[completed-image delivery adapter](docs/hosted-adapter.md) can be embedded in an
-authenticated host. An optional [shared cluster server](docs/shared-cluster.md)
-lets users submit from PyMOL to Slurm and Apptainer using the same renderer and
-uv-managed runtime. Installation does not start or deploy a server.
+Optional local MCP tools connect compatible assistants to the renderer. An
+optional [shared cluster server](docs/shared-cluster.md) lets users submit from
+PyMOL to Slurm and Apptainer using the same renderer and uv-managed runtime.
+Installation does not start or deploy a server.
+
+See the [documentation index](docs/README.md) for installation routes, user guides,
+advanced setup and developer reference.
 
 ## Install and configure
+
+Want your AI agent to handle installation? Give it this repository and ask it to
+follow [the setup instructions in AGENTS.md](AGENTS.md#installation-requests).
+Tell it whether you want [co-PyMOL](docs/install-co-pymol.md) to control a live
+PyMOL session or [Structure Studio in Claude](docs/install-claude.md) for the
+Claude plugin. For example:
+
+> Follow AGENTS.md to install co-PyMOL for Codex and verify the connection.
+
+If your lab already has a renderer, point your agent to the
+[cluster connection instructions](AGENTS.md#connect-to-an-existing-cluster).
 
 Use Python 3.11 (matching Blender's Python ABI):
 
@@ -64,8 +77,7 @@ blender-render setup --install-runtime --pymol-python /path/to/pymol/python
 
 That installs Blender at `.runtime/runtime/Blender.app` on Apple Silicon macOS.
 Keep `BLENDER_RENDER_HOME` set when rendering or starting MCP so the same local
-configuration is used. `.runtime/` is excluded from Git. The fresh Mac runtime
-installation and an actual render have been [verified](docs/validation.md#fresh-mac-installation).
+configuration is used. `.runtime/` is excluded from Git.
 
 Or configure an existing runtime without installing anything:
 
@@ -116,11 +128,10 @@ Choose one of the featured presets below with `--preset ID` in the CLI or
 `preset=ID` in PyMOL. `mint_sky_assembly` is the default. Click a preset name
 for its complete editable JSON or a preview for the full image.
 
-These are the retained public-structure gallery renders. A preset controls style;
-your structure and saved PyMOL pose determine its composition. Some presets use
-specific chain or ligand selections, which may need adapting for another structure.
-See [preset details](docs/reference-presets.md) and the
-[gallery provenance](examples/presets/gallery.json) for the examples and settings.
+A preset controls style; your structure and saved PyMOL pose determine its
+composition. Every gallery preview uses a public PDB structure. Some presets use specific chain or ligand selections, which may need adapting
+for another structure. See [preset details](docs/reference-presets.md) and the
+[gallery provenance](examples/presets/gallery.json) for sources and settings.
 
 | Preset | Appearance | Preview |
 | --- | --- | --- |
@@ -134,7 +145,7 @@ See [preset details](docs/reference-presets.md) and the
 | [neon_duplex_hero](blender_render/style_preset_neon_duplex_hero.json) | Green protein and gradient nucleic acids against a pink-cyan background. | [<img src="examples/presets/neon_duplex_hero.png" alt="neon_duplex_hero preview" width="220">](examples/presets/neon_duplex_hero.png) |
 | [cyan_candy_mesh](blender_render/style_preset_cyan_candy_mesh.json) | Glossy cyan blobs, recessed blue mesh, and neon pink/yellow helical tubes. A/B surfaces, C/D tubes. | [<img src="examples/presets/cyan_candy_mesh.png" alt="cyan_candy_mesh preview" width="220">](examples/presets/cyan_candy_mesh.png) |
 | [northern_nights](blender_render/style_preset_northern_nights.json) | Teal-blue-violet ribbons, a mint peptide and glowing element-colored PTR. [Selection details](docs/reference-presets.md#northern-nights-bright-ribbons-and-dark-cutaway). | [<img src="examples/presets/northern_nights.png" alt="Northern Nights preview" width="220">](examples/presets/northern_nights.png) |
-| [northern_nights_cutaway](blender_render/style_preset_northern_nights_cutaway.json) | Rounded pocket cutaway, violet-blue binder and glowing PTR on black. [Rocking preview](examples/presets/northern_nights_cutaway_rock.gif). | [<img src="examples/presets/northern_nights_cutaway.png" alt="Northern Nights cutaway preview" width="220">](examples/presets/northern_nights_cutaway.png) |
+| [northern_nights_cutaway](blender_render/style_preset_northern_nights_cutaway.json) | Rounded pocket cutaway, violet-blue binder and glowing PTR on black. [Turntable preview](examples/presets/northern_nights_cutaway_turntable.gif). | [<img src="examples/presets/northern_nights_cutaway.png" alt="Northern Nights cutaway preview" width="220">](examples/presets/northern_nights_cutaway.png) |
 | [dried_paint_green](blender_render/style_preset_dried_paint_green.json) | Textured matte green paint with rounded ribbon edges. | [<img src="examples/presets/dried_paint_green.png" alt="dried_paint_green preview" width="220">](examples/presets/dried_paint_green.png) |
 
 ```sh
@@ -147,10 +158,10 @@ the cyan surface, C the pink tube, and D the yellow tube. Adapt the JSON
 selections for other structures. The [example preparation](docs/reference-presets.md#cyan-candy-mesh)
 explains the public 1QJB preview; loading unmodified 1QJB does not create its C/D selections.
 
-All presets also support `--animation rock` and `--animation 360`. Use
+All presets also support `--animation 360` (turntable) and `--animation rock`. Use
 `blender-render presets` to include your own saved presets in the catalog.
 
-## Rocking and 360° GIFs
+## Turntable and rocking GIFs
 
 Install FFmpeg with the `libx264` and GIF encoders on your PATH. On macOS:
 
@@ -161,10 +172,10 @@ brew install ffmpeg
 Then render with any built-in or saved preset:
 
 ```sh
-blender-render render examples/1sps_pose.pse --animation rock --rock-angle 12 \
-  --duration 3 --fps 24 --gif --width 640 --height 480 -o renders/rock.png
 blender-render render examples/1sps_pose.pse --animation 360 \
   --duration 6 --fps 24 --gif --width 640 --height 480 -o renders/spin.png
+blender-render render examples/1sps_pose.pse --animation rock --rock-angle 12 \
+  --duration 3 --fps 24 --gif --width 640 --height 480 -o renders/rock.png
 ```
 
 Each animation writes PNG, MP4 and lossless `.frames.zip` files beside the requested
@@ -199,7 +210,7 @@ The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
 PyMOL. Rendering is synchronous. `width`, `height`, `samples`, `rough`, `save_blend`,
 `color_follow`, `preserve_view`, `blender_exe` and `timeout` are optional arguments.
-For animations, add `animation=rock` or `animation=360`, `gif=1`, `duration`, `fps`
+For animations, add `animation=360` (turntable) or `animation=rock`, `gif=1`, `duration`, `fps`
 and (for rocking) `rock_angle`. Optional movie preview needs Pillow installed in
 PyMOL's Python; for the repo-local Pixi environment:
 
@@ -208,8 +219,8 @@ pixi add --manifest-path .runtime/pymol/pixi.toml pillow
 ```
 
 ```pymol
-blender_render animation=rock, gif=1, width=640, height=480, output_name=rock.png
-blender_movie_export filename=rock-again.gif
+blender_render animation=360, gif=1, width=640, height=480, output_name=spin.png
+blender_movie_export filename=spin-again.gif
 ```
 
 Movie preview replaces PyMOL's current movie timeline when supported; `auto_preview=0`
@@ -425,7 +436,8 @@ python -m pytest
 python -m build --wheel
 ```
 
-See [validation](docs/validation.md) for executed checks and limits. Public example
+Developers embedding completed images in an authenticated host can use
+the optional [delivery adapter API](docs/hosted-adapter.md). Public example
 structures and citations are in `examples/structures.json`. The client code is MIT;
 Blender API scripts and Molecular Nodes assets retain their GPL terms. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

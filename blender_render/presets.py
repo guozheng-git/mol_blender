@@ -42,7 +42,7 @@ _PRESETS = (
     ("northern_nights", "style_preset_northern_nights.json", "northern_nights.png",
      "Sequence-colored teal-blue-violet ribbons, mint chain B and atom-colored phosphoresidue glow on a bright background.", (), "clay"),
     ("northern_nights_cutaway", "style_preset_northern_nights_cutaway.json", "northern_nights_cutaway.png",
-     "Rounded STAT-style pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.", (), "clay"),
+     "Rounded pocket cut with the violet-blue binder palette, teal-mint peptide and phosphoresidue glow on black.", (), "clay"),
 )
 DEFAULT_PRESET = IMAGE["preset"]
 PRESET_STYLE_FILENAMES = {row[0]: row[1] for row in _PRESETS}

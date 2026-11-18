@@ -22,7 +22,7 @@ Explicitly choose `warm=1`:
 ```pymol
 blender_render warm=1, width=640, height=480, samples=32, output_dir=renders, output_name=first.png
 blender_render warm=1, preset=dried_paint_green, output_dir=renders, output_name=paint.png
-blender_render warm=1, animation=rock, duration=2, fps=12, gif=1, output_dir=renders, output_name=rock.png
+blender_render warm=1, animation=360, duration=2, fps=12, gif=1, output_dir=renders, output_name=spin.png
 ```
 
 The first request starts the worker; subsequent requests reuse it. Rendering is

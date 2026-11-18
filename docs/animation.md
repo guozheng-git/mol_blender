@@ -1,9 +1,8 @@
 # Local animation
 
-The shared camera-orbit renderer and frame encoding were selectively adapted from
-[PR #2](https://github.com/magnusbauer/blender_render/pull/2), especially commit
-`d4da82647c902ed431cf6de087d38351a32aef01`. They run through the local CLI, PyMOL
-bridge and stdio MCP. No queue, paid service or remote runtime is required.
+Create camera orbits and molecular animations through the local CLI, PyMOL
+bridge or stdio MCP. The shared renderer writes a still, an MP4 and a lossless
+frame archive; GIF output is optional.
 
 FPS, orbit defaults, recipe timings and enforced limits come from
 [`render_defaults.yaml`](../render_defaults.yaml), shared with PyMOL and
@@ -31,7 +30,7 @@ quantized to 10 ms; use MP4 when precise frame timing matters.
 Any valid preset can include the same controls under `output.animation`:
 
 ```json
-{"mode": "rock", "duration": 3, "fps": 24, "rock_angle": 12, "gif": true}
+{"mode": "360", "duration": 6, "fps": 24, "gif": true}
 ```
 
 This is the value of `output.animation`, not a complete style. The rest of the
@@ -48,8 +47,9 @@ background. The camera is restored before saving an optional Blender scene.
 
 FFmpeg must support libx264 and GIF encoding. `brew install ffmpeg` supplies this
 on macOS. On Linux or a cluster, install/load an FFmpeg build with these encoders
-alongside the configured native Blender runtime. This branch does not build an
-Apptainer image. Encoder availability is checked before launching Blender.
+alongside the configured native Blender runtime. The
+[Apptainer build](runtime-environments.md#linux-and-apptainer) includes FFmpeg.
+Encoder availability is checked before launching Blender.
 Rendering and encoding share the request deadline (600 seconds by default).
 MP4 uses standard YUV 4:2:0 H.264 for native player compatibility. Keep the PNG
 archive when exact rendered pixels are needed; the MP4 is a lossy presentation.
@@ -78,12 +78,9 @@ verified animation. FFmpeg must be on the invoking process's PATH. The CLI works
 without a PyMOL GUI.
 
 Claude/Codex can use the same CLI or call stdio MCP `render_structure` with
-`animation="rock"`, `gif=true`, and optional duration, FPS, dimensions and samples.
+`animation="360"`, `gif=true`, and optional duration, FPS, dimensions and samples.
 The response includes movie file paths. `read_render` is still the PNG inspection
 tool; movie playback depends on the client's support for local media files.
-
-See [validation](validation.md#local-animation-port) for executed Mac checks and
-untested GUI/client behavior.
 
 ## Shared PyMOL and Structure Studio recipes
 

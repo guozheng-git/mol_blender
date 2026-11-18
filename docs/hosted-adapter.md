@@ -1,13 +1,15 @@
-# Optional completed-render delivery
+# Completed-render delivery API
+
+This reference is for developers embedding completed renders in an authenticated
+host. For local rendering, start with the [installation guides](README.md#get-started).
 
 Install the `hosted` extra to use `blender_render.hosted.adapter.create_adapter`.
 The ordinary CLI, local stdio MCP, PyMOL bridge and renderer do not import this
 adapter or start an HTTP listener.
 
-Selected from PR #3 (`0b090b3`): native PNG verification descriptors, the MCP Apps
-viewer, explicit image messaging, optional Library upload and saved-image picker,
-plus the simulated-host browser tests. The adapter adds a small integration
-boundary instead of restoring the legacy service, job store or render workers.
+The adapter provides native PNG verification descriptors, an MCP Apps viewer,
+explicit image messaging, optional Library upload and a saved-image picker.
+The embedding service supplies already-authorized completed artifacts.
 
 The embedding service must provide:
 
@@ -27,7 +29,7 @@ render submission, retry, remote installation or path-reading tool here.
 
 This is an integration library, not a deployable hosted renderer. The caller
 must review its authentication/ownership implementation before serving it.
-The separate [cluster service](shared-cluster.md) now supplies optional Slurm
+The separate [cluster service](shared-cluster.md) supplies optional Slurm
 submission and private downloads. It does not automatically connect this adapter
 to ChatGPT or Claude, and installing either feature does not deploy a service.
 
