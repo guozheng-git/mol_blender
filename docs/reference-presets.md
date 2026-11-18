@@ -90,8 +90,7 @@ All controls use the existing schema and scene builder. Unsupported keys, zero g
 
 ## Evidence
 
-See [platform coverage and validation](validation.md) for recorded checks and
-limits. [Gallery metadata](../examples/presets/gallery.json) retains provenance,
+[Gallery metadata](../examples/presets/gallery.json) retains provenance,
 preset hashes, views, sizes and image hashes. Public examples include coordinate
 URLs/hashes. The Northern Nights previews are prepared-scene illustrations whose
 molecular source files are not distributed; they are labeled separately from

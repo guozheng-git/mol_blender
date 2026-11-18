@@ -35,8 +35,7 @@ model_3 — ipTM 0.41 (others are 0.7+).
 - **An MCP client** — Codex, Claude Code, or Cursor 3.12.17 or newer. Older
   Cursor versions may not refresh the tool list when PyMOL starts after Cursor.
 - **macOS** is the tested desktop installation path. Linux, conda and other
-  layouts need verification with their own PyMOL interpreter; see
-  [platform coverage](../validation.md#platform-coverage).
+  layouts need verification with their own PyMOL interpreter.
 
 ## Installing
 

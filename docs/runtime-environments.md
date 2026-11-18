@@ -68,9 +68,9 @@ apptainer exec --cleanenv --nv --bind "$PWD:/work" renderer.sif \
 
 `--nv` is for NVIDIA Linux hosts; omit it for CPU execution. The image build and
 real Linux/CUDA rendering must be validated on the target Linux deployment.
-See [recorded platform coverage](validation.md#platform-coverage); Mac testing
-does not establish Linux/CUDA execution. Reuse the same image and pinned sources
-for CPU/GPU tests, and record the exact SIF checksum alongside the release manifest.
+Mac testing does not establish Linux/CUDA execution. Reuse the same image and
+pinned sources for CPU/GPU tests, and record the exact SIF checksum alongside the
+release manifest.
 
 The [optional shared cluster service](shared-cluster.md) runs that same image for
 each Slurm job, directly using its existing uv Python. It also supports binding an

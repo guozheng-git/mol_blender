@@ -42,8 +42,6 @@ and specify your client and workflow.
 
 - [Completed-render delivery API](hosted-adapter.md): the optional adapter for
   developers embedding completed images in an authenticated host.
-- [Platform coverage and validation](validation.md): recorded checks, their scope
-  and remaining acceptance limits.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md) and
   [current runtime sources](../blender_render/runtime-sources.json).
   The [historical dependency inventory](dependency-source-manifest.json) preserves

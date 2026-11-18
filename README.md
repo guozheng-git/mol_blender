@@ -77,9 +77,7 @@ blender-render setup --install-runtime --pymol-python /path/to/pymol/python
 
 That installs Blender at `.runtime/runtime/Blender.app` on Apple Silicon macOS.
 Keep `BLENDER_RENDER_HOME` set when rendering or starting MCP so the same local
-configuration is used. `.runtime/` is excluded from Git. See the
-[platform coverage and validation summary](docs/validation.md#platform-coverage)
-for recorded installation/render checks and their limits.
+configuration is used. `.runtime/` is excluded from Git.
 
 Or configure an existing runtime without installing anything:
 
@@ -441,8 +439,7 @@ python -m pytest
 python -m build --wheel
 ```
 
-See [platform coverage and validation](docs/validation.md) for recorded checks and
-limits. Developers embedding completed images in an authenticated host can use
+Developers embedding completed images in an authenticated host can use
 the optional [delivery adapter API](docs/hosted-adapter.md). Public example
 structures and citations are in `examples/structures.json`. The client code is MIT;
 Blender API scripts and Molecular Nodes assets retain their GPL terms. See

@@ -82,9 +82,6 @@ Claude/Codex can use the same CLI or call stdio MCP `render_structure` with
 The response includes movie file paths. `read_render` is still the PNG inspection
 tool; movie playback depends on the client's support for local media files.
 
-See [platform coverage and validation](validation.md) for recorded animation
-checks and remaining GUI/client acceptance limits.
-
 ## Shared PyMOL and Structure Studio recipes
 
 Both clients use `co_pymol/scene/animation.py` for `turntable`, `rock`, `reveal`,

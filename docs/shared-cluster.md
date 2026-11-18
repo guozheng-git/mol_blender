@@ -489,8 +489,7 @@ in the job directory until cleanup; the API does not expose those logs.
 Run source and installed-wheel tests with the `dev`, `mcp` and `cluster` extras.
 Before opening a service to other users, exercise a real Slurm allocation, GPU
 selection if enabled, cancellation, image/movie download and cleanup on the target
-cluster. Local HTTP tests do not establish Slurm or Apptainer integration. The
-recorded checks and their scope are in the [validation summary](validation.md).
+cluster. Local HTTP tests do not establish Slurm or Apptainer integration.
 Keep site-specific acceptance evidence private.
 
 For reproducible real acceptance, run this on the Linux gateway with the installed

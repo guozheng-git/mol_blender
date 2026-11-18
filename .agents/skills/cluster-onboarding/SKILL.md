@@ -107,8 +107,8 @@ python scripts/validate_cluster_slurm.py --server-config /path/to/server.json \
 Run CPU first, then the GPU configuration (new `--output`). It submits real jobs
 and records the compute node's Apptainer version, the actual Cycles device and
 Slurm accounting in `evidence.json`. Only `"passed": true` there establishes the
-site works. Update the concise release summary in `docs/validation.md` with the
-outcome, tested revision, versions and GPU model. Keep detailed logs, job IDs and
+site works. Report the outcome, tested revision, versions and GPU model in the
+pull request. Keep detailed logs, job IDs and
 site configuration in ignored `.validation/` or private storage; omit private
 hostnames, accounts, paths and deployment history from the public summary.
 
