@@ -62,6 +62,16 @@ inside that job; status polling and fetching results do not create jobs. The
 gateway has no persistent GPU allocation. Reusing the uv environment alone is
 not a warm Blender process.
 
+The existing warm worker can stay running on a configured server with
+`blender-render worker start --idle-timeout 0`. Subsequent server-side
+`blender-render render ... --warm` calls reuse it. Start and render must use the
+same configuration and, for Apptainer, the same container session; see
+[the warm worker guide](local-worker.md#inside-apptainer-on-linux).
+This is distinct from the current forwarded gateway: both its Slurm and
+workstation schedulers still start a fresh Blender process for each request.
+Keeping the gateway or SSH tunnel open does not yet give `cluster=lab` warm
+Blender reuse.
+
 ## Use from PyMOL
 
 Install the base package in a local uv environment and run `blender-render setup`
@@ -290,7 +300,7 @@ On the submitting computer, configure the IP and SSH forwarding once (replace
 the example values with your workstation's settings):
 
 ```sh
-blender-render cluster connect --profile rtx4080 --ssh-host my-workstation --node 192.0.2.10 \
+blender-render cluster connect --profile lab --ssh-host my-server --node 192.0.2.10 \
   --remote-executable /srv/blender-render/workstation/controller/bin/blender-render \
   --server-config /srv/blender-render/workstation/server.json
 ```
@@ -302,15 +312,15 @@ are provisioned privately by `connect`; no public HTTP port or manual token
 copy is needed. Then, in local PyMOL:
 
 ```pymol
-blender_render cluster=rtx4080
+blender_render cluster=lab
 png figure.png
-blender_render cluster=rtx4080
+blender_render cluster=lab
 ```
 
 The image returns to PyMOL on this computer. Repeating the command after display
 renders the current view again. If the connection drops during a render, repeat
 the command to recover that same request. Saved profiles reconnect automatically
-through the job API; `blender-render cluster connect --profile rtx4080` also
+through the job API; `blender-render cluster connect --profile lab` also
 reopens the tunnel explicitly. Disconnecting stops the gateway and tunnel while
 already submitted systemd workers continue within their deadline.
 

@@ -2366,3 +2366,65 @@ destination without changing the submitted request's receipt.
   batch script selected Apptainer, but no container/GPU render started. No retry
   was submitted while that quota restriction remained. Live Slurm/Apptainer
   execution therefore remains unverified for this change.
+
+## SSH-forwarded workstation rendering (2026-11-17)
+
+The explicit workstation scheduler runs the existing container worker in a
+bounded systemd user service. It reuses the same gateway, receipts, job API,
+SSH connector and PyMOL preview path. Slurm remains the default, with no fallback
+from a rejected cluster submission to a desktop GPU.
+
+- In a fresh editable installation, **180 tests passed** in **111.49 s**:
+  `python -m pytest -q tests/test_cluster_jobs.py tests/test_cluster_server.py
+  tests/test_cluster_connect.py tests/test_cluster_workstation.py
+  tests/test_cluster_previews.py tests/test_cluster_client.py tests/test_jobs.py`.
+  The suite includes real gateway processes and forwarded HTTP with simulated
+  SSH, plus scheduler tests for lost launch replies, restart reconciliation,
+  cancellation, resource policy, clean environments and missing results. One
+  existing Starlette/httpx deprecation warning was emitted. After adding the
+  active-spool migration guard, the workstation and scheduler suites passed
+  **77 tests**. Local/preview regression checks passed **29**, with one optional
+  dependency check skipped in that minimal environment.
+- Built the release from clean commit `fcb201548fe040f16b9c90473b69cfeab8f6b2a5`.
+  Installed its wheel in a separate environment and imported it with isolated
+  Python outside the checkout. The package, remote controller, container
+  identity check and both completed jobs agreed on engine build
+  `07a532041cd2860a183b44e82345225d1414778dd62032df6be68b4293f4b17e`.
+  Wheel SHA-256:
+  `688fb030df40699ae636a49cda98df510c1ff252213ae7140e6429791eb9a60a`.
+- Rebuilt a separate SIF using `containers/Apptainer-update.def`, after verifying
+  the base image checksum. Runtime requirement files and the runtime contract
+  matched; the application wheel was updated offline without relocating Linux
+  environments. An initial archive transfer included macOS metadata sidecars;
+  removing those generated sidecars allowed the existing single-wheel assertion
+  and build to pass. New SIF SHA-256:
+  `1786e09aecc083eb2de27b080ad0f9d0f313d3ea8c8656096be1b33e1d81c8e0`.
+  Workstation doctor passed with Apptainer **1.5.0-rc.2+73-g97d6dd7a1-ipd**,
+  systemd **259**, Linux x86_64 and Python **3.11.15**.
+- Real end-to-end check: headless **PyMOL 2.5.4 / Python 3.9.16** on macOS,
+  its configured controller subprocess, a saved token-authenticated SSH profile,
+  the Linux workstation gateway, systemd and Apptainer. Public `examples/1sps.cif`
+  rendered twice at **320 × 240, eight samples** through one configured SSH
+  profile, with a **600-second** client timeout.
+  Both manifests recorded **CUDA on the server's NVIDIA GPU**. End-to-end
+  times were **14.75 s** and **18.05 s**. The second included automatically reopening
+  the SSH tunnel after an explicit `disconnect --keep-gateway` between renders.
+- Both images loaded into PyMOL; native `png saved.png` reproduced their RGBA
+  pixels exactly. A camera rotation changed the second image, each requested
+  camera stayed intact, and both local preview directories were removed after
+  display. Existing output/receipt fixtures were preserved. Exactly two distinct
+  completed gateway jobs were observed, each with a workstation unit ID and no
+  Slurm ID. Request files were removed by the workers after completion. The final
+  tunnel stayed open, and the second PNG was visually inspected.
+- The running worker's cgroup reported `memory.max=8589934592` and
+  `cpu.max=400000 100000`; systemd reported a **65-minute** maximum runtime.
+  Both Blender manifests reported Blender **5.0.1**, Molecular Nodes **4.5.10**,
+  Python **3.11.15**, NumPy **1.26.4** and Biotite **1.6.0**. All **28** reported
+  loaded-module digests matched the checkout. Source snapshot SHA-256:
+  `20e7d1d39f575ab2315babea547573497edcbcb0ce0a61e979709fb729b48a95`.
+- An earlier direct Apptainer worker check also completed on the same server GPU
+  using the pre-existing image. The separate shared Slurm service remained active;
+  its earlier scratch-quota rejection is still the limit on live Slurm validation.
+  These small renders establish forwarding, CUDA execution and repeatable preview
+  behavior, not figure-quality output. The desktop PyMOL GUI and live workstation
+  cancellation were not exercised; cancellation is covered by scheduler tests.

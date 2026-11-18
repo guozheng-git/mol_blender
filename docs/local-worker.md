@@ -28,12 +28,13 @@ blender_render warm=1, animation=rock, duration=2, fps=12, gif=1, output_dir=ren
 The first request starts the worker; subsequent requests reuse it. Rendering is
 synchronous and the bridge presents the completed PNG or animation as usual.
 Use a new output name for each render. Omit `warm`, or use `warm=0`, for a fresh
-local Blender process. Use `cluster=lab` for Slurm; combining a cluster profile
+local Blender process. Use `cluster=lab` for a remote gateway; combining a cluster profile
 with `warm=1` is rejected before exporting or submitting anything.
 
-The worker runs on the local computer, under the same user and configuration as
-the configured controller Python. A cluster profile does not send warm requests
-to the gateway's local GPU. Remote clients continue to use the Slurm gateway.
+The worker runs on the controller's computer, under the same user and
+configuration. This can be a server when these commands are run there. A cluster
+profile does not yet send warm requests to it: the gateway's Slurm and workstation
+schedulers both start a fresh Blender process for each remote request.
 
 ## From the command line
 
@@ -127,3 +128,6 @@ This is local execution on that Linux host. For Slurm, use the
 independent allocation for each render request. Reusing an existing Linux Studio
 runtime through a read-only bind at its original absolute path is also supported;
 keep the worker's configuration, socket and temporary files on writable storage.
+For a long-lived server session, use `worker start --idle-timeout 0` and keep that
+container session running. The warm worker then stays available until explicitly
+stopped. This alone does not connect it to the forwarded gateway API.
