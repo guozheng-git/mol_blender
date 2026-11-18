@@ -41,11 +41,22 @@ To refresh dependency locks deliberately, then rerun the affected runtime checks
 
 ```sh
 uv lock
+uv pip compile --python-version 3.11 --universal --generate-hashes runtime/native.in \
+  -o blender_render/runtime-requirements.txt
 uv pip compile --python-version 3.11 --universal --generate-hashes runtime/pymol.in \
   -o plugins/structure-studio/skills/structure-studio/references/pymol-requirements.txt
 uv pip compile --python-version 3.11 --universal --generate-hashes runtime/render.in \
   -o plugins/structure-studio/skills/structure-studio/references/render-requirements.txt
 ```
+
+`runtime/native.in` retains the scientific ABI pins and supplies the native
+Blender dependency lock. The Studio render lock adds the matching `bpy` wheel;
+native Blender supplies its own `bpy`. After a native dependency version changes,
+refresh its source URL, checksum and license in `blender_render/runtime-sources.json`.
+Run `uv run --locked --group security python scripts/audit_dependencies.py` to
+check all controller, build and runtime package versions, including platform
+variants. Pillow runs in Python 3.11; the PyMOL-only Python 3.10 install skips it
+because contact sheets run in the separate renderer interpreter.
 
 ## Linux and Apptainer
 

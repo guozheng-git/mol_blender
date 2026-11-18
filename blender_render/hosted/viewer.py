@@ -24,7 +24,7 @@ def inline_viewer_html(*, background_context=True, image_message=True,
 def html_resource(uri, html, metadata):
     """Preserve resource-content metadata across the pinned FastMCP conversion."""
     from mcp import types
-    return types.ServerResult(types.ReadResourceResult(contents=[
+    return types.ReadResourceResult(contents=[
         types.TextResourceContents(uri=str(uri), mimeType="text/html;profile=mcp-app",
                                    text=html, _meta=metadata)
-    ]))
+    ])
