@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1", "PyYAML==6.0.3"]
+requires = ["setuptools==84.2.1", "wheel==0.48.0", "PyYAML==6.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,15 +11,20 @@ requires-python = ">=3.11"
 authors = [{ name = "Magnus Bauer" }]
 license = "MIT AND GPL-3.0-or-later"
 license-files = ["LICENSE", "LICENSES/GPL-3.0-or-later.txt", "THIRD_PARTY_NOTICES.md"]
-dependencies = ["jsonschema>=4.23,<5", "pillow>=11,<13"]
+# Pillow is used in the Python 3.11 renderer, including co-PyMOL's detached gallery.
+# The PyMOL-only 3.10 install deliberately skips this renderer dependency.
+dependencies = ["jsonschema>=4.23,<5", "pillow>=13,<14; python_version >= '3.11'"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "numpy==1.26.4", "build>=1.2,<2", "playwright>=1.50,<2", "PyYAML==6.0.3"]
-mcp = ["fastmcp==2.14.7"]
-hosted = ["fastmcp==2.14.7"]
+mcp = ["fastmcp==3.4.11", "mcp>=1.30.0,<2"]
+hosted = ["fastmcp==3.4.11", "mcp>=1.30.0,<2"]
 cluster = ["starlette==1.10.0", "uvicorn==0.54.0"]
 # Installed into PyMOL's own Python for the co_pymol MCP server.
-pymol = ["mcp~=1.27.1", "anyio>=4.0", "numpy>=1.24", "gemmi>=0.6"]
+pymol = ["mcp>=1.30.0,<2", "anyio>=4.0", "numpy>=1.24", "gemmi>=0.6"]
+
+[dependency-groups]
+security = ["pip-audit==2.10.1"]
 
 [project.scripts]
 blender-render = "blender_render.cli:main"

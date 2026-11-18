@@ -1,5 +1,7 @@
 include LICENSE THIRD_PARTY_NOTICES.md AGENTS.md CLAUDE.md
 include render_defaults.yaml
+include uv.lock .python-version
+recursive-include runtime *.in
 recursive-include blender_render *.html
 recursive-include LICENSES *.txt
 # Ship only the public documentation listed here, never draft/private notes.

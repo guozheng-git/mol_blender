@@ -441,3 +441,8 @@ the optional [delivery adapter API](docs/hosted-adapter.md). Public example
 structures and citations are in `examples/structures.json`. The client code is MIT;
 Blender API scripts and Molecular Nodes assets retain their GPL terms. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+CI runs tests, packaging, secret scanning and dependency-advisory checks on pull
+requests and weekly. See [repository maintenance](docs/repository-maintenance.md)
+for local commands and administrator settings, and [SECURITY.md](SECURITY.md)
+for vulnerability reporting and execution boundaries.
