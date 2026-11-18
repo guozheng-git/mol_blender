@@ -305,19 +305,7 @@ def use_existing(executable: str, config_home: str | None) -> dict:
                         "external_renderer": True})
 
 
-def _check_external_renderer(current: dict) -> None:
-    if current.get("external_renderer") and not current.get("mol_blender"):
-        raise SetupError(
-            "This Studio home needs its external renderer registered under the new name. "
-            "After upgrading the renderer, run: studio.py setup --use-existing "
-            "/absolute/path/to/mol-blender --mol-blender-home /absolute/config/root. "
-            "Keep the existing runtime and configuration at their original paths."
-        )
-
-
 def setup(components: str = "all", background: bool = False) -> dict:
-    if components in {"render", "all"}:
-        _check_external_renderer(state())
     if background:
         with _setup_guard(components, wait=False) as info:
             if info is None:
@@ -443,7 +431,6 @@ def _refresh_once() -> dict:
 
 def renderer_env() -> tuple[Path, dict]:
     status = _wait_until(renderer_status, lambda s: s["render_ready"], "Blender")
-    _check_external_renderer(status["state"])
     if not status["render_installed"]:
         raise SetupError("Blender is not installed yet. Run: studio.py setup --background")
     if not status["render_ready"]:

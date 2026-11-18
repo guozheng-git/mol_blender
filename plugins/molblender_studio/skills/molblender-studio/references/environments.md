@@ -40,18 +40,7 @@ python3 "$S" setup --use-existing /path/to/mol_blender/.venv/bin/mol-blender \
 python3 "$S" setup --only pymol
 ```
 
-When upgrading from Structure Studio, keep the old cache and runtime directories
-at their original absolute paths and set `MOLBLENDER_STUDIO_HOME` to that existing
-home (previous default: `~/.cache/structure-studio`). Moving it breaks embedded
-virtualenv and Blender-shim paths. Upgrade an external renderer first, then rerun
-`setup --use-existing` with its new `mol-blender` executable and the original
-configuration root. Merely setting the new environment variable does not update
-the saved external-renderer registration. For Studio-managed runtimes, rerun
-`setup --background` in the original home; copy user presets from its old
-`blender-render/presets/` to the new `mol-blender/presets/` directory if needed.
-
-`setup` installs the managed `bpy` runtime unless an external renderer is already
-registered. For a fresh installation, choose a new `MOLBLENDER_STUDIO_HOME`.
+`setup` without `--use-existing` always installs the managed `bpy` runtime. Delete `~/.cache/molblender-studio` to start over.
 
 ## Troubleshooting
 

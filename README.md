@@ -207,9 +207,6 @@ mol_blender selection=(all), preset=dried_paint_green, output_dir=renders, outpu
 mol_blender style_json=/absolute/path/to/my-style.json, output_name=custom.png
 ```
 
-The PyMOL command and Python package are both `mol_blender`;
-the terminal command is `mol-blender`.
-
 The adapter exports enabled objects, transforms, colors, secondary structure and
 camera, calls local Blender through the configured Python, then loads the PNG into
 PyMOL. An unnamed local still behaves like PyMOL's `ray`: each call replaces the
