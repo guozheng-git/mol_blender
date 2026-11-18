@@ -24,11 +24,13 @@ local tools for you. Export a transparent PNG for a slide or paper, save an edit
 Blender scene, or use Structure Studio's six animation recipes to rotate your
 structure, reveal a binding site or play through supplied molecular states.
 
-Optional local MCP tools connect compatible assistants to the renderer. An opt-in
-[completed-image delivery adapter](docs/hosted-adapter.md) can be embedded in an
-authenticated host. An optional [shared cluster server](docs/shared-cluster.md)
-lets users submit from PyMOL to Slurm and Apptainer using the same renderer and
-uv-managed runtime. Installation does not start or deploy a server.
+Optional local MCP tools connect compatible assistants to the renderer. An
+optional [shared cluster server](docs/shared-cluster.md) lets users submit from
+PyMOL to Slurm and Apptainer using the same renderer and uv-managed runtime.
+Installation does not start or deploy a server.
+
+See the [documentation index](docs/README.md) for installation routes, user guides,
+advanced setup and developer reference.
 
 ## Install and configure
 
@@ -75,8 +77,9 @@ blender-render setup --install-runtime --pymol-python /path/to/pymol/python
 
 That installs Blender at `.runtime/runtime/Blender.app` on Apple Silicon macOS.
 Keep `BLENDER_RENDER_HOME` set when rendering or starting MCP so the same local
-configuration is used. `.runtime/` is excluded from Git. The fresh Mac runtime
-installation and an actual render have been [verified](docs/validation.md#fresh-mac-installation).
+configuration is used. `.runtime/` is excluded from Git. See the
+[platform coverage and validation summary](docs/validation.md#platform-coverage)
+for recorded installation/render checks and their limits.
 
 Or configure an existing runtime without installing anything:
 
@@ -127,11 +130,13 @@ Choose one of the featured presets below with `--preset ID` in the CLI or
 `preset=ID` in PyMOL. `mint_sky_assembly` is the default. Click a preset name
 for its complete editable JSON or a preview for the full image.
 
-These are the retained public-structure gallery renders. A preset controls style;
-your structure and saved PyMOL pose determine its composition. Some presets use
-specific chain or ligand selections, which may need adapting for another structure.
-See [preset details](docs/reference-presets.md) and the
-[gallery provenance](examples/presets/gallery.json) for the examples and settings.
+A preset controls style; your structure and saved PyMOL pose determine its
+composition. Most gallery previews use public structures. The two Northern Nights
+previews use a prepared scene whose molecular source is not distributed; they
+illustrate the look rather than provide a reproducible public structure example.
+Some presets use specific chain or ligand selections, which may need adapting
+for another structure. See [preset details](docs/reference-presets.md) and the
+[gallery provenance](examples/presets/gallery.json) for sources and settings.
 
 | Preset | Appearance | Preview |
 | --- | --- | --- |
@@ -436,7 +441,9 @@ python -m pytest
 python -m build --wheel
 ```
 
-See [validation](docs/validation.md) for executed checks and limits. Public example
+See [platform coverage and validation](docs/validation.md) for recorded checks and
+limits. Developers embedding completed images in an authenticated host can use
+the optional [delivery adapter API](docs/hosted-adapter.md). Public example
 structures and citations are in `examples/structures.json`. The client code is MIT;
 Blender API scripts and Molecular Nodes assets retain their GPL terms. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

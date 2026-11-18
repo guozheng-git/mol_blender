@@ -2,7 +2,15 @@ include LICENSE THIRD_PARTY_NOTICES.md AGENTS.md CLAUDE.md
 include render_defaults.yaml
 recursive-include blender_render *.html
 recursive-include LICENSES *.txt
-recursive-include docs *.md *.json
+# Ship only the public documentation listed here, never draft/private notes.
+include docs/README.md
+include docs/install-co-pymol.md docs/install-claude.md docs/co-pymol/README.md
+include docs/animation.md docs/reference-presets.md
+include docs/blender-editing.md docs/chat-editing.md
+include docs/local-worker.md docs/runtime-environments.md docs/shared-cluster.md
+include docs/hosted-adapter.md docs/validation.md
+include docs/dependency-source-manifest.json
+prune .validation
 recursive-include examples *.cif *.json *.png *.pse *.py
 recursive-include .agents/skills *.md
 recursive-include .claude/skills *.md

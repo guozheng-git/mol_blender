@@ -4,9 +4,10 @@ Use this route for Structure Studio's file-based molecular workspaces, PyMOL
 sessions and Blender renders. For control of an existing desktop PyMOL session,
 use [co-PyMOL](install-co-pymol.md).
 
-Run the build commands from the repository root with `uv` on `PATH`. Build from
-the requested checkout/revision. The source marketplace does not contain the
-renderer wheel, so registering this repository directly is insufficient for a
+You can follow these steps yourself or ask your agent to run them. Run the build
+commands from the repository root with `uv` on `PATH`, using the revision you
+intend to install. The source marketplace does not contain the renderer wheel,
+so registering this repository directly is insufficient for a
 complete install. Keep generated packages outside tracked source directories.
 
 ## Build a complete package
@@ -23,7 +24,7 @@ new. It contains the staged `plugin/structure-studio/`, its bundled wheel,
 and `structure-studio-skill.zip`. Reuse these outputs for the selected Claude
 surface. For a release tied to a clean committed revision, use
 `scripts/build_release.py` and `scripts/verify_release.py` instead; an installation
-request does not require committing or publishing the user's working tree.
+does not require committing or publishing your working tree.
 
 ## Claude Code: install from the staged package
 
@@ -57,8 +58,8 @@ claude plugin list --json
 ```
 
 Keep the staged directory: it is the registered local marketplace source. Use
-the requested scope if the user chose project/local instead of user. For updates,
-refresh the package at the registered source, then use
+`project` or `local` scope instead of `user` if that is where you want it installed.
+For updates, refresh the package at the registered source, then use
 `claude plugin marketplace update blender-render` and
 `claude plugin update structure-studio@blender-render --scope user`, matching the
 existing installation's scope. Preserve other marketplaces and plugins.
@@ -82,12 +83,12 @@ while the skill ZIP has `SKILL.md` at the skill folder's root. See Claude's
 [plugin instructions](https://support.claude.com/en/articles/13837440-use-plugins-in-claude)
 and [skill instructions](https://support.claude.com/en/articles/12512180-use-skills-in-claude).
 
-Complete the upload through available UI controls when possible. If the agent
-cannot access the upload UI, give the user the built ZIP's absolute path and the
-exact remaining upload step; do not report it as installed. After loading the
-plugin/skill, locate its `scripts/studio.py` inside Claude's execution environment
-and use that absolute path as `STUDIO_SCRIPT`. Installing in local Claude Code
-does not upload the plugin to the user's Claude account.
+After loading the plugin/skill, ask Claude to locate its `scripts/studio.py` in
+its execution environment and use that absolute path as `STUDIO_SCRIPT`.
+Installing in local Claude Code does not upload the plugin to your Claude account.
+If an agent cannot access the upload UI, it should provide the built ZIP's path
+and the remaining upload step; installation is only complete after the upload
+and verification in the target environment.
 
 ## Set up the runtime in the target environment
 

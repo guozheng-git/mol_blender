@@ -332,7 +332,7 @@
     "chain_selections": [
       "B"
     ],
-    "example_structure": "STAT example (user-selected)",
+    "example_structure": "Prepared scene (source not distributed)",
     "default": false
   },
   {
@@ -352,7 +352,7 @@
     "chain_selections": [
       "B"
     ],
-    "example_structure": "STAT example (user-selected)",
+    "example_structure": "Prepared scene (source not distributed)",
     "default": false
   }
 ]

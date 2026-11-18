@@ -1,15 +1,24 @@
 # Install through co-PyMOL
 
-Use this route to connect an agent to the user's live desktop PyMOL session.
-Run commands from the repository root. Reuse an existing checkout; if cloning,
-use the requested revision containing both `co_pymol/` and `blender_render/`.
+Connect Codex, Claude Code or Cursor to your live desktop PyMOL session.
+You can follow these steps yourself or ask your agent to run them.
+
+Run commands from the repository root. Reuse an existing checkout, or clone it:
+
+```sh
+git clone https://github.com/magnusbauer/blender_render.git
+cd blender_render
+```
+
+Use the revision you intend to install; it must contain both `co_pymol/` and
+`blender_render/`. Keep the checkout at that location after installation.
 
 ## Connect PyMOL to one client
 
 Locate PyMOL's own Python and the requested MCP client. On a standard macOS
 installation, use the path below. For conda or another installation, use that
 PyMOL environment's interpreter. Set `PYMOL_CLIENT` to exactly one of `codex`,
-`claude` or `cursor`, based on the user's request or current client.
+`claude` or `cursor`, matching the client you want to connect.
 
 ```sh
 PYMOL_PYTHON=/Applications/PyMOL.app/Contents/bin/python
@@ -37,9 +46,10 @@ console executable in the merged distribution; use `python -m co_pymol`.
 The setup command preserves other MCP entries, adds the startup hook to
 `~/.pymolrc.py`, and registers the stdio proxy for the selected client. Codex and
 Claude Code need their CLI on `PATH`; Cursor setup writes `~/.cursor/mcp.json`.
+Setup configures only the selected client; it does not install the client itself.
 Leave the default host/port unchanged. These setup commands can be rerun.
 
-## Enable Blender rendering when requested
+## Optional: enable Blender rendering
 
 Basic PyMOL control needs no Blender download. For local Blender renders, ensure
 `uv` is on `PATH` and run the following in this checkout. `uv` uses the pinned
@@ -72,7 +82,7 @@ desktop app does not inherit a custom environment variable, merge absolute
 rendering, follow [the shared cluster client setup](shared-cluster.md) instead
 of downloading a local Blender runtime; setup alone does not submit a job.
 
-## Verify and report
+## Verify the connection
 
 Preserve unsaved PyMOL work before a full quit/relaunch, and open a new session in
 the selected client. PyMOL should print
@@ -80,13 +90,14 @@ the selected client. PyMOL should print
 
 - Check only the selected client: `codex mcp list`, `claude mcp list`, or Cursor's
   MCP settings. It should have a `pymol` entry using `-m co_pymol proxy`.
-- Call a real PyMOL tool, such as `run` with `print(cmd.get_version())`, from that
-  client. If the current chat needs restarting to discover tools, report that
-  remaining step instead of claiming the connection was verified.
+- Ask your agent to call a real PyMOL tool, such as `run` with
+  `print(cmd.get_version())`, from that client. A real response verifies the
+  connection. If the tools are missing, restart the chat to discover them.
 - If rendering was requested, check `blender_presets` and complete a small
   preview through `blender_render`. Retain the PNG, manifest and resolved style;
   `doctor` and preset enumeration alone do not verify rendering.
 
-Report the client, interpreter, renderer configuration (if configured), checks
-that passed, and any remaining restart or connection issue. See the
-[co-PyMOL guide](co-pymol/README.md) for upgrades and troubleshooting.
+For an agent-led install, the completion report should identify the client,
+interpreter, renderer configuration (if configured), actual checks and remaining
+restart or connection issues. See the [co-PyMOL guide](co-pymol/README.md) for
+upgrades and troubleshooting.

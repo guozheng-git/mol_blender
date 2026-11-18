@@ -1,14 +1,22 @@
 # Isolated local and Linux environments
 
+For a first installation, use the [co-PyMOL](install-co-pymol.md) or
+[Structure Studio](install-claude.md) guide. This page covers environment
+boundaries, dependency maintenance and Linux image builds.
+
+## Controller environment
+
 The controller uses `.python-version` (Python 3.11.15) and `uv.lock`. Run
 `uv sync --locked --extra dev --extra mcp` in a checkout. Add `--extra hosted`
 only when working on the optional delivery adapter. uv itself is installed
 explicitly; the project does not bootstrap it or modify global Python packages.
 
+## PyMOL and Blender runtimes
+
 Structure Studio setup creates two separate uv environments below
 `STRUCTURE_STUDIO_HOME`: PyMOL and Blender's `bpy` runtime. Their complete,
 hash-locked dependency sets are shipped under the skill's `references/`.
-PyMOL 3.1.0.4 and the renderer both pin NumPy 1.26.4. The 3.2.0.2 unofficial wheel was rejected after real coordinate access failed with its declared NumPy 2 dependency. These environments must
+PyMOL 3.1.0.4 and the renderer both pin NumPy 1.26.4. These environments must
 remain separate. The renderer wheel is installed with `--no-deps` after syncing
 the renderer lock, so it cannot silently upgrade the runtime. Setup is explicit;
 viewing, doctor and rendering never install packages or missing system libraries.
@@ -27,7 +35,9 @@ Blender executable, dependency directory and PyMOL interpreter through
 The native Blender installer uses the existing version/hash lock with uv `--target`
 for Blender's Python dependencies and never runs pip/ensurepip in the caller.
 
-To refresh dependency locks deliberately (then rerun validation):
+## Updating dependency pins (maintainers)
+
+To refresh dependency locks deliberately, then rerun the affected runtime checks:
 
 ```sh
 uv lock
@@ -37,10 +47,12 @@ uv pip compile --python-version 3.11 --universal --generate-hashes runtime/rende
   -o plugins/structure-studio/skills/structure-studio/references/render-requirements.txt
 ```
 
-The Apptainer definition consumes the exact staged plugin from `dist/release`.
-Its Linux amd64 Debian base digest was obtained from the Docker registry on
-2026-11-01. It builds new Linux environments with the same Python and Python-package
-pins; it does not copy `.venv`, `.runtime`, binaries or caches from a Mac.
+## Linux and Apptainer
+
+The Apptainer definition consumes the exact staged plugin from `dist/release`
+and pins its Linux amd64 Debian base by digest. It builds new Linux environments
+with the same Python and Python-package pins; it does not copy `.venv`,
+`.runtime`, binaries or caches from a Mac.
 System libraries and FFmpeg are installed only during this explicit image build.
 Debian repository packages are not snapshot-pinned, so bit-identical OS images
 are not claimed. Record `dpkg-query -W`, FFmpeg and GPU/driver versions with Linux
@@ -55,9 +67,10 @@ apptainer exec --cleanenv --nv --bind "$PWD:/work" renderer.sif \
 ```
 
 `--nv` is for NVIDIA Linux hosts; omit it for CPU execution. The image build and
-real Linux/CUDA rendering must be validated on Linux before release. Mac testing
-does not satisfy that gate. Reuse the same image and pinned sources for CPU/GPU
-tests, and record the exact SIF checksum alongside the release manifest.
+real Linux/CUDA rendering must be validated on the target Linux deployment.
+See [recorded platform coverage](validation.md#platform-coverage); Mac testing
+does not establish Linux/CUDA execution. Reuse the same image and pinned sources
+for CPU/GPU tests, and record the exact SIF checksum alongside the release manifest.
 
 The [optional shared cluster service](shared-cluster.md) runs that same image for
 each Slurm job, directly using its existing uv Python. It also supports binding an

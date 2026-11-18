@@ -159,8 +159,12 @@ default; Slurm jobs keep one independent Blender process per submitted request.
   `session_id`, and reconnect that session when needed. `editor_open` is only for
   an explicit request for another window. Background preview renders may run
   separately without opening desktop windows.
-- Run `python -m pytest` for relevant changes. Check a built wheel outside the
-  checkout for packaging changes. Record actual runtime and visual checks in
-  `docs/validation.md`; mocks do not establish Blender or host integration.
+- Run `python -m pytest` for relevant changes. For packaging changes, inspect the
+  source distribution and check a built wheel outside the checkout. Keep
+  `docs/validation.md` a concise release summary of actual checks and limits;
+  mocks do not establish Blender or host integration. Store detailed logs,
+  deployment records and research-specific evidence in ignored `.validation/`
+  or private storage outside the public repository. Add public guides to
+  `docs/README.md` and the explicit documentation list in `MANIFEST.in`.
 - Preserve upstream notices. Make coherent commits and respect the user's
   publication boundary.
